@@ -11,7 +11,7 @@
 | 서비스명 | WhatToDo |
 | 타깃 사용자 | 이메일·슬랙·Jira 등 여러 도구를 동시에 사용하는 직장인 |
 | 핵심 가치 | 업무가 쌓이기 전에 파악하고, 하루가 끝나면 무엇을 했는지 안다 |
-| 서비스 형태 | 체크리스트 위젯 웹 앱 (MVP) → 슬랙 봇 (Phase 2) → 모바일 PWA (Phase 3) |
+| 서비스 형태 | Streamlit 체크리스트 앱 (MVP) → 슬랙 봇 (Phase 2) → 모바일 PWA (Phase 3) |
 
 ### 핵심 기능 한눈에 보기
 
@@ -349,10 +349,10 @@ GUARDRAILS = [
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      Client Layer                       │
-│       Web App (React)  /  Slack Bot  /  Mobile          │
-│       ← WebSocket 스트리밍으로 카드 실시간 수신          │
+│       Streamlit App  /  Slack Bot  /  Mobile            │
+│       ← REST 폴링으로 카드 목록 수신                     │
 └────────────────────────┬────────────────────────────────┘
-                         │ HTTPS / WebSocket
+                         │ HTTPS / REST
 ┌────────────────────────▼────────────────────────────────┐
 │                    API Gateway (FastAPI)                 │
 │              Auth (OAuth2) · Rate Limit · Routing       │
@@ -363,7 +363,7 @@ GUARDRAILS = [
 │ Workers      │ │         (Claude claude-sonnet-4-6)       │
 │ (병렬 실행)  │ │                                          │
 │              │ │  ┌──────────────────────────────────┐   │
-│ - Gmail ─────┼─┼─►│  Priority Queue (Redis)          │   │
+│ - Gmail ─────┼─┼─►│  Priority Queue (heapq)          │   │
 │ - Slack ─────┼─┼─►│  수집 즉시 투입, 긴급도 추정으로 │   │
 │ - Calendar ──┼─┼─►│  선처리 순서 결정               │   │
 │ - Jira ──────┼─┼─►└──────────────┬───────────────────┘   │
@@ -371,7 +371,7 @@ GUARDRAILS = [
 └──────────────┘ │  ┌──────────────▼───────────────────┐   │
                  │  │  Urgency Engine (정량 계산)        │   │
                  │  │  + Classifier (LLM: 액션·요약)    │   │
-                 │  │  → 분류 즉시 UI 스트리밍           │   │
+                 │  │  → 분류 완료 즉시 TinyDB 저장      │   │
                  │  └──────────────┬───────────────────┘   │
                  │                 │ (urgency=5 항목만)     │
                  │  ┌──────────────▼───────────────────┐   │
@@ -386,8 +386,8 @@ GUARDRAILS = [
                                    │
 ┌──────────────────────────────────▼──────────────────────┐
 │                      Data Layer                          │
-│   PostgreSQL (항목 저장)  ·  Redis (우선순위 큐/캐시)    │
-│   Vector DB - pgvector (의미 검색)                       │
+│   TinyDB (JSON 파일 기반)  ·  heapq (인메모리 우선순위 큐)│
+│   → Phase 2+: PostgreSQL + Redis 교체 가능               │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -512,9 +512,9 @@ class KPIAggregated:
 | Gmail + Slack + Google Calendar 커넥터 | Jira / Linear / Notion 커넥터 |
 | Urgency Engine (정량 5-신호) | ReAct Agent |
 | Classifier (Haiku: 액션 타입 + 요약) | 원클릭 답장 초안 |
-| Priority Queue + WebSocket 스트리밍 | 일간 결산 / KPI 리포트 |
+| Priority Queue (heapq) + REST API | 일간 결산 / KPI 리포트 |
 | Summarizer (브리핑 헤더) | Policy Engine |
-| 체크리스트 위젯 UI | 슬랙 봇 인터페이스 |
+| Streamlit 체크리스트 UI | 슬랙 봇 인터페이스 |
 | OAuth 인증 (Gmail, Slack) | 스누즈 기능 |
 
 #### 주차별 일정
@@ -524,9 +524,9 @@ Week 1 (Setup & Auth)       Week 2 (Core Pipeline)
 ─────────────────────       ──────────────────────
 □ 프로젝트 초기 세팅         □ Slack 커넥터
   FastAPI + TinyDB            □ Google Calendar 커넥터
-  React + Vite 뼈대           □ Urgency Engine 구현
+  Streamlit 뼈대              □ Urgency Engine 구현
 □ Gmail OAuth 연동            □ Priority Queue (heapq)
-  (가장 복잡 → 먼저 해결)     □ WebSocket 스트리밍 기초
+  (가장 복잡 → 먼저 해결)     □ REST API 기초
 □ 데이터 모델 확정
 □ API 인터페이스 정의
 
@@ -534,38 +534,38 @@ Week 3 (AI + UI)            Week 4 (통합 & 마무리)
 ─────────────────────       ──────────────────────
 □ Classifier (Haiku) 연동   □ End-to-end 통합 테스트
 □ Summarizer (Sonnet) 연동  □ 에러 처리 / 폴백
-□ 위젯 UI 완성              □ 환경 변수 / 배포 설정
+□ Streamlit UI 완성         □ 환경 변수 / 배포 설정
   체크리스트 인터랙션          □ 버그 수정
   섹션별 카드 표시             □ 데모 준비
-□ WebSocket 클라이언트 연결
+□ REST API 연결
 ```
 
 #### 팀 역할 분리 — 6인 1인 1에이전트
 
 | # | 담당 에이전트 | 핵심 구현 범위 |
 |---|---|---|
-| 1 | **Orchestrator** | FastAPI 앱 구조, WebSocket 서버, Priority Queue, TinyDB, 전체 파이프라인 연결 |
+| 1 | **Orchestrator** | FastAPI 앱 구조, REST API, Priority Queue, TinyDB, 전체 파이프라인 연결 |
 | 2 | **Gmail Connector** | OAuth2 인증 플로우, Gmail API 수집·파싱·스레드 묶음 |
 | 3 | **Slack + Calendar Connector** | Slack OAuth·API (멘션/DM), Google Calendar OAuth·API |
 | 4 | **Urgency Engine** | 5-신호 가중합 공식, fast_urgency(큐용 초경량), 단위 테스트 |
 | 5 | **Classifier + Summarizer** | Anthropic SDK async, Haiku 프롬프트 설계·튜닝, 브리핑 헤더 생성 |
-| 6 | **Frontend (Widget)** | React + Vite, WebSocket 클라이언트, 체크리스트 위젯 전체 |
+| 6 | **Streamlit UI** | app.py, 카드 목록·체크리스트 위젯, FastAPI 연동 |
 
 ```
 의존성 흐름 (→ 는 "출력 스키마를 받아야 작업 가능")
 
 Connector #2 ─┐
-Connector #3 ─┼─► Orchestrator #1 ─► Urgency Engine #4 ─► Classifier #5 ─► Frontend #6
-              │        │ (WebSocket)                                              ▲
+Connector #3 ─┼─► Orchestrator #1 ─► Urgency Engine #4 ─► Classifier #5 ─► Streamlit #6
+              │        │ (REST API)                                               ▲
               └─────── └──────────────────────────────────────────────────────────┘
-                              (WorkCard 스키마 Week 1 확정 → #6 mock 개발 시작)
+                              (WorkCard Pydantic 모델 Week 1 확정 → #6 mock 개발 시작)
 ```
 
 ```
 Week 1                  Week 2                  Week 3                  Week 4
 ────────────────────    ────────────────────    ────────────────────    ────────────────────
 #1 FastAPI 뼈대         #1 Priority Queue       #1 파이프라인 연결       전원 통합·버그수정
-   TinyDB 설계             WebSocket 서버           에러 폴백
+   TinyDB 설계             REST API 서버            에러 폴백
    스키마 확정 (전원)
                         #2 Gmail API 수집        #2 스레드 묶음          데모 시나리오 검증
 #2 Gmail OAuth 완료        파싱 로직               중복 제거 마무리
@@ -579,23 +579,25 @@ Week 1                  Week 2                  Week 3                  Week 4
 #5 Anthropic SDK 설정   #5 Classifier 프롬프트   #5 Summarizer 연동
    Haiku 연결 확인          액션 타입 분류           브리핑 헤더 생성
 
-#6 React + Vite 세팅    #6 mock 데이터로         #6 WebSocket 연결
-   컴포넌트 구조            카드 UI 구현             실시간 카드 렌더링
+#6 Streamlit 앱 세팅    #6 mock 데이터로         #6 REST API 연결
+   페이지 구조              카드 UI 구현             실시간 카드 렌더링
                             섹션·체크리스트          체크 완료 인터랙션
 ```
 
 > **Week 1 필수 합의 (담당 #1 주도, 전원 참여)**  
-> `WorkCard` · `BriefingHeader` 인터페이스 확정 → #6이 mock 데이터로 독립 개발 시작 가능
+> `WorkCard` · `BriefingHeader` Pydantic 모델 확정 → #6이 mock 데이터로 독립 개발 시작 가능
 
 #### 브랜치 전략
 
 ```
 main          ← 배포 가능 상태만 병합
   └ dev       ← 주간 통합 브랜치
+      ├ feat/orchestrator
       ├ feat/gmail-connector
+      ├ feat/slack-calendar-connector
       ├ feat/urgency-engine
-      ├ feat/websocket-streaming
-      └ feat/briefing-widget
+      ├ feat/classifier-summarizer
+      └ feat/streamlit-ui
 ```
 
 - PR은 `dev`로만. `main` 병합은 주 1회 (금요일 데모 후).

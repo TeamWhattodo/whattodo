@@ -4,12 +4,12 @@
 
 | 영역 | 선택 | 비고 |
 |---|---|---|
-| 백엔드 프레임워크 | **FastAPI** | Django 대신 — native async, WebSocket 내장 |
+| 백엔드 프레임워크 | **FastAPI** | Django 대신 — native async, REST API |
 | ASGI 서버 | **Uvicorn** | FastAPI 표준 서버 |
 | DB | **TinyDB** | JSON 파일 기반, 별도 DB 서버 불필요 |
 | 스케줄러 | **APScheduler** | 결산·KPI 크론 작업 |
 | Priority Queue | **heapq** (MVP) | Python 내장, 추후 Redis 교체 가능 |
-| 프론트엔드 | **React + Vite** | 위젯 컴포넌트 구조에 적합 |
+| 프론트엔드 | **Streamlit** | 에이전트 결과 표시 UI, Python으로만 구현 |
 | AI | **Anthropic SDK** (async) | Claude Haiku / Sonnet 혼용 |
 | HTTP 클라이언트 | **httpx** | async, OAuth API 호출용 |
 | OAuth | **authlib** | Gmail, Slack, Jira 연동 |
@@ -20,25 +20,27 @@
 
 ### 2-1. FastAPI를 선택한 이유
 
-Django는 기본이 동기(sync) 프레임워크다. WebSocket 스트리밍을 위해 Django Channels를 얹으면 복잡도가 크게 올라가고, 이 서비스에서 Django의 장점(ORM, Admin 등)은 쓰지 않는다.
+Django는 기본이 동기(sync) 프레임워크다. Connector Workers를 병렬로 실행하려면 async가 필요하고, 이 서비스에서 Django의 장점(ORM, Admin 등)은 쓰지 않는다.
 
-FastAPI는 네이티브 async로 WebSocket 스트리밍을 간결하게 구현할 수 있다.
+FastAPI는 네이티브 async로 커넥터 병렬 처리를 간결하게 구현할 수 있다. Streamlit 프론트엔드는 httpx를 통해 FastAPI REST 엔드포인트를 호출하거나, MVP에서는 백엔드 모듈을 직접 import해 사용할 수 있다.
 
 ```python
-@app.websocket("/briefing/{session_id}")
-async def stream_briefing(websocket: WebSocket, session_id: str):
-    await websocket.accept()
-    async for card in process_items(session_id):
-        await websocket.send_json(card)
+@app.post("/briefing/start")
+async def start_briefing(request: BriefingRequest):
+    session_id = await orchestrator.run(request.user_id)
+    return {"session_id": session_id}
+
+@app.get("/briefing/{session_id}")
+async def get_briefing(session_id: str):
+    return db.get_briefing(session_id)
 ```
 
 ### 2-2. API 엔드포인트
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/briefing/start` | 복귀 브리핑 세션 시작 |
-| WS | `/briefing/{session_id}` | 분류된 카드 실시간 스트리밍 |
-| GET | `/briefing/{session_id}` | 브리핑 결과 조회 |
+| POST | `/briefing/start` | 복귀 브리핑 세션 시작 (비동기 처리 시작) |
+| GET | `/briefing/{session_id}` | 브리핑 결과 조회 (Streamlit이 폴링) |
 | PATCH | `/items/{item_id}` | 항목 상태 변경 (완료/스누즈) |
 | POST | `/items/{item_id}/draft` | 답장 초안 생성 |
 | GET | `/summary/daily` | 일간 결산 조회 |
@@ -54,7 +56,7 @@ whattodo/
 ├── backend/
 │   ├── main.py                  # FastAPI 앱, 라우터 등록, 스케줄러 시작
 │   ├── routers/
-│   │   ├── briefing.py          # 브리핑 WebSocket + REST
+│   │   ├── briefing.py          # 브리핑 REST API
 │   │   ├── items.py             # 항목 상태 변경, 초안 생성
 │   │   ├── summary.py           # 일간 결산 API
 │   │   ├── kpi.py               # 주간/월간 KPI 리포트 API
@@ -85,17 +87,11 @@ whattodo/
 │   │       └── kpi_reports.json
 │   ├── scheduler.py             # APScheduler 크론 등록
 │   └── config.py                # pydantic-settings 환경 변수
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── BriefingWidget.tsx
-│   │   │   ├── WorkCard.tsx
-│   │   │   ├── HeaderCard.tsx
-│   │   │   ├── ContactPanel.tsx
-│   │   │   └── DailySummaryPanel.tsx
-│   │   └── hooks/
-│   │       └── useWebSocket.ts
-│   └── vite.config.ts
+├── app.py                       # Streamlit 앱 (UI 진입점)
+├── pages/
+│   ├── briefing.py              # 복귀 브리핑 화면
+│   ├── daily_summary.py         # 일간 결산 화면
+│   └── kpi_report.py            # KPI 리포트 화면
 └── docs/
     ├── PLANNING.md
     ├── WORKFLOW.md
@@ -160,10 +156,34 @@ urgency_level = ceil(urgency_score × 5)   →  1~5
 | 신호 | 가중치 | 측정 방법 |
 |---|---|---|
 | T (마감 잔여 시간) | 0.35 | 지수 감쇠. 초과=1.0, 24h 후=0.12, 없음=최대 0.6 |
-| A (발신자 권한) | 0.25 | 조직 계층 거리. CEO=1.0, 동료=0.5, 외부 클라이언트=0.75 |
+| A (발신자 중요도) | 0.25 | 아래 별도 설명 — **구현 방법 미확정** |
 | F (반복 추적) | 0.20 | 미응답 동일 발신자 수, log 스케일 |
 | K (키워드) | 0.10 | 정규식. "urgent"=+0.9, "FYI"=−0.4 |
 | S (소스·채널) | 0.10 | Slack DM=0.85, Jira blocker=0.90, 이메일 CC=0.35 |
+
+#### A 신호 — 발신자 중요도 취득 방법 (미확정)
+
+사내 DB가 없는 개인 툴 특성상, 조직도를 직접 연동할 수 없다.  
+아래 3가지 방법을 우선순위 순으로 조합하는 방향을 검토 중이나 **최종 구현 방법은 미확정**.
+
+| 우선순위 | 방법 | 특징 |
+|---|---|---|
+| 1 | **온보딩 태깅** | 연동 직후 자주 연락하는 상위 10명을 4단계(임원·팀장·동료·기타)로 태깅. 30초 내 완료. 가장 정확. |
+| 2 | **이메일 서명 파싱** | 서명에서 "대표", "CEO", "팀장" 등 직함 키워드 감지. 무설정 자동. |
+| 3 | **행동 기반 추정** | 과거 평균 응답 시간·내가 먼저 연락한 비율·메시지 빈도로 중요도 추정. 데이터 축적 후 정확도 향상. |
+| — | **기본값** | 위 3가지 모두 해당 없으면 0.4 (unknown) |
+
+```python
+# 우선순위 조합 (구현 예시 — 미확정)
+def get_authority_score(sender, user_settings, history) -> float:
+    if score := user_settings.tagged.get(sender.email):
+        return score                                    # 1순위: 온보딩 태깅
+    if score := parse_title_from_signature(sender):
+        return score                                    # 2순위: 서명 파싱
+    if history.has_enough_data(sender.email):
+        return behavioral_score(sender.email, history) # 3순위: 행동 추정
+    return 0.4                                         # 기본값
+```
 
 ### 4-3. ReAct Tool Registry (긴급도 5 전용)
 
@@ -259,7 +279,9 @@ requires-python = ">=3.11"
 dependencies = [
     # 백엔드
     "fastapi",
-    "uvicorn[standard]",      # WebSocket 지원 포함
+    "uvicorn[standard]",
+    # 프론트엔드
+    "streamlit",
     # DB
     "tinydb",
     # 스케줄러
@@ -282,8 +304,11 @@ dev = [
 ```
 
 ```bash
-# 실행
+# 백엔드 실행
 uv run uvicorn backend.main:app --reload
+
+# Streamlit UI 실행
+uv run streamlit run app.py
 ```
 
 ---
@@ -320,7 +345,7 @@ JIRA_BASE_URL=
 
 # 앱 설정
 SECRET_KEY=
-FRONTEND_ORIGIN=http://localhost:5173
+STREAMLIT_PORT=8501
 
 # Urgency Engine 가중치 (조정 가능)
 URGENCY_WEIGHT_TIME=0.35
@@ -353,7 +378,7 @@ REACT_URGENCY_THRESHOLD=5
 | 3 | Slack + Calendar Connector | `feat/slack-calendar-connector` | `connectors/slack.py`, `connectors/calendar.py` |
 | 4 | Urgency Engine | `feat/urgency-engine` | `agents/urgency_engine.py` |
 | 5 | Classifier + Summarizer | `feat/classifier-summarizer` | `agents/classifier.py`, `agents/summarizer.py` |
-| 6 | Frontend Widget | `feat/briefing-widget` | `frontend/src/` 전체 |
+| 6 | Streamlit UI | `feat/streamlit-ui` | `app.py`, `pages/` 전체 |
 
 ### 브랜치 전략
 
@@ -365,7 +390,7 @@ main  ← 배포 가능 상태만. 주 1회 (금요일) dev → main 병합
       ├ feat/slack-calendar-connector
       ├ feat/urgency-engine
       ├ feat/classifier-summarizer
-      └ feat/briefing-widget
+      └ feat/streamlit-ui
 ```
 
 ### 커밋 컨벤션
@@ -378,52 +403,47 @@ docs:  문서
 test:  테스트
 ```
 
-### Week 1 필수 합의 — 인터페이스 스키마 (담당 #1 주도)
+### Week 1 필수 합의 — 데이터 스키마 (담당 #1 주도)
 
-프론트엔드(#6)가 mock 데이터로 독립 개발하려면 Week 1 내에 확정해야 한다.  
+Streamlit(#6)이 mock 데이터로 독립 개발하려면 Week 1 내에 확정해야 한다.  
 백엔드 담당(#2~#5)은 이 스키마를 출력 포맷으로 준수한다.
 
-```typescript
-// WebSocket으로 스트리밍되는 카드 단위 (분류 완료 즉시 1건씩 전송)
-interface WorkCard {
-  id: string
-  source: "gmail" | "slack" | "calendar"
-  summary: string
-  urgency_level: 1 | 2 | 3 | 4 | 5
-  urgency_breakdown: { T: number; A: number; F: number; K: number; S: number }
-  action_type: "reply" | "approve" | "review" | "fyi" | "none"
-  from_person: string
-  received_at: string        // ISO 8601
-  estimated_minutes: number
-  due_at: string | null
-  status: "pending" | "done" | "snoozed"
-}
+```python
+# backend/models.py — 전원 공유 Pydantic 모델
+from pydantic import BaseModel
+from typing import Literal
+from datetime import datetime
 
-// 전체 항목 완료 후 1회 전송되는 브리핑 헤더
-interface BriefingHeader {
-  briefing_id: string
-  absence_days: number
-  total: number
-  urgent: number
-  estimated_minutes: number
-  contacts_needed: { person: string; reason: string; channel: string }[]
-  summary_text: string
-}
+class WorkCard(BaseModel):
+    id: str
+    source: Literal["gmail", "slack", "calendar"]
+    summary: str
+    urgency_level: int                 # 1~5
+    urgency_breakdown: dict            # {"T": 0.78, "A": 0.80, ...}
+    action_type: Literal["reply", "approve", "review", "fyi", "none"]
+    from_person: str
+    received_at: datetime
+    estimated_minutes: int
+    due_at: datetime | None
+    status: Literal["pending", "done", "snoozed"]
 
-// WebSocket 메시지 타입 구분
-type WSMessage =
-  | { type: "card";   data: WorkCard }
-  | { type: "header"; data: BriefingHeader }
-  | { type: "error";  message: string }
+class BriefingHeader(BaseModel):
+    briefing_id: str
+    absence_days: int
+    total: int
+    urgent: int
+    estimated_minutes: int
+    contacts_needed: list[dict]        # {person, reason, channel}
+    summary_text: str
 ```
 
 ### MVP 주차별 체크포인트
 
 | 주차 | 완료 기준 |
 |---|---|
-| Week 1 | 스키마 확정, Gmail OAuth 로그인 성공, FastAPI `/health` 응답, React 앱 로컬 실행 |
-| Week 2 | Gmail 수집 → Urgency Engine 점수 출력 → WebSocket으로 `WorkCard` 1건 전송 확인 |
-| Week 3 | Slack·Calendar 포함 전체 파이프라인 E2E, 위젯에 카드 실시간 스트리밍 표시 |
+| Week 1 | 스키마 확정, Gmail OAuth 로그인 성공, FastAPI `/health` 응답, Streamlit 앱 로컬 실행 |
+| Week 2 | Gmail 수집 → Urgency Engine 점수 출력 → REST API로 `WorkCard` 1건 조회 확인 |
+| Week 3 | Slack·Calendar 포함 전체 파이프라인 E2E, Streamlit에 카드 목록 표시 |
 | Week 4 | 체크 완료 인터랙션, 에러 폴백, 브리핑 헤더 표시, 데모 시나리오 통과 |
 
 ---
@@ -432,7 +452,7 @@ type WSMessage =
 
 | 결정 | 선택 | 대안 | 이유 |
 |---|---|---|---|
-| 스트리밍 방식 | WebSocket 항목 단위 스트리밍 | 완료 후 일괄 전송 | 60초 로딩 스피너 제거, 긴급 항목 즉시 표시 |
+| UI 방식 | Streamlit REST 폴링 | WebSocket 스트리밍 | 구현 복잡도 최소화, Python 단일 스택 유지 |
 | 긴급도 계산 | 정량 5-신호 엔진 | LLM 판단 | 동일 항목 = 동일 점수 보장, 근거 설명 가능 |
 | ReAct 범위 | 긴급도 5 항목만 | 전체 항목 | 비용·시간 최적화, 나머지는 DAG로 충분 |
 | DB | TinyDB (JSON) | PostgreSQL | 서버 불필요, MVP 충분. 스키마 동일하게 유지해 추후 마이그레이션 용이 |

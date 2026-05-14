@@ -66,7 +66,6 @@
 ### 필요한 것
 
 - Python 3.11+
-- Node.js 18+
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
 
 ### 백엔드
@@ -79,24 +78,22 @@ uv run uvicorn backend.main:app --reload
 
 `http://localhost:8000/health` 에서 응답이 오면 준비 완료.
 
-### 프론트엔드
+### 프론트엔드 (Streamlit)
 
 ```bash
-cd frontend
-npm install
-npm run dev
+uv run streamlit run app.py
 ```
 
-`http://localhost:5173` 에서 위젯을 확인할 수 있습니다.
+`http://localhost:8501` 에서 위젯을 확인할 수 있습니다.
 
 ### 최소 필요 환경 변수
 
 ```bash
-ANTHROPIC_API_KEY=          # Anthropic 콘솔에서 발급
-GMAIL_CLIENT_ID=            # Google Cloud Console
+ANTHROPIC_API_KEY=    # Anthropic 콘솔에서 발급
+GMAIL_CLIENT_ID=      # Google Cloud Console
 GMAIL_CLIENT_SECRET=
-SLACK_BOT_TOKEN=            # Slack App 설정
-SECRET_KEY=                 # 임의 랜덤 문자열
+SLACK_BOT_TOKEN=      # Slack App 설정
+SECRET_KEY=           # 임의 랜덤 문자열
 ```
 
 전체 환경 변수 목록은 [docs/SPEC.md](docs/SPEC.md#8-환경-변수)를 참고하세요.
@@ -114,49 +111,12 @@ SECRET_KEY=                 # 임의 랜덤 문자열
 | 3 | Slack + Calendar Connector | `feat/slack-calendar-connector` |
 | 4 | Urgency Engine (긴급도 계산) | `feat/urgency-engine` |
 | 5 | Classifier + Summarizer (AI 요약) | `feat/classifier-summarizer` |
-| 6 | Frontend Widget | `feat/briefing-widget` |
+| 6 | Streamlit UI | `feat/streamlit-ui` |
 
 **PR은 `dev` 브랜치로만** 올립니다. `main` 병합은 금요일 주 1회.
 
-> **Week 1에 꼭 해야 할 것**: 담당 #1이 주도해 [WebSocket 메시지 스키마](#websocket-스키마)를 전원 합의 후 확정합니다.  
-> 스키마가 확정되어야 담당 #6이 mock 데이터로 UI 개발을 독립적으로 시작할 수 있습니다.
-
----
-
-## WebSocket 스키마
-
-> 백엔드와 프론트엔드가 공유하는 인터페이스. **변경 시 이 README도 함께 수정.**
-
-```typescript
-type WSMessage =
-  | { type: "card";   data: WorkCard }
-  | { type: "header"; data: BriefingHeader }
-  | { type: "error";  message: string }
-
-interface WorkCard {
-  id: string
-  source: "gmail" | "slack" | "calendar"
-  summary: string
-  urgency_level: 1 | 2 | 3 | 4 | 5
-  urgency_breakdown: { T: number; A: number; F: number; K: number; S: number }
-  action_type: "reply" | "approve" | "review" | "fyi" | "none"
-  from_person: string
-  received_at: string        // ISO 8601
-  estimated_minutes: number
-  due_at: string | null
-  status: "pending" | "done" | "snoozed"
-}
-
-interface BriefingHeader {
-  briefing_id: string
-  absence_days: number
-  total: number
-  urgent: number
-  estimated_minutes: number
-  contacts_needed: { person: string; reason: string; channel: string }[]
-  summary_text: string
-}
-```
+> **Week 1에 꼭 해야 할 것**: 담당 #1이 주도해 `WorkCard` · `BriefingHeader` Pydantic 모델을 전원 합의 후 확정합니다.  
+> 모델이 확정되어야 담당 #6이 mock 데이터로 Streamlit UI 개발을 독립적으로 시작할 수 있습니다.
 
 ---
 

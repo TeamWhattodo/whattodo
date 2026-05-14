@@ -77,7 +77,7 @@
 │  Gmail   │  item₂ ──►│
 │Connector │  item₃ ──►│   ┌─────────────────────────────┐
 └──────────┘           ├──►│      Priority Queue          │
-┌──────────┐  item₄ ──►│   │  (Redis Sorted Set)          │
+┌──────────┐  item₄ ──►│   │  (heapq, 인메모리)           │
 │  Slack   │  item₅ ──►│   │                              │
 │Connector │           ├──►│  score = fast_urgency(item)  │
 └──────────┘           │   │  (키워드+발신자만 보는 0.1초  │
@@ -94,7 +94,7 @@
                        │       Urgency Engine + Classifier
                        │                 │
                        │                 ▼ 분류 완료 즉시
-                       │           WebSocket → UI 카드 스트리밍
+                       │           TinyDB 저장 → Streamlit 폴링
 ```
 
 **Gmail Connector**
@@ -199,9 +199,15 @@ def time_score(due_at, received_at, now) -> float:
         hours_elapsed = (now - received_at).total_seconds() / 3600
         return min(hours_elapsed / 72, 0.6)     # 마감 없음, 최대 0.6
 
-# A — 발신자 권한 (조직 계층 거리)
-AUTHORITY = { "ceo": 1.0, "c_level": 0.9, "direct_manager": 0.8,
-              "peer": 0.5, "external_client": 0.75, "unknown": 0.3 }
+# A — 발신자 중요도 (구현 방법 미확정 — SPEC.md A신호 섹션 참고)
+# 우선순위: 1) 온보딩 태깅 → 2) 서명 파싱 → 3) 행동 추정 → 4) 기본값 0.4
+AUTHORITY_TIERS = {
+    "executive":  1.00,   # 온보딩 태깅: 임원·대표
+    "manager":    0.80,   # 온보딩 태깅: 팀장·주요 고객
+    "peer":       0.50,   # 온보딩 태깅: 동료
+    "other":      0.30,   # 온보딩 태깅: 기타
+    "unknown":    0.40,   # 태깅 없음 → 서명 파싱 or 행동 추정 or 기본값
+}
 
 # F — 반복 추적 (미응답 동일 발신자 메시지 수, 로그 스케일)
 followup = min(log1p(unanswered_count) / log1p(5), 1.0)
@@ -406,24 +412,41 @@ def apply_guardrails(item: ClassifiedItem, policy: PolicyConfig) -> ClassifiedIt
 
 ---
 
-### Step 5. 브리핑 제시
+### Step 5. 브리핑 제시 (Streamlit)
+
+```python
+# app.py — Streamlit 렌더링 예시
+import streamlit as st
+import httpx, time
+
+def render_briefing():
+    st.title("WhatToDo 복귀 브리핑")
+
+    if st.button("브리핑 시작"):
+        session_id = httpx.post("/briefing/start").json()["session_id"]
+        st.session_state["session_id"] = session_id
+
+    if sid := st.session_state.get("session_id"):
+        briefing = httpx.get(f"/briefing/{sid}").json()
+        st.metric("긴급 항목", briefing["urgent"])
+
+        for card in briefing["sections"]["immediate"]:
+            with st.container(border=True):
+                st.write(f"🔴 {card['summary']}")
+                st.caption(f"{card['from_person']} · {card['estimated_minutes']}분")
+                if st.checkbox("완료", key=card["id"]):
+                    httpx.patch(f"/items/{card['id']}", json={"status": "done"})
+                    st.rerun()
+```
 
 ```
 UI 렌더링 순서:
-  1. 헤더 카드 — 부재 기간, 통계, 예상 처리 시간
+  1. 헤더 — 부재 기간, 통계, 예상 처리 시간
   2. "지금 당장" 섹션 (강조 표시)
   3. "연락해야 할 사람" 패널
   4. "오늘 안에" 섹션
-  5. "이번 주 내" 섹션 (접힌 상태)
-  6. "FYI" 섹션 (접힌 상태)
-
-각 카드 구성:
-  ┌─────────────────────────────────────┐
-  │ [출처 아이콘] 제목 요약 (1줄)       │
-  │ 발신자 · 시간 · 예상 처리 시간      │
-  │ ─────────────────────────────────── │
-  │ [완료] [초안 작성] [스누즈] [열기]  │
-  └─────────────────────────────────────┘
+  5. "이번 주 내" 섹션 (st.expander로 접힘)
+  6. "FYI" 섹션 (st.expander로 접힘)
 ```
 
 ---
@@ -624,27 +647,27 @@ AI 분류 실패 (항목):
 [외부 소스]      [Priority Queue]    [처리 계층]           [클라이언트]
     │                  │                 │                      │
 Gmail ──item─────►│               │                      │
-Slack ──item─────►│  Redis        │                      │
-Cal   ──item─────►│  Sorted Set   ├──► Urgency Engine    │
+Slack ──item─────►│  heapq        │                      │
+Cal   ──item─────►│  (인메모리)   ├──► Urgency Engine    │
 Jira  ──item─────►│  (score=      │    (Python, ~1ms)    │
                   │   fast_est)   │         │            │
                   │               │    urgency 1~4       │
                   │               │         ├──► Classifier (Haiku)
-                  │               │         │         │   ──card──► UI 스트리밍
-                  │               │    urgency 5       │            (WebSocket)
+                  │               │         │         │   ──저장──► TinyDB
+                  │               │    urgency 5       │
                   │               │         └──► ReAct Loop
                   │               │               (Sonnet)
                   │               │                  │
                   │               │             Classifier (Haiku)
-                  │               │                  │   ──card──► UI 스트리밍
+                  │               │                  │   ──저장──► TinyDB
                   │               │                  │
                   │          (전체 완료)              │
                   │               │                  │
-                  │               └──► Summarizer ───────header──► UI 확정
+                  │               └──► Summarizer ───────저장──► TinyDB
                   │                    (Sonnet)       │
                   │                                   │
-              [PostgreSQL]                        React App
-              classified_items                   Slack Bot
+              [TinyDB]                         Streamlit App
+              classified_items                 (REST 폴링)
               briefings
 ```
 
@@ -653,29 +676,30 @@ Jira  ──item─────►│  (score=      │    (Python, ~1ms)    │
 ## 시퀀스 다이어그램 — 복귀 브리핑 생성
 
 ```
-Client   API GW  Orchestrator  Connectors  PQueue  UrgencyEng  Classifier  ReAct  Summarizer  DB
-  │         │         │             │          │        │            │         │        │        │
-  │─trigger►│         │            │          │        │            │         │        │        │
-  │         │─start──►│            │          │        │            │         │        │        │
-  │         │         │─spawn()────►│          │        │            │         │        │        │
-  │         │         │            │─Gmail─►  │        │            │         │        │        │
-  │         │         │            │─Slack─►  │        │            │         │        │        │ ← 병렬
-  │         │         │            │─Cal───►  │        │            │         │        │        │
-  │         │         │            │─Jira──►  │        │            │         │        │        │
-  │         │         │            │          │        │            │         │        │        │
-  │         │         │            │─item₁──►│        │            │         │        │        │
-  │         │         │            │─item₂──►│─deq───►│            │         │        │        │
-  │         │         │            │─item₃──►│        │─score(1~4)─►│        │        │        │
-  │◄card₁───│◄────────│◄───────────│─────────│────────│◄─result────│         │        │        │
-  │         │         │            │         │        │            │         │        │        │
-  │         │         │            │─item₄──►│─deq───►│            │         │        │        │
-  │         │         │            │         │        │─score(5)───────────►│        │        │
-  │         │         │            │         │        │            │─result──►│        │        │
-  │◄card₂───│◄────────│◄───────────│─────────│────────│────────────│─────────│        │        │
-  │   ...   │         │            │         │        │            │         │        │        │
-  │         │         │────────────────────────────────────────────────────────done──►│        │
-  │         │         │            │         │        │            │         │        │─save──►│
-  │◄header──│◄────────│◄───────────│─────────│────────│────────────│─────────│◄result─│        │
+Streamlit  FastAPI  Orchestrator  Connectors  PQueue  UrgencyEng  Classifier  ReAct  Summarizer  TinyDB
+    │          │         │             │          │        │            │         │        │        │
+    │─POST────►│         │            │          │        │            │         │        │        │
+    │  /start  │─start──►│            │          │        │            │         │        │        │
+    │◄session_id         │─spawn()────►│          │        │            │         │        │        │
+    │          │         │            │─Gmail─►  │        │            │         │        │        │
+    │          │         │            │─Slack─►  │        │            │         │        │        │ ← 병렬
+    │          │         │            │─Cal───►  │        │            │         │        │        │
+    │          │         │            │          │        │            │         │        │        │
+    │          │         │            │─item₁──►│        │            │         │        │        │
+    │          │         │            │─item₂──►│─deq───►│            │         │        │        │
+    │          │         │            │─item₃──►│        │─score(1~4)─►│        │        │        │
+    │          │         │            │         │        │            │─save────────────────────►│
+    │          │         │            │─item₄──►│─deq───►│            │         │        │        │
+    │          │         │            │         │        │─score(5)───────────►│        │        │
+    │          │         │            │         │        │            │─result──►│        │        │
+    │          │         │            │         │        │            │─save────────────────────►│
+    │   ...    │         │            │         │        │            │         │        │        │
+    │─GET─────►│─────────────────────────────────────────────────────────────────────────────────►│
+    │  /brief  │◄────────────────────────────────────────────────────────────────────────────────│
+    │◄cards────│         │────────────────────────────────────────────────────done──►│        │  │
+    │  (폴링)  │         │            │         │        │            │         │─save────────►│  │
+    │─GET─────►│         │            │         │        │            │         │        │     │  │
+    │◄header───│◄────────────────────────────────────────────────────────────────────────────────│
 ```
 
 ---
@@ -698,9 +722,7 @@ GOOGLE_CALENDAR_CLIENT_ID=
 JIRA_API_TOKEN=
 JIRA_BASE_URL=
 
-# 인프라
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
+# 앱 설정
 SECRET_KEY=
 
 # 설정값
