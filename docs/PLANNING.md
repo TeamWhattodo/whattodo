@@ -360,7 +360,7 @@ GUARDRAILS = [
         │              │
 ┌───────▼──────┐ ┌─────▼──────────────────────────────────┐
 │ Connector    │ │           Orchestrator Agent             │
-│ Workers      │ │         (Claude claude-sonnet-4-6)       │
+│ Workers      │ │         (Python, LLM 미사용)             │
 │ (병렬 실행)  │ │                                          │
 │              │ │  ┌──────────────────────────────────┐   │
 │ - Gmail ─────┼─┼─►│  Priority Queue (heapq)          │   │
@@ -395,13 +395,13 @@ GUARDRAILS = [
 
 | 컴포넌트 | 역할 | 구현 |
 |---|---|---|
-| Orchestrator | 전체 흐름 제어, 스트리밍 조율 | Claude claude-sonnet-4-6 |
+| Orchestrator | 전체 흐름 제어 | Python (LLM 미사용) |
 | Connector Workers | 각 소스 병렬 수집 → Priority Queue 투입 | OAuth API 커넥터 |
 | Urgency Engine | 정량 5-신호 계산 (T·A·F·K·S) | 순수 Python (LLM 미사용) |
-| Classifier | 액션 타입 분류 + 1~2줄 요약 | Claude claude-haiku-4-5 (비용 최적화) |
-| ReAct Agent | 긴급도 5 항목 교차 참조 추가 수집 | Claude claude-sonnet-4-6 + Tool Registry |
-| Summarizer | 전체 브리핑 헤더·통계 생성 | Claude claude-sonnet-4-6 |
-| Action Agent | 답장 초안 생성, 외부 API 호출 | Claude claude-sonnet-4-6 + 도구 |
+| Classifier | 액션 타입 분류 + 1~2줄 요약 | LLM Fast 티어 (비용 최적화) |
+| ReAct Agent | 긴급도 5 항목 교차 참조 추가 수집 | LLM Smart 티어 + Tool Registry |
+| Summarizer | 전체 브리핑 헤더·통계 생성 | LLM Smart 티어 |
+| Action Agent | 답장 초안 생성, 외부 API 호출 | LLM Smart 티어 + 도구 |
 
 ---
 
@@ -466,7 +466,7 @@ class KPIReport:
     generated_at: datetime
     daily_summaries: list[DailySummary]
     aggregated: KPIAggregated
-    narrative: str              # Claude Sonnet이 생성한 자연어 요약
+    narrative: str              # LLM Smart 티어가 생성한 자연어 요약
 
 class KPIAggregated:
     avg_completion_rate: float
@@ -511,7 +511,7 @@ class KPIAggregated:
 |---|---|
 | Gmail + Slack + Google Calendar 커넥터 | Jira / Linear / Notion 커넥터 |
 | Urgency Engine (정량 5-신호) | ReAct Agent |
-| Classifier (Haiku: 액션 타입 + 요약) | 원클릭 답장 초안 |
+| Classifier (LLM Fast 티어: 액션 타입 + 요약) | 원클릭 답장 초안 |
 | Priority Queue (heapq) + REST API | 일간 결산 / KPI 리포트 |
 | Summarizer (브리핑 헤더) | Policy Engine |
 | Streamlit 체크리스트 UI | 슬랙 봇 인터페이스 |
@@ -532,8 +532,8 @@ Week 1 (Setup & Auth)       Week 2 (Core Pipeline)
 
 Week 3 (AI + UI)            Week 4 (통합 & 마무리)
 ─────────────────────       ──────────────────────
-□ Classifier (Haiku) 연동   □ End-to-end 통합 테스트
-□ Summarizer (Sonnet) 연동  □ 에러 처리 / 폴백
+□ Classifier (Fast) 연동    □ End-to-end 통합 테스트
+□ Summarizer (Smart) 연동   □ 에러 처리 / 폴백
 □ Streamlit UI 완성         □ 환경 변수 / 배포 설정
   체크리스트 인터랙션          □ 버그 수정
   섹션별 카드 표시             □ 데모 준비
@@ -548,7 +548,7 @@ Week 3 (AI + UI)            Week 4 (통합 & 마무리)
 | 2 | **Gmail Connector** | OAuth2 인증 플로우, Gmail API 수집·파싱·스레드 묶음 |
 | 3 | **Slack + Calendar Connector** | Slack OAuth·API (멘션/DM), Google Calendar OAuth·API |
 | 4 | **Urgency Engine** | 5-신호 가중합 공식, fast_urgency(큐용 초경량), 단위 테스트 |
-| 5 | **Classifier + Summarizer** | Anthropic SDK async, Haiku 프롬프트 설계·튜닝, 브리핑 헤더 생성 |
+| 5 | **Classifier + Summarizer** | LLM Client 래퍼 사용, Fast/Smart 프롬프트 설계·튜닝, 브리핑 헤더 생성 |
 | 6 | **Streamlit UI** | app.py, 카드 목록·체크리스트 위젯, FastAPI 연동 |
 
 ```
@@ -576,8 +576,8 @@ Week 1                  Week 2                  Week 3                  Week 4
 #4 T·A·F 신호 구현      #4 K·S 신호 구현         #4 fast_urgency 완료
    단위 테스트 작성         전체 공식 검증             단위 테스트 완료
 
-#5 Anthropic SDK 설정   #5 Classifier 프롬프트   #5 Summarizer 연동
-   Haiku 연결 확인          액션 타입 분류           브리핑 헤더 생성
+#5 LLMClient 래퍼 설정  #5 Classifier 프롬프트   #5 Summarizer 연동
+   Fast 티어 연결 확인       액션 타입 분류           브리핑 헤더 생성
 
 #6 Streamlit 앱 세팅    #6 mock 데이터로         #6 REST API 연결
    페이지 구조              카드 UI 구현             실시간 카드 렌더링
@@ -628,6 +628,14 @@ main          ← 배포 가능 상태만 병합
 - [ ] 팀 관리자용 KPI 리포트 (팀원별 완료율·응답 속도)
 - [ ] 월간 리포트 PDF 내보내기
 - [ ] 온프레미스 배포
+
+### 확장 아이디어 (시간 여유 시 검토)
+
+> 로드맵에 포함되지 않은 선택적 기능. 우선순위 없음.
+
+- [ ] **사내 문서 RAG** — 온보딩 시 사용자가 사내 문서(조직도, 규정집, 프로젝트 개요 등) 업로드 → 개인 벡터 스토어 구축 → Authority 신호 자동 산출 + Policy Engine L2 자동화 + ReAct `search_company_docs()` 도구 추가. 사용자별 격리 컬렉션(ChromaDB).
+- [ ] **브라우저 확장 위젯** — Streamlit 전체 페이지 대신 브라우저 툴바 팝업 형태. FastAPI REST 엔드포인트 추가만으로 전환 가능, 백엔드 재사용.
+- [ ] **발신자 히스토리 RAG** — 과거 수신 항목 임베딩 → 동일 발신자 컨텍스트 자동 요약 + 초안 스타일 학습.
 
 ---
 

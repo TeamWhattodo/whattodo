@@ -10,7 +10,7 @@
 | 스케줄러 | **APScheduler** | 결산·KPI 크론 작업 |
 | Priority Queue | **heapq** (MVP) | Python 내장, 추후 Redis 교체 가능 |
 | 프론트엔드 | **Streamlit** | 에이전트 결과 표시 UI, Python으로만 구현 |
-| AI | **Anthropic SDK** (async) | Claude Haiku / Sonnet 혼용 |
+| AI | **Anthropic SDK / OpenAI SDK** | 공통 래퍼로 추상화, 환경 변수 1줄로 교체 |
 | HTTP 클라이언트 | **httpx** | async, OAuth API 호출용 |
 | OAuth | **authlib** | Gmail, Slack, Jira 연동 |
 
@@ -18,56 +18,71 @@
 
 ## 2. 백엔드
 
-### 2-1. FastAPI를 선택한 이유
+### 2-1. FastAPI 역할 (MVP 기준)
 
-Django는 기본이 동기(sync) 프레임워크다. Connector Workers를 병렬로 실행하려면 async가 필요하고, 이 서비스에서 Django의 장점(ORM, Admin 등)은 쓰지 않는다.
+**MVP에서 FastAPI의 역할은 OAuth 콜백 수신 전용이다.**
 
-FastAPI는 네이티브 async로 커넥터 병렬 처리를 간결하게 구현할 수 있다. Streamlit 프론트엔드는 httpx를 통해 FastAPI REST 엔드포인트를 호출하거나, MVP에서는 백엔드 모듈을 직접 import해 사용할 수 있다.
+Gmail·Slack OAuth는 리디렉션 콜백 URL이 HTTP 엔드포인트여야 하므로 FastAPI가 필요하다. 그 외 브리핑 파이프라인은 Streamlit이 백엔드 Python 모듈을 직접 import해 호출한다. HTTP 직렬화 없이 함수 호출로 처리되므로 REST 엔드포인트가 필요 없다.
 
 ```python
-@app.post("/briefing/start")
-async def start_briefing(request: BriefingRequest):
-    session_id = await orchestrator.run(request.user_id)
-    return {"session_id": session_id}
+# app.py (Streamlit) — REST 호출 없이 직접 import
+from backend.agents.orchestrator import run_briefing
+from backend.db.store import update_item_status
 
-@app.get("/briefing/{session_id}")
-async def get_briefing(session_id: str):
-    return db.get_briefing(session_id)
+if st.button("브리핑 시작"):
+    result = asyncio.run(run_briefing(user_id="demo"))
+```
+
+브라우저 확장(Widget Phase)으로 전환 시 REST 엔드포인트를 추가한다. 백엔드 로직은 변경 없이 라우터만 추가하면 된다.
+
+```python
+# OAuth 콜백 — MVP에서 유일하게 필요한 FastAPI 엔드포인트
+@app.get("/auth/gmail/callback")
+async def gmail_callback(code: str): ...
+
+@app.get("/auth/slack/callback")
+async def slack_callback(code: str): ...
 ```
 
 ### 2-2. API 엔드포인트
 
+**MVP — OAuth 콜백만 노출**
+
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/briefing/start` | 복귀 브리핑 세션 시작 (비동기 처리 시작) |
-| GET | `/briefing/{session_id}` | 브리핑 결과 조회 (Streamlit이 폴링) |
+| GET | `/auth/gmail/callback` | Gmail OAuth 리디렉션 수신 |
+| GET | `/auth/slack/callback` | Slack OAuth 리디렉션 수신 |
+| GET | `/health` | 서버 상태 확인 |
+
+**Widget Phase (브라우저 확장 전환 시 추가)**
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| POST | `/briefing/start` | 브리핑 세션 시작 |
+| GET | `/briefing/{session_id}` | 브리핑 결과 조회 |
 | PATCH | `/items/{item_id}` | 항목 상태 변경 (완료/스누즈) |
 | POST | `/items/{item_id}/draft` | 답장 초안 생성 |
 | GET | `/summary/daily` | 일간 결산 조회 |
 | GET | `/summary/weekly` | 주간 KPI 리포트 조회 |
 | GET | `/policy` | 사내 규정 조회 |
 | PUT | `/policy` | 사내 규정 수정 |
-| POST | `/auth/{provider}` | OAuth 인증 시작 (gmail, slack, jira …) |
 
 ### 2-3. 디렉토리 구조
 
 ```
 whattodo/
 ├── backend/
-│   ├── main.py                  # FastAPI 앱, 라우터 등록, 스케줄러 시작
+│   ├── main.py                  # FastAPI 앱 (OAuth 콜백 + health)
 │   ├── routers/
-│   │   ├── briefing.py          # 브리핑 REST API
-│   │   ├── items.py             # 항목 상태 변경, 초안 생성
-│   │   ├── summary.py           # 일간 결산 API
-│   │   ├── kpi.py               # 주간/월간 KPI 리포트 API
-│   │   ├── policy.py            # 사내 규정 CRUD
-│   │   └── auth.py              # OAuth 인증 흐름
+│   │   └── auth.py              # OAuth 콜백 수신 (MVP 유일한 라우터)
+│   │   # briefing.py 등 Widget Phase에서 추가
 │   ├── agents/
 │   │   ├── orchestrator.py      # 전체 파이프라인 제어
+│   │   ├── llm_client.py        # LLM Provider 추상화 (Fast/Smart 티어)
 │   │   ├── urgency_engine.py    # 정량 5-신호 계산 (LLM 없음)
-│   │   ├── classifier.py        # Haiku: 액션 타입 + 요약
-│   │   ├── react_agent.py       # 긴급도 5 전용 ReAct 루프
-│   │   └── summarizer.py        # Sonnet: 브리핑 헤더 생성
+│   │   ├── classifier.py        # Fast 티어: 액션 타입 + 요약
+│   │   ├── react_agent.py       # Smart 티어: 긴급도 5 전용 ReAct 루프
+│   │   └── summarizer.py        # Smart 티어: 브리핑 헤더 생성
 │   ├── connectors/
 │   │   ├── base.py              # 커넥터 추상 클래스
 │   │   ├── gmail.py
@@ -85,6 +100,7 @@ whattodo/
 │   │       ├── briefings.json
 │   │       ├── daily_summaries.json
 │   │       └── kpi_reports.json
+│   ├── models.py                # 공유 Pydantic 모델 (WorkCard, BriefingHeader 등)
 │   ├── scheduler.py             # APScheduler 크론 등록
 │   └── config.py                # pydantic-settings 환경 변수
 ├── app.py                       # Streamlit 앱 (UI 진입점)
@@ -136,15 +152,17 @@ done_today = items.search(
 
 ### 4-1. 역할 분리
 
-| 컴포넌트 | 모델 | 역할 | LLM 사용 여부 |
+| 컴포넌트 | 모델 티어 | 역할 | LLM 사용 여부 |
 |---|---|---|---|
 | Urgency Engine | — | 정량 5-신호 긴급도 계산 | ❌ 순수 Python |
-| Classifier | claude-haiku-4-5-20251001 | 액션 타입 분류 + 1~2줄 요약 | ✅ (~200 토큰/항목) |
-| ReAct Agent | claude-sonnet-4-6 | 긴급도 5 항목 교차 참조 수집 | ✅ (최대 5회 반복) |
-| Summarizer | claude-sonnet-4-6 | 브리핑 헤더·통계 문구 생성 | ✅ (전체 완료 후 1회) |
-| Action Agent | claude-sonnet-4-6 | 답장 초안 생성 | ✅ (on-demand) |
-| Daily Narrative | claude-haiku-4-5-20251001 | 일간 결산 코멘트 (~300 토큰) | ✅ |
-| KPI Narrative | claude-sonnet-4-6 | 주간 KPI 분석 코멘트 (~500 토큰) | ✅ |
+| Classifier | **Fast** (저비용·고속) | 액션 타입 분류 + 1~2줄 요약 | ✅ (~200 토큰/항목) |
+| ReAct Agent | **Smart** (고성능) | 긴급도 5 항목 교차 참조 수집 | ✅ (최대 5회 반복) |
+| Summarizer | **Smart** (고성능) | 브리핑 헤더·통계 문구 생성 | ✅ (전체 완료 후 1회) |
+| Action Agent | **Smart** (고성능) | 답장 초안 생성 | ✅ (on-demand) |
+| Daily Narrative | **Fast** (저비용·고속) | 일간 결산 코멘트 (~300 토큰) | ✅ |
+| KPI Narrative | **Smart** (고성능) | 주간 KPI 분석 코멘트 (~500 토큰) | ✅ |
+
+> 모델 티어는 환경 변수로 실제 모델명에 매핑됩니다. 코드는 티어 이름만 참조합니다. (→ 4-4 참고)
 
 ### 4-2. Urgency Engine 공식
 
@@ -198,6 +216,34 @@ tools = [
 ]
 # 종료 조건: max 5회 / 추가 참조 없음 / 에이전트 "ENOUGH_CONTEXT" 판단
 ```
+
+### 4-4. LLM Provider 추상화
+
+에이전트 코드는 어떤 SDK를 쓰는지 몰라도 됩니다. `LLMClient`만 호출하면 환경 변수에 따라 Anthropic 또는 OpenAI로 라우팅됩니다.
+
+```
+LLM_PROVIDER=anthropic  →  Anthropic SDK 호출
+LLM_PROVIDER=openai     →  OpenAI SDK 호출
+```
+
+**티어 → 실제 모델 매핑**
+
+| 티어 | Anthropic | OpenAI |
+|---|---|---|
+| Fast | claude-haiku-4-5-20251001 | gpt-4o-mini |
+| Smart | claude-sonnet-4-6 | gpt-4o |
+
+**추상화 계층 위치**
+
+```
+agents/classifier.py
+agents/summarizer.py      →  agents/llm_client.py  →  anthropic SDK
+agents/react_agent.py                               →  openai SDK
+agents/action_agent.py
+```
+
+`llm_client.py`는 `complete(prompt, tier)` 인터페이스 하나만 외부에 노출합니다.  
+SDK 교체 시 이 파일만 수정하면 됩니다.
 
 ---
 
@@ -286,8 +332,9 @@ dependencies = [
     "tinydb",
     # 스케줄러
     "apscheduler",
-    # AI
-    "anthropic",              # async 클라이언트 포함
+    # AI — 둘 다 설치, LLM_PROVIDER 환경 변수로 선택
+    "anthropic",
+    "openai",
     # HTTP / OAuth
     "httpx",
     "authlib",
@@ -318,14 +365,18 @@ uv run streamlit run app.py
 ```bash
 # .env
 
-# AI
+# LLM Provider 선택 (anthropic | openai)
+LLM_PROVIDER=anthropic
+
+# Anthropic
 ANTHROPIC_API_KEY=
 
-# 모델 설정
-CLASSIFIER_MODEL=claude-haiku-4-5-20251001
-SUMMARIZER_MODEL=claude-sonnet-4-6
-ACTION_MODEL=claude-sonnet-4-6
-REACT_MODEL=claude-sonnet-4-6
+# OpenAI (LLM_PROVIDER=openai 시 사용)
+OPENAI_API_KEY=
+
+# 모델 티어 매핑 — Provider 교체 시 이 두 줄만 변경
+FAST_MODEL=claude-haiku-4-5-20251001   # openai: gpt-4o-mini
+SMART_MODEL=claude-sonnet-4-6          # openai: gpt-4o
 
 # OAuth — Gmail
 GMAIL_CLIENT_ID=
@@ -373,7 +424,7 @@ REACT_URGENCY_THRESHOLD=5
 
 | # | 담당 에이전트 | 브랜치 | 핵심 파일 |
 |---|---|---|---|
-| 1 | Orchestrator | `feat/orchestrator` | `main.py`, `routers/`, `db/store.py`, `scheduler.py` |
+| 1 | Orchestrator | `feat/orchestrator` | `main.py`, `routers/auth.py`, `models.py`, `db/store.py`, `scheduler.py` |
 | 2 | Gmail Connector | `feat/gmail-connector` | `connectors/gmail.py`, `routers/auth.py` |
 | 3 | Slack + Calendar Connector | `feat/slack-calendar-connector` | `connectors/slack.py`, `connectors/calendar.py` |
 | 4 | Urgency Engine | `feat/urgency-engine` | `agents/urgency_engine.py` |
@@ -452,8 +503,10 @@ class BriefingHeader(BaseModel):
 
 | 결정 | 선택 | 대안 | 이유 |
 |---|---|---|---|
-| UI 방식 | Streamlit REST 폴링 | WebSocket 스트리밍 | 구현 복잡도 최소화, Python 단일 스택 유지 |
+| MVP UI 방식 | Streamlit → Python 함수 직접 호출 | REST 폴링 | HTTP 레이어 제거, 서버 1개, 디버깅 단순 |
+| Widget Phase | 브라우저 확장 → FastAPI REST | Streamlit 유지 | 실제 위젯 UX, 백엔드 재사용, FastAPI 라우터만 추가 |
 | 긴급도 계산 | 정량 5-신호 엔진 | LLM 판단 | 동일 항목 = 동일 점수 보장, 근거 설명 가능 |
 | ReAct 범위 | 긴급도 5 항목만 | 전체 항목 | 비용·시간 최적화, 나머지는 DAG로 충분 |
 | DB | TinyDB (JSON) | PostgreSQL | 서버 불필요, MVP 충분. 스키마 동일하게 유지해 추후 마이그레이션 용이 |
 | 사내 규정 | 3-레이어 Policy Engine | 프롬프트만 사용 | 규정 위반 보장 (가드레일), 감사 로그, 회사별 설정 파일 분리 |
+| LLM Provider | 추상화 래퍼 (Fast/Smart 티어) | SDK 직접 호출 | Anthropic ↔ OpenAI 교체 시 llm_client.py 1개 파일만 수정 |

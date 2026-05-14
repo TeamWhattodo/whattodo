@@ -20,7 +20,7 @@
     병렬 수집            (순수 연산)            (순수 연산 + 전주 비교)
               │                    │                    │
 [3] Priority Queue      [3] Narrative 생성     [3] Narrative 생성
-              │             (Haiku)                (Sonnet)
+              │             (Fast)                 (Smart)
               │                    │                    │
 [4-a] Policy L1         [4] DailySummary 저장  [4] KPIReport 저장
     하드 오버라이드                  │                    │
@@ -241,7 +241,7 @@ SOURCE = { ("slack","dm"): 0.85, ("jira","blocker"): 0.90,
 
 ### Step 3-a. ReAct Loop — 긴급도 5 항목 전용
 
-> urgency_level=5 항목에만 실행. Claude Sonnet + Tool Registry.
+> urgency_level=5 항목에만 실행. LLM Smart 티어 (기본: Claude Sonnet) + Tool Registry.
 
 ```
 Reason: "이메일 본문에 Slack 스레드 링크가 있다. 해당 스레드를 봐야
@@ -280,7 +280,7 @@ STOP_CONDITIONS = [
 
 ### Step 3-b. Classifier — 액션 타입 + 요약 (레이어 2: 컨텍스트 주입)
 
-> Claude Haiku. 항목당 ~200 토큰. 긴급도는 이미 계산되었으므로 의미 이해만 담당.
+> LLM Fast 티어 (기본: Claude Haiku). 항목당 ~200 토큰. 긴급도는 이미 계산되었으므로 의미 이해만 담당.
 
 ```
 입력: raw_item + urgency_result (+ ReAct 추가 컨텍스트 if any) + policy_context
@@ -346,7 +346,7 @@ def apply_guardrails(item: ClassifiedItem, policy: PolicyConfig) -> ClassifiedIt
 
 ### Step 4. Summarizer Agent — 브리핑 생성
 
-> Claude Sonnet으로 품질 확보.
+> LLM Smart 티어 (기본: Claude Sonnet)으로 품질 확보.
 
 ```
 입력: classified_items[] (전체 분류 완료 항목)
@@ -459,7 +459,7 @@ UI 렌더링 순서:
 액션 A: "초안 작성" 클릭
   입력: work_item + user_context
   처리:
-    - Claude Sonnet이 답장/댓글 초안 생성
+    - LLM Smart 티어가 답장/댓글 초안 생성
     - 사용자 어조(formal/casual) 반영
     - 사용자 확인 → 수정 → 전송
   출력: draft_text → 사용자 편집 인터페이스
@@ -514,7 +514,7 @@ C) 주간   — 금요일 오후 5시 (주간 KPI 리포트 포함)
     - by_source, by_action_type 카운트
     │
     ▼
-[3] Narrative 생성 (Claude Haiku, ~300 토큰)
+[3] Narrative 생성 (LLM Fast 티어, ~300 토큰)
     - "오늘 7건을 처리했습니다. 평균 응답 시간이 어제보다 32분 단축됐습니다."
     - 이월 항목 중 내일 마감인 것 강조
     │
@@ -568,7 +568,7 @@ C) 주간   — 금요일 오후 5시 (주간 KPI 리포트 포함)
 [3] 지난 주 KPIAggregated와 비교 → 증감 계산
     │
     ▼
-[4] Narrative 생성 (Claude Sonnet, ~500 토큰)
+[4] Narrative 생성 (LLM Smart 티어, ~500 토큰)
     입력: aggregated + prev_week_aggregated
     출력:
       "이번 주 완료율이 82%로 지난주(74%)보다 8%p 향상됐습니다.
@@ -652,19 +652,19 @@ Cal   ──item─────►│  (인메모리)   ├──► Urgency Eng
 Jira  ──item─────►│  (score=      │    (Python, ~1ms)    │
                   │   fast_est)   │         │            │
                   │               │    urgency 1~4       │
-                  │               │         ├──► Classifier (Haiku)
+                  │               │         ├──► Classifier (Fast)
                   │               │         │         │   ──저장──► TinyDB
                   │               │    urgency 5       │
                   │               │         └──► ReAct Loop
-                  │               │               (Sonnet)
+                  │               │               (Smart)
                   │               │                  │
-                  │               │             Classifier (Haiku)
+                  │               │             Classifier (Fast)
                   │               │                  │   ──저장──► TinyDB
                   │               │                  │
                   │          (전체 완료)              │
                   │               │                  │
                   │               └──► Summarizer ───────저장──► TinyDB
-                  │                    (Sonnet)       │
+                  │                    (Smart)        │
                   │                                   │
               [TinyDB]                         Streamlit App
               classified_items                 (REST 폴링)
@@ -707,11 +707,18 @@ Streamlit  FastAPI  Orchestrator  Connectors  PQueue  UrgencyEng  Classifier  Re
 ## 환경 변수 및 설정
 
 ```bash
-# AI
+# LLM Provider 선택 (anthropic | openai)
+LLM_PROVIDER=anthropic
+
+# Anthropic
 ANTHROPIC_API_KEY=
-CLASSIFIER_MODEL=claude-haiku-4-5-20251001
-SUMMARIZER_MODEL=claude-sonnet-4-6
-ACTION_MODEL=claude-sonnet-4-6
+
+# OpenAI (LLM_PROVIDER=openai 시 사용)
+OPENAI_API_KEY=
+
+# 모델 티어 매핑 — Provider 교체 시 이 두 줄만 변경
+FAST_MODEL=claude-haiku-4-5-20251001   # openai: gpt-4o-mini
+SMART_MODEL=claude-sonnet-4-6          # openai: gpt-4o
 
 # 소스 연동
 GMAIL_CLIENT_ID=
@@ -740,6 +747,5 @@ URGENCY_WEIGHT_SOURCE=0.10
 
 # ReAct 설정
 REACT_MAX_ITERATIONS=5
-REACT_URGENCY_THRESHOLD=5       # 이 레벨 이상만 ReAct 실행
-REACT_MODEL=claude-sonnet-4-6
+REACT_URGENCY_THRESHOLD=5
 ```
