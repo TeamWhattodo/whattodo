@@ -2,14 +2,26 @@
 
 ## 1. 서비스 개요
 
-**WhatToDo**는 출근 직후 또는 휴가·병가·출장 복귀 직후, 쌓인 업무와 알림을 AI 에이전트가 자동으로 수집·분류·요약해 "오늘 무엇부터 해야 하는가"를 한눈에 제시하는 서비스다.
+**WhatToDo**는 여러 업무 채널(이메일·슬랙·캘린더·Jira 등)에 흩어진 알림과 태스크를 AI 에이전트가 자동으로 수집·분류·우선순위화해, **"지금 무엇을 해야 하는가"를 매일 제시**하고 **"오늘 무엇을 했는가"를 결산**해주는 AI 업무 인텔리전스 서비스다.
+
+출근·복귀 시 쌓인 항목을 브리핑하는 것을 출발점으로, 체크리스트 위젯을 통한 일상적 업무 관리, 일간 결산, 주간 KPI 리포트, 사내 규정 반영까지 확장된다.
 
 | 항목 | 내용 |
 |---|---|
 | 서비스명 | WhatToDo |
-| 타깃 사용자 | 이메일·슬랙·지라 등 여러 도구를 사용하는 직장인 |
-| 핵심 가치 | 복귀 후 첫 30분을 허비하지 않는다 |
-| 서비스 형태 | 웹 앱 + 슬랙 봇 (MVP), 모바일 앱 (v2) |
+| 타깃 사용자 | 이메일·슬랙·Jira 등 여러 도구를 동시에 사용하는 직장인 |
+| 핵심 가치 | 업무가 쌓이기 전에 파악하고, 하루가 끝나면 무엇을 했는지 안다 |
+| 서비스 형태 | 체크리스트 위젯 웹 앱 (MVP) → 슬랙 봇 (Phase 2) → 모바일 PWA (Phase 3) |
+
+### 핵심 기능 한눈에 보기
+
+| 기능 | 설명 | 제공 시점 |
+|---|---|---|
+| 복귀 브리핑 | 부재 기간 쌓인 항목을 수집·분류해 우선순위 카드로 제시 | MVP |
+| 체크리스트 위젯 | 긴급도 순 카드 목록, 완료 체크, 섹션별 정리 | MVP |
+| 일간 작업 결산 | 완료 항목·이월 항목·처리 통계 자동 집계 | Phase 2 |
+| 주간 KPI 리포트 | 완료율·응답 시간·채널별 부하 등 개인 생산성 지표 | Phase 3 |
+| 사내 규정 엔진 | 회사별 보고 체계·승인 규정을 에이전트 동작에 반영 | Phase 3 |
 
 ---
 
@@ -150,6 +162,131 @@ urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S  →  레벨 1~5
 월간 리포트: 매월 마지막 영업일 → 팀 채널 공유 (Team 플랜)
 ```
 
+### 3-8. 사내 규정 엔진 (Policy Engine)
+
+회사마다 다른 업무 규정(보고 체계, 계약 한도, 대응 프로토콜 등)을 에이전트 동작에 반영한다.  
+규정은 **3개 레이어**로 분리 적용된다.
+
+#### 레이어 1 — 하드 오버라이드 (AI 판단 전, 데이터로 덮어씀)
+
+AI가 판단하기 전에 정량 엔진의 점수를 강제로 변경하거나 액션을 고정한다.
+
+```json
+// policy.json 예시
+{
+  "hard_overrides": [
+    {
+      "name": "계약서_CEO_승인",
+      "condition": { "keywords": ["계약서", "서명", "날인"], "sender_role": "external" },
+      "action": { "urgency_level": 5, "action_type": "approve", "require_persons": ["CEO"] }
+    },
+    {
+      "name": "VIP_고객_즉시처리",
+      "condition": { "senders": ["cto@bigclient.com", "ceo@partner.com"] },
+      "action": { "urgency_level": 5 }
+    },
+    {
+      "name": "보안_이슈_강제리뷰",
+      "condition": { "jira_labels": ["security", "compliance"] },
+      "action": { "urgency_level": 5, "action_type": "review", "notify": ["security-team"] }
+    }
+  ]
+}
+```
+
+#### 레이어 2 — 컨텍스트 주입 (AI 판단 시 시스템 프롬프트에 삽입)
+
+AI가 **요약이나 초안**을 생성할 때 회사 맥락을 알아야 하는 경우.
+
+```python
+def build_system_prompt(user_policy: PolicyConfig) -> str:
+    return f"""
+당신은 {user_policy.company_name} 소속 {user_policy.user_role}의 업무 어시스턴트입니다.
+
+[사내 커뮤니케이션 규정]
+{user_policy.communication_rules}  
+# 예: "외부 파트너에게는 반드시 경어체 사용"
+# 예: "법무팀 관련 사안은 요약 없이 원문 그대로 전달"
+
+[보고 체계]
+{user_policy.reporting_structure}
+# 예: "계약 관련 사안은 항상 법무팀장(kim@company.com)을 참조"
+
+[프로젝트 우선순위]
+{user_policy.project_priorities}
+# 예: "Project-Alpha는 이번 분기 최우선 프로젝트"
+"""
+```
+
+#### 레이어 3 — 가드레일 (AI 판단 후, 특정 액션 무조건 차단)
+
+어떤 AI 판단이 나오더라도 허용하지 않는 액션.
+
+```python
+GUARDRAILS = [
+    {
+        "name": "자동_발송_금지",
+        "rule": "action_type in ['reply', 'approve'] AND auto_send == True",
+        "block": True,
+        "reason": "모든 발송은 사용자 확인 후 진행"
+    },
+    {
+        "name": "계약_자동승인_금지",
+        "rule": "action_type == 'approve' AND source == 'email' AND '계약' in summary",
+        "block": True,
+        "reason": "계약 관련 승인은 사람이 직접 처리"
+    },
+    {
+        "name": "외부공유_금지",
+        "rule": "recipient_domain != company_domain AND content_label == 'confidential'",
+        "block": True,
+        "reason": "사내 기밀 문서 외부 공유 차단"
+    }
+]
+```
+
+#### Policy Engine 처리 순서
+
+```
+[수집된 item]
+      │
+      ▼
+[레이어 1] Hard Override 검사
+  → 조건 매칭 시 urgency/action_type 강제 설정
+  → 매칭 없으면 패스
+      │
+      ▼
+[Urgency Engine + Classifier]  ← 레이어 2 컨텍스트 프롬프트 주입됨
+      │
+      ▼
+[레이어 3] Guardrail 검사
+  → 차단 조건 매칭 시 해당 액션 버튼 비활성화 + 사유 표시
+  → 감사 로그(audit log) 기록
+      │
+      ▼
+[UI 카드 스트리밍]
+```
+
+#### Policy 설정 UI (Team/Enterprise 플랜)
+
+```
+┌─────────────────────────────────────────┐
+│  사내 규정 설정                          │
+│                                         │
+│  ▶ 발신자 규정                          │
+│    + VIP 발신자 추가         [추가]      │
+│    + 도메인별 우선순위 설정  [추가]      │
+│                                         │
+│  ▶ 키워드 규정                          │
+│    + 특정 키워드 → 긴급도 설정 [추가]   │
+│                                         │
+│  ▶ 가드레일                             │
+│    ☑ 모든 발송 전 사용자 확인 (권장)    │
+│    ☑ 계약서 자동 승인 차단              │
+│    ☐ 야간 알림 차단 (오후 10시~오전 7시)│
+└─────────────────────────────────────────┘
+```
+
 ---
 
 ## 4. 사용자 시나리오
@@ -166,6 +303,44 @@ urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S  →  레벨 1~5
 2. 출근 전 모바일로 브리핑 미리 확인
 3. 사무실 도착 전 긴급 항목 2건 처리 완료
 4. 팀원에게 "오늘 오전은 따라잡기 중" 자동 슬랙 공지 (선택)
+
+### 시나리오 C — 미팅이 몰린 날 오후
+
+> 복귀 상황이 아니어도, 연속 회의로 알림이 쌓였을 때 위젯이 따라잡기를 도와주는 경우.
+
+1. 오후 2시, 오전 내내 미팅만 4개 연속으로 끝냄
+2. 슬랙·이메일 알림이 47건 쌓여 있음 — 어디서부터 봐야 할지 막막
+3. WhatToDo 위젯 열기 → 에이전트가 "미팅 중 수신 항목" 자동 집계
+4. **긴급도 순 카드 3장**이 상단에 표시됨
+   - 박팀장 DM: "오늘 오후 4시 전 승인 필요"
+   - 고객사 이메일: 내일 오전 제안서 마감
+   - Jira PR 리뷰 요청 (배포 블로킹 중)
+5. 나머지 44건은 "FYI" 섹션으로 접혀 있음 → 무시해도 됨을 즉시 인지
+6. 3건을 30분 안에 처리하고 체크 완료
+
+### 시나리오 D — 퇴근 전 하루 결산 (Phase 2)
+
+> 오늘 무엇을 했는지, 내일 무엇을 이어받는지 확인하는 루틴.
+
+1. 오후 5시 55분, 위젯에 "오늘 결산 준비됐습니다" 알림
+2. 결산 패널 열기
+   - 완료 8건 / 예상 70분 → 실제 55분 ✓
+   - 이월 2건 (내일 마감 1건, 이번 주 내 1건)
+   - "오늘 슬랙 응답이 평균보다 빠릅니다 👍"
+3. 이월 항목 2건을 내일 오전 캘린더 블록으로 자동 배치
+4. 퇴근
+
+### 시나리오 E — 주간 KPI로 업무 패턴 발견 (Phase 3)
+
+> 반복되는 병목을 데이터로 인지하고 행동을 바꾸는 경우.
+
+1. 금요일 오후 5시, 주간 KPI 리포트 슬랙 DM 수신
+2. 리포트 확인
+   - 완료율 68% — 지난 4주 평균(81%) 대비 낮음
+   - Jira 초과 마감 비율 24% — 이번 주만 유독 높음
+   - "월·화에 Jira 이슈가 집중 할당되는 패턴이 감지됩니다"
+3. AI 제안: "월요일 오전 30분을 Jira 전용 시간 블록으로 예약하시겠어요?"
+4. 수락 → 다음 주 월·화 오전 9시에 캘린더 블록 자동 생성
 
 ---
 
@@ -328,23 +503,118 @@ class KPIAggregated:
 
 ## 9. 개발 로드맵
 
-### Phase 1 — MVP (8주)
-- [ ] Gmail + Google Calendar 연동
-- [ ] Slack 연동
-- [ ] 기본 분류 및 브리핑 생성
-- [ ] 웹 앱 UI (브리핑 조회)
+### Phase 1 — MVP (4주, ~2026-06-13 목표)
+
+#### MVP 확정 범위
+
+| 포함 | 제외 (Phase 2+) |
+|---|---|
+| Gmail + Slack + Google Calendar 커넥터 | Jira / Linear / Notion 커넥터 |
+| Urgency Engine (정량 5-신호) | ReAct Agent |
+| Classifier (Haiku: 액션 타입 + 요약) | 원클릭 답장 초안 |
+| Priority Queue + WebSocket 스트리밍 | 일간 결산 / KPI 리포트 |
+| Summarizer (브리핑 헤더) | Policy Engine |
+| 체크리스트 위젯 UI | 슬랙 봇 인터페이스 |
+| OAuth 인증 (Gmail, Slack) | 스누즈 기능 |
+
+#### 주차별 일정
+
+```
+Week 1 (Setup & Auth)       Week 2 (Core Pipeline)
+─────────────────────       ──────────────────────
+□ 프로젝트 초기 세팅         □ Slack 커넥터
+  FastAPI + TinyDB            □ Google Calendar 커넥터
+  React + Vite 뼈대           □ Urgency Engine 구현
+□ Gmail OAuth 연동            □ Priority Queue (heapq)
+  (가장 복잡 → 먼저 해결)     □ WebSocket 스트리밍 기초
+□ 데이터 모델 확정
+□ API 인터페이스 정의
+
+Week 3 (AI + UI)            Week 4 (통합 & 마무리)
+─────────────────────       ──────────────────────
+□ Classifier (Haiku) 연동   □ End-to-end 통합 테스트
+□ Summarizer (Sonnet) 연동  □ 에러 처리 / 폴백
+□ 위젯 UI 완성              □ 환경 변수 / 배포 설정
+  체크리스트 인터랙션          □ 버그 수정
+  섹션별 카드 표시             □ 데모 준비
+□ WebSocket 클라이언트 연결
+```
+
+#### 팀 역할 분리 — 6인 1인 1에이전트
+
+| # | 담당 에이전트 | 핵심 구현 범위 |
+|---|---|---|
+| 1 | **Orchestrator** | FastAPI 앱 구조, WebSocket 서버, Priority Queue, TinyDB, 전체 파이프라인 연결 |
+| 2 | **Gmail Connector** | OAuth2 인증 플로우, Gmail API 수집·파싱·스레드 묶음 |
+| 3 | **Slack + Calendar Connector** | Slack OAuth·API (멘션/DM), Google Calendar OAuth·API |
+| 4 | **Urgency Engine** | 5-신호 가중합 공식, fast_urgency(큐용 초경량), 단위 테스트 |
+| 5 | **Classifier + Summarizer** | Anthropic SDK async, Haiku 프롬프트 설계·튜닝, 브리핑 헤더 생성 |
+| 6 | **Frontend (Widget)** | React + Vite, WebSocket 클라이언트, 체크리스트 위젯 전체 |
+
+```
+의존성 흐름 (→ 는 "출력 스키마를 받아야 작업 가능")
+
+Connector #2 ─┐
+Connector #3 ─┼─► Orchestrator #1 ─► Urgency Engine #4 ─► Classifier #5 ─► Frontend #6
+              │        │ (WebSocket)                                              ▲
+              └─────── └──────────────────────────────────────────────────────────┘
+                              (WorkCard 스키마 Week 1 확정 → #6 mock 개발 시작)
+```
+
+```
+Week 1                  Week 2                  Week 3                  Week 4
+────────────────────    ────────────────────    ────────────────────    ────────────────────
+#1 FastAPI 뼈대         #1 Priority Queue       #1 파이프라인 연결       전원 통합·버그수정
+   TinyDB 설계             WebSocket 서버           에러 폴백
+   스키마 확정 (전원)
+                        #2 Gmail API 수집        #2 스레드 묶음          데모 시나리오 검증
+#2 Gmail OAuth 완료        파싱 로직               중복 제거 마무리
+
+#3 Slack OAuth 완료     #3 Slack 메시지 수집     #3 Calendar 수집
+                           DM·멘션 파싱             미수락 초대 처리
+
+#4 T·A·F 신호 구현      #4 K·S 신호 구현         #4 fast_urgency 완료
+   단위 테스트 작성         전체 공식 검증             단위 테스트 완료
+
+#5 Anthropic SDK 설정   #5 Classifier 프롬프트   #5 Summarizer 연동
+   Haiku 연결 확인          액션 타입 분류           브리핑 헤더 생성
+
+#6 React + Vite 세팅    #6 mock 데이터로         #6 WebSocket 연결
+   컴포넌트 구조            카드 UI 구현             실시간 카드 렌더링
+                            섹션·체크리스트          체크 완료 인터랙션
+```
+
+> **Week 1 필수 합의 (담당 #1 주도, 전원 참여)**  
+> `WorkCard` · `BriefingHeader` 인터페이스 확정 → #6이 mock 데이터로 독립 개발 시작 가능
+
+#### 브랜치 전략
+
+```
+main          ← 배포 가능 상태만 병합
+  └ dev       ← 주간 통합 브랜치
+      ├ feat/gmail-connector
+      ├ feat/urgency-engine
+      ├ feat/websocket-streaming
+      └ feat/briefing-widget
+```
+
+- PR은 `dev`로만. `main` 병합은 주 1회 (금요일 데모 후).
+- 커밋 컨벤션: `feat:` / `fix:` / `chore:` / `docs:`
+
+---
 
 ### Phase 2 — 액션 + 결산 (5주)
-- [ ] 원클릭 답장 초안
+- [ ] 원클릭 답장 초안 (Action Agent)
 - [ ] 슬랙 봇 인터페이스
 - [ ] Jira / Linear 연동
-- [ ] 스누즈 & 할 일 목록 연동
+- [ ] 스누즈 기능
 - [ ] 일간 작업 결산 (완료 항목 집계 + 이월 목록)
 - [ ] 완료 시 실제 처리 시간 기록
 
 ### Phase 3 — 개인화 + KPI (5주)
 - [ ] 주간 KPI 리포트 자동 생성
 - [ ] 개인 KPI 대시보드 UI
+- [ ] Policy Engine (사내 규정)
 - [ ] 사용 패턴 학습 (중요도 재조정)
 - [ ] 복귀 전날 사전 알림
 - [ ] 모바일 앱 (PWA)

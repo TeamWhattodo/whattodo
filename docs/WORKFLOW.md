@@ -22,14 +22,20 @@
 [3] Priority Queue      [3] Narrative 생성     [3] Narrative 생성
               │             (Haiku)                (Sonnet)
               │                    │                    │
-[4] Urgency Engine      [4] DailySummary 저장  [4] KPIReport 저장
-    (정량 계산)                     │                    │
+[4-a] Policy L1         [4] DailySummary 저장  [4] KPIReport 저장
+    하드 오버라이드                  │                    │
               │          [5] 결산 위젯 업데이트 [5] 리포트 전송
-    ├─urgency 1~4                                  (이메일/슬랙/PDF)
-    │   └► Classifier ──► UI 스트리밍
-    └─urgency 5
-        └► ReAct Loop ──► Classifier ──► UI 스트리밍
+[4-b] Urgency Engine                           (이메일/슬랙/PDF)
+    (정량 계산, L1 스킵 시)
               │
+    ├─urgency 1~4──► Classifier (L2 컨텍스트 주입)
+    │                     │
+    └─urgency 5──► ReAct Loop ──► Classifier (L2 컨텍스트 주입)
+                              │
+[4-c] Policy L3 (가드레일) ◄──┘
+    액션 버튼 차단 + 감사 로그
+              │
+              ▼ UI 스트리밍
 [5] Summarizer — 브리핑 헤더 생성
               │
 [6] 브리핑 확정 제시
@@ -142,6 +148,33 @@
 
 ---
 
+### Step 2-a. Policy Engine — 레이어 1 (하드 오버라이드)
+
+> 큐에서 꺼낸 직후, Urgency Engine 이전에 실행. LLM 없음.
+
+```python
+def apply_hard_overrides(item: WorkItem, policy: PolicyConfig) -> WorkItem:
+    for rule in policy.hard_overrides:
+        if rule.matches(item):
+            # AI 판단 없이 강제 설정
+            item.urgency_level = rule.action.urgency_level
+            item.action_type   = rule.action.action_type
+            item.policy_applied = rule.name   # 감사 로그용
+            item.skip_urgency_engine = True   # 다음 단계 스킵 플래그
+            break
+    return item
+```
+
+```
+예시:
+  input:  Gmail, sender=cto@bigclient.com, subject="긴급 미팅 요청"
+  규정:   VIP_고객_즉시처리 → urgency_level=5
+  output: urgency_level=5 (Urgency Engine 계산 스킵)
+  로그:   "policy_applied: VIP_고객_즉시처리"
+```
+
+---
+
 ### Step 3. Urgency Engine — 정량 긴급도 계산
 
 > 순수 Python. LLM 호출 없음. 항목당 ~1ms.
@@ -239,17 +272,22 @@ STOP_CONDITIONS = [
 
 ---
 
-### Step 3-b. Classifier — 액션 타입 + 요약
+### Step 3-b. Classifier — 액션 타입 + 요약 (레이어 2: 컨텍스트 주입)
 
 > Claude Haiku. 항목당 ~200 토큰. 긴급도는 이미 계산되었으므로 의미 이해만 담당.
 
 ```
-입력: raw_item + urgency_result (+ ReAct 추가 컨텍스트 if any)
+입력: raw_item + urgency_result (+ ReAct 추가 컨텍스트 if any) + policy_context
 출력: action_type, summary
 
 프롬프트:
   System: "아래 업무 항목의 액션 타입과 1~2줄 요약을 JSON으로 반환하라.
-           긴급도는 이미 계산되었으니 판단하지 않는다."
+           긴급도는 이미 계산되었으니 판단하지 않는다.
+           
+           [사내 규정 컨텍스트]  ← 레이어 2 주입
+           {policy.communication_rules}
+           {policy.reporting_structure}
+           {policy.project_priorities}"
 
   User:   "[Gmail] 김대표 → 계약서 서명 요청\n내용: ..."
 
@@ -269,6 +307,33 @@ approve  — 내 승인·서명·수락이 필요한 경우
 review   — 내가 검토해야 하는 문서·코드·디자인
 fyi      — 읽기만 하면 되는 정보성 항목
 none     — 이미 처리됐거나 불필요한 항목
+```
+
+---
+
+### Step 3-c. Policy Engine — 레이어 3 (가드레일)
+
+> Classifier 이후, UI 스트리밍 직전에 실행.
+
+```python
+def apply_guardrails(item: ClassifiedItem, policy: PolicyConfig) -> ClassifiedItem:
+    for guardrail in policy.guardrails:
+        if guardrail.matches(item):
+            # 해당 액션 버튼 비활성화, 사유 표시
+            item.blocked_actions.append(guardrail.blocks)
+            item.block_reason = guardrail.reason
+            # 감사 로그 기록 (Enterprise 플랜)
+            audit_log.write(item, guardrail)
+    return item
+```
+
+```
+예시:
+  input:  action_type=approve, summary="계약서 서명 요청"
+  규정:   계약_자동승인_금지
+  output: approve 버튼 비활성화
+          UI에 표시: "⚠️ 계약 관련 승인은 직접 처리 필요"
+          감사 로그: { item_id, guardrail: "계약_자동승인_금지", ts }
 ```
 
 ---
