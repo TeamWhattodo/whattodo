@@ -2,7 +2,7 @@
 storage 툴 — 담당 #5.
 TinyDB CRUD. db/store.py의 공개 인터페이스.
 """
-from backend.models import WorkCard, BriefingResult, DailySummary, KPIReport
+from backend.models import BriefingResult, DailySummary, KPIReport, WorkCard
 
 
 def save_work_items(user_id: str, cards: list[WorkCard]) -> None:
@@ -41,6 +41,6 @@ def get_latest_kpi_report(user_id: str) -> KPIReport | None:
     ...
 
 
-async def finalize_briefing(absence_days: int) -> BriefingResult:
-    """Briefing Agent의 finalize_briefing 툴 호출 진입점."""
+def finalize_briefing(cards: list[WorkCard], absence_days: int, user_id: str) -> BriefingResult:
+    """브리핑 헤더 생성 + TinyDB 저장 후 BriefingResult 반환. 담당 #5."""
     ...

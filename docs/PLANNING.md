@@ -56,19 +56,34 @@
 
 **긴급도 — 정량 엔진 (LLM 미사용)**
 
-5개 신호를 각각 0~1로 정규화한 후 가중합으로 계산. 동일 항목은 항상 동일 점수가 나오고 근거를 사용자에게 설명할 수 있다.
+동일 항목은 항상 동일 점수가 나오고 근거를 사용자에게 설명할 수 있다.
 
-| 신호 | 가중치 | 측정 방법 |
-|---|---|---|
-| T (마감 잔여 시간) | 0.35 | 지수 감쇠 — 마감 초과=1.0, 24h 후=0.12 |
-| A (발신자 권한) | 0.25 | 조직 계층 거리 — CEO=1.0, 동료=0.5 |
-| F (반복 추적) | 0.20 | 미응답 상태의 동일 발신자 메시지 수 (로그 스케일) |
-| K (키워드 신호) | 0.10 | 정규식 매칭 — "urgent"=+0.9, "FYI"=−0.4 |
-| S (소스·채널) | 0.10 | Slack DM=0.85, Jira blocker=0.90, 이메일 CC=0.35 |
+- **MVP**: 마감 잔여 시간(T 신호) 단독 사용. 구현 단순, 부재 항목에 즉각적.
+- **확장**: 온보딩 프로필·사용 이력이 쌓이면 5-신호 가중합으로 전환.
+
+**MVP 공식**
+
+```
+urgency_level = ceil(T × 5)   →  레벨 1~5
+```
+
+| 신호 | 측정 방법 |
+|---|---|
+| T (마감 잔여 시간) | 지수 감쇠 — 초과=1.0, 24h 후=0.12, 없음 최대 0.6 |
+
+**확장 공식**
 
 ```
 urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S  →  레벨 1~5
 ```
+
+| 신호 | 가중치 | 측정 방법 |
+|---|---|---|
+| T (마감 잔여 시간) | 0.35 | 지수 감쇠 — 마감 초과=1.0, 24h 후=0.12 |
+| A (발신자 권한) | 0.25 | 온보딩 태깅 — 임원=1.0, 팀장=0.8, 동료=0.5, 기본값 0.4 |
+| F (반복 추적) | 0.20 | 미응답 상태의 동일 발신자 메시지 수 (로그 스케일) |
+| K (키워드 신호) | 0.10 | 정규식 매칭 — "urgent"=+0.9, "FYI"=−0.4 |
+| S (소스·채널) | 0.10 | Slack DM=0.85, Jira blocker=0.90, 이메일 CC=0.35 |
 
 **LLM 담당 영역 (의미 이해가 필요한 것만)**
 - **액션 타입** — Reply / Approve / Review / FYI / No-action
@@ -511,34 +526,35 @@ class KPIAggregated:
 | 포함 | 제외 (Phase 2+) |
 |---|---|
 | Gmail + Slack + Google Calendar 커넥터 | Jira / Linear / Notion 커넥터 |
-| Urgency Engine (정량 5-신호) | ReAct Agent |
-| Classifier (LLM Fast 티어: 액션 타입 + 요약) | 원클릭 답장 초안 |
-| Priority Queue (heapq) + REST API | 일간 결산 / KPI 리포트 |
+| Urgency Engine (T 신호 단독) | Urgency 5-신호 가중합 / ReAct Agent |
+| Classifier (rule-based 선구현 → LLM Fast 전환) | 원클릭 답장 초안 |
+| Priority Queue (heapq) | REST API / 일간 결산 / KPI 리포트 |
 | Summarizer (브리핑 헤더) | Policy Engine |
 | Streamlit 체크리스트 UI | 슬랙 봇 인터페이스 |
 | OAuth 인증 (Gmail, Slack) | 스누즈 기능 |
 
-#### 주차별 일정
+#### 주차별 일정 — 3단계 구현 순서
+
+> **단계 원칙**: 함수 파이프라인 먼저 → LLM 직접 호출로 응답 형식 파악 → tool_use 에이전트 전환
 
 ```
-Week 1 (Setup & Auth)       Week 2 (Core Pipeline)
-─────────────────────       ──────────────────────
-□ 프로젝트 초기 세팅         □ Slack 커넥터
-  FastAPI + TinyDB            □ Google Calendar 커넥터
-  Streamlit 뼈대              □ Urgency Engine 구현
-□ Gmail OAuth 연동            □ Priority Queue (heapq)
-  (가장 복잡 → 먼저 해결)     □ REST API 기초
-□ 데이터 모델 확정
-□ API 인터페이스 정의
+Week 1 (파이프라인 스크립트)          Week 2 (실데이터 + LLM 직접 호출)
+──────────────────────────────────    ──────────────────────────────────
+□ 환경 세팅 (uv, Python 기초)          □ Gmail OAuth 연동
+□ mock_data로 파이프라인 스크립트      □ fetch → 실데이터 교체
+    fetch → score(T) → classify         □ classify에 LLM 직접 호출 추가
+    (rule-based) → WorkCard 출력          (tool_use 아님, messages.create)
+□ WorkCard 스키마 확정 (전원)           □ LLM 응답 형식 파악 + 파싱
+□ Streamlit 브리핑 1페이지             □ Slack 커넥터
+    (mock_data 표시, #6 독립 시작)
 
-Week 3 (AI + UI)            Week 4 (통합 & 마무리)
-─────────────────────       ──────────────────────
-□ Classifier (Fast) 연동    □ End-to-end 통합 테스트
-□ Summarizer (Smart) 연동   □ 에러 처리 / 폴백
-□ Streamlit UI 완성         □ 환경 변수 / 배포 설정
-  체크리스트 인터랙션          □ 버그 수정
-  섹션별 카드 표시             □ 데모 준비
-□ REST API 연결
+Week 3 (tool_use 에이전트 전환)       Week 4 (통합 & 마무리)
+──────────────────────────────────    ──────────────────────────────────
+□ TOOL_REGISTRY 구성                   □ E2E 통합 테스트
+□ briefing_agent tool_use 루프 구현    □ 에러 처리 / 폴백
+□ _dispatch → tools 함수 연결          □ 데모 시나리오 준비
+□ Streamlit → 실데이터 전환             □ 버그 수정
+□ Calendar 커넥터
 ```
 
 #### 팀 역할 분리 — 6인 1인 1에이전트
@@ -548,7 +564,7 @@ Week 3 (AI + UI)            Week 4 (통합 & 마무리)
 | 1 | **Briefing Agent** | `agents/briefing_agent.py` (TOOL_REGISTRY + tool_use 루프), `models.py`, `scheduler.py` |
 | 2 | **Gmail Fetch Tool** | `tools/fetch.py` (gmail 부분), `connectors/gmail.py`, `routers/auth.py` (OAuth) |
 | 3 | **Slack + Calendar Fetch Tool** | `tools/fetch.py` (slack/calendar), `connectors/slack.py`, `connectors/calendar.py` |
-| 4 | **Scoring Tool** | `tools/scoring.py` — 5-신호 가중합 공식, 단위 테스트 |
+| 4 | **Scoring Tool** | `tools/scoring.py` — T 신호 단독 (MVP), 5-신호 확장 인터페이스 유지, 단위 테스트 |
 | 5 | **Classify + Storage Tool** | `tools/classify.py` (LLM Fast 1-shot), `tools/storage.py` (TinyDB CRUD) |
 | 6 | **Streamlit UI** | `app.py`, `pages/` 전체, `mock_data.py` |
 
@@ -563,26 +579,26 @@ Fetch Tool #3 ─┼─► Briefing Agent #1 ─► Scoring Tool #4 ─► Class
 ```
 
 ```
-Week 1                  Week 2                  Week 3                  Week 4
-────────────────────    ────────────────────    ────────────────────    ────────────────────
-#1 FastAPI 뼈대         #1 Priority Queue       #1 파이프라인 연결       전원 통합·버그수정
-   TinyDB 설계             REST API 서버            에러 폴백
-   스키마 확정 (전원)
-                        #2 Gmail API 수집        #2 스레드 묶음          데모 시나리오 검증
-#2 Gmail OAuth 완료        파싱 로직               중복 제거 마무리
+Week 1                        Week 2                        Week 3                        Week 4
+──────────────────────────    ──────────────────────────    ──────────────────────────    ──────────────────
+#1 파이프라인 스크립트 연결     #1 LLM 직접 호출 패턴          #1 tool_use 루프 구현          전원 통합·버그수정
+   스키마 확정 주도                classify LLM 붙이기             TOOL_REGISTRY + _dispatch
+                                                                  브리핑 헤더 생성
 
-#3 Slack OAuth 완료     #3 Slack 메시지 수집     #3 Calendar 수집
-                           DM·멘션 파싱             미수락 초대 처리
+#2 mock fetch 구현             #2 Gmail OAuth 완료            #2 스레드 묶음                데모 시나리오 검증
+   (Gmail 커넥터 뼈대)             실데이터 수집 + 파싱            중복 제거
 
-#4 T·A·F 신호 구현      #4 K·S 신호 구현         #4 fast_urgency 완료
-   단위 테스트 작성         전체 공식 검증             단위 테스트 완료
+#3 mock fetch 구현             #3 Slack 메시지 수집            #3 Calendar 수집
+   (Slack 커넥터 뼈대)             DM·멘션 파싱                   미수락 초대 처리
 
-#5 LLMClient 래퍼 설정  #5 Classifier 프롬프트   #5 Summarizer 연동
-   Fast 티어 연결 확인       액션 타입 분류           브리핑 헤더 생성
+#4 T신호 공식 구현              #4 단위 테스트 완성              #4 (버퍼 / 5신호 확장 검토)
+   pytest 기초
 
-#6 Streamlit 앱 세팅    #6 mock 데이터로         #6 REST API 연결
-   페이지 구조              카드 UI 구현             실시간 카드 렌더링
-                            섹션·체크리스트          체크 완료 인터랙션
+#5 rule-based classify         #5 LLM classify 전환           #5 Storage CRUD 완성
+   Storage 기초                    액션 타입 분류                 브리핑 헤더 연결
+
+#6 Streamlit 앱 세팅           #6 카드 UI 완성                 #6 실데이터 렌더링
+   mock으로 카드 UI                섹션·체크리스트                체크 완료 인터랙션
 ```
 
 > **Week 1 필수 합의 (담당 #1 주도, 전원 참여)**  

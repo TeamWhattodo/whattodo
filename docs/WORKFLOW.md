@@ -1,5 +1,20 @@
 # WhatToDo — 에이전트 워크플로우
 
+## 구현 단계 전략
+
+이 문서는 최종 목표 워크플로우를 기술한다. 구현은 3단계로 진행한다.
+
+| 단계 | 기간 | 핵심 |
+|---|---|---|
+| **1단계** | Week 1 | mock_data로 파이프라인 스크립트 동작. 함수 직접 호출. LLM 없음. |
+| **2단계** | Week 2 | 실데이터 연결 + `messages.create` 직접 호출로 LLM 응답 형식 파악. tool_use 아님. |
+| **3단계** | Week 3 | tool_use 루프 전환. LLM이 도구 순서를 결정하도록 변경. |
+
+> 팀원이 함수 파이프라인을 먼저 이해한 뒤 에이전트로 전환하는 방식.  
+> 아래 워크플로우는 3단계 완료 후의 최종 상태다.
+
+---
+
 ## 전체 흐름 개요
 
 ```
@@ -177,17 +192,13 @@ def apply_hard_overrides(item: WorkItem, policy: PolicyConfig) -> WorkItem:
 
 > 순수 Python. LLM 호출 없음. 항목당 ~1ms.
 
-**5-신호 가중합 공식**
+**MVP — T 신호 단독**
+
+마감 잔여 시간만으로 긴급도를 계산한다.
 
 ```python
-urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S
-urgency_level = ceil(urgency_score * 5)   # → 1~5
-```
+urgency_level = ceil(time_score(item) * 5)   # → 1~5
 
-**신호별 계산 방법**
-
-```python
-# T — 시간 잔여율 (마감 기준 지수 감쇠)
 def time_score(due_at, received_at, now) -> float:
     if due_at:
         hours_left = (due_at - now).total_seconds() / 3600
@@ -196,15 +207,23 @@ def time_score(due_at, received_at, now) -> float:
     else:
         hours_elapsed = (now - received_at).total_seconds() / 3600
         return min(hours_elapsed / 72, 0.6)     # 마감 없음, 최대 0.6
+```
 
-# A — 발신자 중요도 (구현 방법 미확정 — SPEC.md A신호 섹션 참고)
-# 우선순위: 1) 온보딩 태깅 → 2) 서명 파싱 → 3) 행동 추정 → 4) 기본값 0.4
+**확장 — 5-신호 가중합**
+
+온보딩 프로필(A 신호)과 사용 이력(F 신호)이 쌓이면 전환한다.
+
+```python
+urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S
+urgency_level = ceil(urgency_score * 5)   # → 1~5
+
+# A — 발신자 중요도 (온보딩 user_profile 우선 → 서명 파싱 → 행동 추정 → 기본값 0.4)
 AUTHORITY_TIERS = {
-    "executive":  1.00,   # 온보딩 태깅: 임원·대표
-    "manager":    0.80,   # 온보딩 태깅: 팀장·주요 고객
-    "peer":       0.50,   # 온보딩 태깅: 동료
-    "other":      0.30,   # 온보딩 태깅: 기타
-    "unknown":    0.40,   # 태깅 없음 → 서명 파싱 or 행동 추정 or 기본값
+    "executive":  1.00,
+    "manager":    0.80,
+    "peer":       0.50,
+    "other":      0.30,
+    "unknown":    0.40,
 }
 
 # F — 반복 추적 (미응답 동일 발신자 메시지 수, 로그 스케일)

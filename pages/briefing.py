@@ -1,6 +1,4 @@
 """복귀 브리핑 페이지 — 담당 #6."""
-import asyncio
-
 import streamlit as st
 
 from backend.config import settings
@@ -17,7 +15,7 @@ if st.button("브리핑 시작", type="primary"):
             result = get_mock_briefing()
         else:
             from backend.agents.briefing_agent import run
-            result = asyncio.run(run(user_id="demo", absence_days=absence_days))
+            result = run(user_id="demo", absence_days=absence_days)
         st.session_state["briefing"] = result
 
 if "briefing" not in st.session_state:
