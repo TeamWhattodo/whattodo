@@ -102,21 +102,21 @@ SECRET_KEY=           # 임의 랜덤 문자열
 
 ## 팀 협업
 
-6명이 에이전트 1개씩 담당해 병렬로 개발합니다.
+6명이 1인 1담당으로 병렬 개발합니다.
 
 | # | 담당 | 브랜치 |
 |---|---|---|
-| 1 | Orchestrator (파이프라인 전체 연결) | `feat/orchestrator` |
-| 2 | Gmail Connector | `feat/gmail-connector` |
-| 3 | Slack + Calendar Connector | `feat/slack-calendar-connector` |
-| 4 | Urgency Engine (긴급도 계산) | `feat/urgency-engine` |
-| 5 | Classifier + Summarizer (AI 요약) | `feat/classifier-summarizer` |
+| 1 | Briefing Agent (tool_use 루프) | `feat/briefing-agent` |
+| 2 | Gmail Fetch Tool | `feat/gmail-tool` |
+| 3 | Slack + Calendar Fetch Tool | `feat/slack-calendar-tool` |
+| 4 | Scoring Tool (긴급도 계산) | `feat/scoring-tool` |
+| 5 | Classify + Storage Tool | `feat/classify-tool` |
 | 6 | Streamlit UI | `feat/streamlit-ui` |
 
 **PR은 `dev` 브랜치로만** 올립니다. `main` 병합은 금요일 주 1회.
 
-> **Week 1에 꼭 해야 할 것**: 담당 #1이 주도해 `WorkCard` · `BriefingHeader` Pydantic 모델을 전원 합의 후 확정합니다.  
-> 모델이 확정되어야 담당 #6이 mock 데이터로 Streamlit UI 개발을 독립적으로 시작할 수 있습니다.
+> **Week 1에 꼭 해야 할 것**: 담당 #1이 주도해 `WorkCard` · `BriefingResult` Pydantic 모델을 전원 합의 후 확정합니다.  
+> 모델이 확정되어야 담당 #6이 `mock_data.py`로 Streamlit UI 개발을 독립적으로 시작할 수 있습니다.
 
 ---
 

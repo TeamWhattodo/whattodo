@@ -24,23 +24,21 @@
               │                    │                    │
 [4-a] Policy L1         [4] DailySummary 저장  [4] KPIReport 저장
     하드 오버라이드                  │                    │
-              │          [5] 결산 위젯 업데이트 [5] 리포트 전송
-[4-b] Urgency Engine                           (이메일/슬랙/PDF)
-    (정량 계산, L1 스킵 시)
+    (Tool, LLM ❌)       [5] 결산 위젯 업데이트 [5] 리포트 전송
+              │                                 (이메일/슬랙/PDF)
+[4-b] Briefing Agent
+    tool_use 루프
+    ├─► fetch 툴  (LLM ❌)
+    ├─► scoring 툴 (LLM ❌)
+    ├─► classify 툴 (LLM Fast 1-shot)
+    └─► finalize   (LLM Smart)
               │
-    ├─urgency 1~4──► Classifier (L2 컨텍스트 주입)
-    │                     │
-    └─urgency 5──► ReAct Loop ──► Classifier (L2 컨텍스트 주입)
-                              │
 [4-c] Policy L3 (가드레일) ◄──┘
     액션 버튼 차단 + 감사 로그
               │
-              ▼ UI 스트리밍
-[5] Summarizer — 브리핑 헤더 생성
+[5] 브리핑 확정 제시 (Streamlit)
               │
-[6] 브리핑 확정 제시
-              │
-[7] Action Agent (on-demand)
+[6] Action Agent (on-demand)
 ```
 
 ---
@@ -175,7 +173,7 @@ def apply_hard_overrides(item: WorkItem, policy: PolicyConfig) -> WorkItem:
 
 ---
 
-### Step 3. Urgency Engine — 정량 긴급도 계산
+### Step 3. scoring 툴 — 정량 긴급도 계산
 
 > 순수 Python. LLM 호출 없음. 항목당 ~1ms.
 
@@ -239,9 +237,9 @@ SOURCE = { ("slack","dm"): 0.85, ("jira","blocker"): 0.90,
 
 ---
 
-### Step 3-a. ReAct Loop — 긴급도 5 항목 전용
+### Step 3-a. Briefing Agent — tool_use 루프 흐름
 
-> urgency_level=5 항목에만 실행. LLM Smart 티어 (기본: Claude Sonnet) + Tool Registry.
+> Briefing Agent가 tool_use로 아래 흐름을 자율 조합한다. 긴급도 5 항목은 교차 참조 추가 수집 후 classify 툴로 전달.
 
 ```
 Reason: "이메일 본문에 Slack 스레드 링크가 있다. 해당 스레드를 봐야
@@ -278,9 +276,9 @@ STOP_CONDITIONS = [
 
 ---
 
-### Step 3-b. Classifier — 액션 타입 + 요약 (레이어 2: 컨텍스트 주입)
+### Step 3-b. classify 툴 — 액션 타입 + 요약
 
-> LLM Fast 티어 (기본: Claude Haiku). 항목당 ~200 토큰. 긴급도는 이미 계산되었으므로 의미 이해만 담당.
+> LLM Fast 티어 1-shot. 항목당 ~200 토큰. 긴급도는 scoring 툴에서 이미 계산됐으므로 의미 이해만 담당. Briefing Agent가 호출.
 
 ```
 입력: raw_item + urgency_result (+ ReAct 추가 컨텍스트 if any) + policy_context
@@ -344,9 +342,9 @@ def apply_guardrails(item: ClassifiedItem, policy: PolicyConfig) -> ClassifiedIt
 
 ---
 
-### Step 4. Summarizer Agent — 브리핑 생성
+### Step 4. Briefing Agent — finalize (브리핑 헤더 생성)
 
-> LLM Smart 티어 (기본: Claude Sonnet)으로 품질 확보.
+> Briefing Agent의 `finalize_briefing` 도구 호출. LLM Smart 티어로 품질 확보.
 
 ```
 입력: classified_items[] (전체 분류 완료 항목)

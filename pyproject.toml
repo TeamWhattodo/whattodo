@@ -1,7 +1,32 @@
 [project]
-name = "01-whattodo"
+name = "whattodo"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI 에이전트가 업무 채널을 대신 정리해 주는 복귀 브리핑 서비스"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "streamlit",
+    "tinydb",
+    "apscheduler",
+    "anthropic",
+    "openai",
+    "httpx",
+    "authlib",
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]

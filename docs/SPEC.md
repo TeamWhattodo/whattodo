@@ -72,46 +72,50 @@ async def slack_callback(code: str): ...
 ```
 whattodo/
 ├── backend/
-│   ├── main.py                  # FastAPI 앱 (OAuth 콜백 + health)
+│   ├── main.py                  # FastAPI (OAuth 콜백 + health)
+│   ├── config.py                # pydantic-settings 환경 변수
+│   ├── models.py                # 공유 Pydantic 모델 (WorkItem, WorkCard, BriefingResult …)
+│   ├── scheduler.py             # APScheduler 크론 등록
+│   ├── mock_data.py             # UI 독립 개발용 샘플 데이터 (#6 전용)
+│   │
 │   ├── routers/
 │   │   └── auth.py              # OAuth 콜백 수신 (MVP 유일한 라우터)
-│   │   # briefing.py 등 Widget Phase에서 추가
-│   ├── agents/
-│   │   ├── orchestrator.py      # 전체 파이프라인 제어
-│   │   ├── llm_client.py        # LLM Provider 추상화 (Fast/Smart 티어)
-│   │   ├── urgency_engine.py    # 정량 5-신호 계산 (LLM 없음)
-│   │   ├── classifier.py        # Fast 티어: 액션 타입 + 요약
-│   │   ├── react_agent.py       # Smart 티어: 긴급도 5 전용 ReAct 루프
-│   │   └── summarizer.py        # Smart 티어: 브리핑 헤더 생성
-│   ├── connectors/
-│   │   ├── base.py              # 커넥터 추상 클래스
+│   │
+│   ├── tools/                   ← 순수 함수. "다음에 뭘 할지" 결정하지 않음. 단독 테스트 가능.
+│   │   ├── fetch.py             # fetch_gmail / fetch_slack / fetch_calendar
+│   │   ├── scoring.py           # calculate_urgency(item) → (level, breakdown)
+│   │   ├── classify.py          # classify_item(item) → WorkCard  [LLM Fast 1-shot]
+│   │   ├── storage.py           # TinyDB CRUD (save / get / update)
+│   │   └── rag.py               # [Phase 2] search_context(query) → str  (ChromaDB)
+│   │
+│   ├── agents/                  ← LLM + tool_use 루프. 다음 도구를 스스로 선택.
+│   │   ├── llm_client.py        # Provider 추상화 (Anthropic / OpenAI)
+│   │   ├── briefing_agent.py    # 브리핑 에이전트 (TOOL_REGISTRY + tool_use 루프)
+│   │   └── action_agent.py      # 답장 초안 생성 (on-demand)
+│   │
+│   ├── connectors/              ← 외부 API 클라이언트. tools/fetch.py 에서 호출됨.
+│   │   ├── base.py
 │   │   ├── gmail.py
 │   │   ├── slack.py
 │   │   ├── calendar.py
 │   │   └── jira.py
+│   │
 │   ├── policy/
 │   │   ├── engine.py            # 3-레이어 Policy Engine
 │   │   ├── models.py            # PolicyConfig, HardOverride, Guardrail
-│   │   └── policy.json          # 사용자 규정 데이터
-│   ├── db/
-│   │   ├── store.py             # TinyDB 래퍼 (테이블별 접근)
-│   │   └── data/
-│   │       ├── work_items.json
-│   │       ├── briefings.json
-│   │       ├── daily_summaries.json
-│   │       └── kpi_reports.json
-│   ├── models.py                # 공유 Pydantic 모델 (WorkCard, BriefingHeader 등)
-│   ├── scheduler.py             # APScheduler 크론 등록
-│   └── config.py                # pydantic-settings 환경 변수
-├── app.py                       # Streamlit 앱 (UI 진입점)
+│   │   └── policy.json
+│   │
+│   └── db/
+│       ├── store.py             # storage.py의 하위 TinyDB 구현체
+│       └── data/
+│
+├── app.py                       # Streamlit 진입점
 ├── pages/
+│   ├── onboarding.py            # 최초 1회 컨텍스트 설정 (주요 인물·프로젝트)
 │   ├── briefing.py              # 복귀 브리핑 화면
 │   ├── daily_summary.py         # 일간 결산 화면
 │   └── kpi_report.py            # KPI 리포트 화면
 └── docs/
-    ├── PLANNING.md
-    ├── WORKFLOW.md
-    └── SPEC.md
 ```
 
 ---
@@ -145,26 +149,37 @@ done_today = items.search(
 | `briefings.json` | briefings | id, user_id, absence_start, absence_end, stats, summary_text |
 | `daily_summaries.json` | daily_summaries | id, date, completion_rate, avg_response_minutes, overdue_count, by_source, carryover_items |
 | `kpi_reports.json` | kpi_reports | id, period, period_start, period_end, aggregated, vs_prev_week, narrative, recommendations |
+| `user_profile.json` | user_profile | key_people (name/email/tier), key_projects (name/priority), company_context |
 
 ---
 
-## 4. AI 에이전트 구성
+## 4. AI 에이전트 + 툴 구성
 
-### 4-1. 역할 분리
+### 4-1. Agent vs Tool — 구분 원칙
 
-| 컴포넌트 | 모델 티어 | 역할 | LLM 사용 여부 |
-|---|---|---|---|
-| Urgency Engine | — | 정량 5-신호 긴급도 계산 | ❌ 순수 Python |
-| Classifier | **Fast** (저비용·고속) | 액션 타입 분류 + 1~2줄 요약 | ✅ (~200 토큰/항목) |
-| ReAct Agent | **Smart** (고성능) | 긴급도 5 항목 교차 참조 수집 | ✅ (최대 5회 반복) |
-| Summarizer | **Smart** (고성능) | 브리핑 헤더·통계 문구 생성 | ✅ (전체 완료 후 1회) |
-| Action Agent | **Smart** (고성능) | 답장 초안 생성 | ✅ (on-demand) |
-| Daily Narrative | **Fast** (저비용·고속) | 일간 결산 코멘트 (~300 토큰) | ✅ |
-| KPI Narrative | **Smart** (고성능) | 주간 KPI 분석 코멘트 (~500 토큰) | ✅ |
+"다음에 뭘 할지 결정하지 않으면 Tool이다."
 
-> 모델 티어는 환경 변수로 실제 모델명에 매핑됩니다. 코드는 티어 이름만 참조합니다. (→ 4-4 참고)
+| 구분 | 판별 기준 |
+|---|---|
+| **Tool** | 입력 → 출력만. LLM 루프 없음. 단독 테스트 가능. |
+| **Agent** | LLM의 `tool_use`를 통해 다음 도구를 스스로 선택. 루프 있음. |
 
-### 4-2. Urgency Engine 공식
+| 구분 | 컴포넌트 | 파일 | LLM | 역할 |
+|---|---|---|---|---|
+| **Tool** | fetch | `tools/fetch.py` | ❌ | 소스별 메시지 수집 (connectors 래핑) |
+| **Tool** | scoring | `tools/scoring.py` | ❌ | 정량 5-신호 긴급도 계산 |
+| **Tool** | classify | `tools/classify.py` | ✅ Fast 1-shot | 액션 타입 분류 + 1~2줄 요약 |
+| **Tool** | storage | `tools/storage.py` | ❌ | TinyDB CRUD |
+| **Agent** | Briefing Agent | `agents/briefing_agent.py` | ✅ Smart (루프) | tool_use로 브리핑 파이프라인 조율 |
+| **Agent** | Action Agent | `agents/action_agent.py` | ✅ Smart | 답장 초안 생성 (on-demand) |
+
+> Urgency Engine → `tools/scoring.py` 재분류. 순수 Python 계산이므로 Tool.  
+> Classifier + Summarizer → `tools/classify.py`로 통합. LLM 1회 호출로 완결되므로 Tool.  
+> Orchestrator → `agents/briefing_agent.py` 대체. LLM이 도구 순서를 결정하는 Agent.
+
+---
+
+### 4-2. Urgency 공식 (scoring 툴)
 
 ```
 urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S
@@ -191,35 +206,87 @@ urgency_level = ceil(urgency_score × 5)   →  1~5
 | 3 | **행동 기반 추정** | 과거 평균 응답 시간·내가 먼저 연락한 비율·메시지 빈도로 중요도 추정. 데이터 축적 후 정확도 향상. |
 | — | **기본값** | 위 3가지 모두 해당 없으면 0.4 (unknown) |
 
-```python
-# 우선순위 조합 (구현 예시 — 미확정)
-def get_authority_score(sender, user_settings, history) -> float:
-    if score := user_settings.tagged.get(sender.email):
-        return score                                    # 1순위: 온보딩 태깅
-    if score := parse_title_from_signature(sender):
-        return score                                    # 2순위: 서명 파싱
-    if history.has_enough_data(sender.email):
-        return behavioral_score(sender.email, history) # 3순위: 행동 추정
-    return 0.4                                         # 기본값
-```
+---
 
-### 4-3. ReAct Tool Registry (긴급도 5 전용)
+### 4-3. Briefing Agent — tool_use 루프
+
+Briefing Agent는 Anthropic SDK의 `tool_use`를 사용해 아래 도구를 스스로 조합한다.  
+파이프라인 순서를 코드에 하드코딩하지 않는다.
+
+**TOOL_REGISTRY — 에이전트가 호출할 수 있는 도구 목록**
 
 ```python
-tools = [
-    fetch_email_thread(thread_id),
-    fetch_slack_thread(channel, ts),
-    fetch_jira_comments(issue_key),
-    search_calendar(keyword, date_range),
-    get_sender_info(email),
-    extract_references(text),
+TOOL_REGISTRY = [
+    {
+        "name": "fetch_messages",
+        "description": "지정 소스에서 부재 기간 메시지 수집",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "enum": ["gmail", "slack", "calendar", "jira"]},
+                "since_days": {"type": "integer"},
+            },
+            "required": ["source", "since_days"],
+        },
+    },
+    {
+        "name": "score_urgency",
+        "description": "수집된 항목에 정량 긴급도 점수 부여 (LLM 미사용)",
+        "input_schema": {
+            "type": "object",
+            "properties": {"item_ids": {"type": "array", "items": {"type": "string"}}},
+            "required": ["item_ids"],
+        },
+    },
+    {
+        "name": "classify_items",
+        "description": "긴급도 계산 완료 항목에 액션 타입과 요약 부여 (LLM Fast 1-shot)",
+        "input_schema": {
+            "type": "object",
+            "properties": {"item_ids": {"type": "array", "items": {"type": "string"}}},
+            "required": ["item_ids"],
+        },
+    },
+    {
+        "name": "finalize_briefing",
+        "description": "분류 완료 항목으로 브리핑 헤더 생성 및 저장 (LLM Smart)",
+        "input_schema": {
+            "type": "object",
+            "properties": {"absence_days": {"type": "integer"}},
+            "required": ["absence_days"],
+        },
+    },
 ]
-# 종료 조건: max 5회 / 추가 참조 없음 / 에이전트 "ENOUGH_CONTEXT" 판단
 ```
+
+**tool_use 루프 골격**
+
+```python
+async def run(user_id: str, absence_days: int) -> BriefingResult:
+    messages = [{"role": "user", "content": f"{absence_days}일 복귀 브리핑을 생성해줘."}]
+    while True:
+        response = await client.messages.create(
+            model=_model("smart"), tools=TOOL_REGISTRY, messages=messages,
+        )
+        if response.stop_reason == "end_turn":
+            break
+        if response.stop_reason == "tool_use":
+            results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = await _dispatch(block.name, block.input)
+                    results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(result)})
+            messages += [
+                {"role": "assistant", "content": response.content},
+                {"role": "user", "content": results},
+            ]
+```
+
+---
 
 ### 4-4. LLM Provider 추상화
 
-에이전트 코드는 어떤 SDK를 쓰는지 몰라도 됩니다. `LLMClient`만 호출하면 환경 변수에 따라 Anthropic 또는 OpenAI로 라우팅됩니다.
+에이전트·툴 코드는 어떤 SDK를 쓰는지 몰라도 됩니다. `llm_client.complete()`만 호출하면 환경 변수에 따라 Anthropic 또는 OpenAI로 라우팅됩니다.
 
 ```
 LLM_PROVIDER=anthropic  →  Anthropic SDK 호출
@@ -236,10 +303,9 @@ LLM_PROVIDER=openai     →  OpenAI SDK 호출
 **추상화 계층 위치**
 
 ```
-agents/classifier.py
-agents/summarizer.py      →  agents/llm_client.py  →  anthropic SDK
-agents/react_agent.py                               →  openai SDK
-agents/action_agent.py
+tools/classify.py
+agents/briefing_agent.py      →  agents/llm_client.py  →  anthropic SDK
+agents/action_agent.py                                  →  openai SDK
 ```
 
 `llm_client.py`는 `complete(prompt, tier)` 인터페이스 하나만 외부에 노출합니다.  
@@ -301,6 +367,61 @@ SDK 교체 시 이 파일만 수정하면 됩니다.
   ]
 }
 ```
+
+---
+
+## 5-b. 사용자 온보딩 — 컨텍스트 설정
+
+사내 DB 연동 없이 발신자 중요도(A 신호)를 계산하고 브리핑 에이전트에 조직 컨텍스트를 제공하기 위해, 사용자가 온보딩 시 핵심 정보를 직접 입력한다.
+
+### 온보딩 입력 항목
+
+| 항목 | 설명 | 활용 신호 |
+|---|---|---|
+| 주요 인물 | 이름, 이메일, 직급(임원/팀장/동료/기타) | A 신호: 임원=0.95, 팀장=0.80, 동료=0.60, 기타=0.40 |
+| 주요 프로젝트 | 프로젝트명, 우선순위(high/mid/low) | K 신호 보강 |
+| 회사 기본 정보 | 회사명, 부서, 업무 언어 | 브리핑 에이전트 시스템 프롬프트 |
+
+### MVP 구현 방식 — 구조화 온보딩
+
+```python
+# backend/db/data/user_profile.json 저장 구조
+{
+  "key_people": [
+    {"name": "김대표", "email": "ceo@example.com", "tier": "exec"},
+    {"name": "박팀장", "email": "lead@example.com", "tier": "lead"}
+  ],
+  "key_projects": [
+    {"name": "Project-Alpha", "priority": "high"}
+  ],
+  "company_context": "SaaS 스타트업, 30명 규모"
+}
+```
+
+**활용 위치**
+
+1. `tools/scoring.py` — A 신호 계산 시 `user_profile.key_people` 조회
+2. `agents/briefing_agent.py` — 시스템 프롬프트에 `company_context` + `key_projects` 주입
+
+**Streamlit 진입점**: `pages/onboarding.py` — 최초 1회 설정 (재설정 가능)
+
+### Phase 2 — RAG (비정형 문서 지원)
+
+MVP 이후 사내 위키·정책 문서 등 비정형 문서가 늘어나면 벡터 검색으로 확장한다.
+
+| 단계 | 구현 |
+|---|---|
+| 문서 업로드 | Streamlit 파일 업로드 → 청크 분할 → 임베딩 생성 |
+| 저장 | ChromaDB (로컬 파일 기반, 서버 불필요) |
+| 검색 | `tools/rag.py` — `search_context(query) → str` |
+| 통합 | `briefing_agent.py` TOOL_REGISTRY에 `search_context` 도구 추가 |
+
+```python
+# Phase 2 스텁: tools/rag.py
+def search_context(query: str) -> str: ...
+```
+
+> MVP 의존성 없음. Phase 2 시작 전까지 스텁만 유지.
 
 ---
 
@@ -422,25 +543,25 @@ REACT_URGENCY_THRESHOLD=5
 
 ### 6인 1인 1에이전트 담당
 
-| # | 담당 에이전트 | 브랜치 | 핵심 파일 |
+| # | 담당 | 브랜치 | 핵심 파일 |
 |---|---|---|---|
-| 1 | Orchestrator | `feat/orchestrator` | `main.py`, `routers/auth.py`, `models.py`, `db/store.py`, `scheduler.py` |
-| 2 | Gmail Connector | `feat/gmail-connector` | `connectors/gmail.py`, `routers/auth.py` |
-| 3 | Slack + Calendar Connector | `feat/slack-calendar-connector` | `connectors/slack.py`, `connectors/calendar.py` |
-| 4 | Urgency Engine | `feat/urgency-engine` | `agents/urgency_engine.py` |
-| 5 | Classifier + Summarizer | `feat/classifier-summarizer` | `agents/classifier.py`, `agents/summarizer.py` |
-| 6 | Streamlit UI | `feat/streamlit-ui` | `app.py`, `pages/` 전체 |
+| 1 | **Briefing Agent** | `feat/briefing-agent` | `agents/briefing_agent.py`, `models.py`, `scheduler.py` |
+| 2 | **Gmail Fetch Tool** | `feat/gmail-tool` | `tools/fetch.py` (gmail), `connectors/gmail.py`, `routers/auth.py` |
+| 3 | **Slack + Calendar Fetch Tool** | `feat/slack-calendar-tool` | `tools/fetch.py` (slack/cal), `connectors/slack.py`, `connectors/calendar.py` |
+| 4 | **Scoring Tool** | `feat/scoring-tool` | `tools/scoring.py` |
+| 5 | **Classify + Storage Tool** | `feat/classify-tool` | `tools/classify.py`, `tools/storage.py` |
+| 6 | **Streamlit UI** | `feat/streamlit-ui` | `app.py`, `pages/` 전체, `mock_data.py` |
 
 ### 브랜치 전략
 
 ```
 main  ← 배포 가능 상태만. 주 1회 (금요일) dev → main 병합
   └ dev  ← 주간 통합 브랜치. PR 대상
-      ├ feat/orchestrator
-      ├ feat/gmail-connector
-      ├ feat/slack-calendar-connector
-      ├ feat/urgency-engine
-      ├ feat/classifier-summarizer
+      ├ feat/briefing-agent
+      ├ feat/gmail-tool
+      ├ feat/slack-calendar-tool
+      ├ feat/scoring-tool
+      ├ feat/classify-tool
       └ feat/streamlit-ui
 ```
 
@@ -510,3 +631,5 @@ class BriefingHeader(BaseModel):
 | DB | TinyDB (JSON) | PostgreSQL | 서버 불필요, MVP 충분. 스키마 동일하게 유지해 추후 마이그레이션 용이 |
 | 사내 규정 | 3-레이어 Policy Engine | 프롬프트만 사용 | 규정 위반 보장 (가드레일), 감사 로그, 회사별 설정 파일 분리 |
 | LLM Provider | 추상화 래퍼 (Fast/Smart 티어) | SDK 직접 호출 | Anthropic ↔ OpenAI 교체 시 llm_client.py 1개 파일만 수정 |
+| Agent vs Tool 구분 | `tools/` = 순수 함수, `agents/` = tool_use 루프 | 파이프라인 직접 구현 | 역할 명확화, 단독 테스트 가능, 새 도구 등록이 파이프라인 코드 수정 없이 가능 |
+| 온보딩 방식 | 구조화 폼 입력 → TinyDB 저장 (MVP) / RAG (Phase 2) | LLM이 메시지 패턴으로 자동 추론 | A 신호 정확도 보장. RAG는 비정형 문서가 늘어나는 Phase 2에서 `tools/rag.py`로 추가 |

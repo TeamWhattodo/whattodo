@@ -391,17 +391,18 @@ GUARDRAILS = [
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 에이전트 구성
+### 에이전트 + 툴 구성
 
-| 컴포넌트 | 역할 | 구현 |
-|---|---|---|
-| Orchestrator | 전체 흐름 제어 | Python (LLM 미사용) |
-| Connector Workers | 각 소스 병렬 수집 → Priority Queue 투입 | OAuth API 커넥터 |
-| Urgency Engine | 정량 5-신호 계산 (T·A·F·K·S) | 순수 Python (LLM 미사용) |
-| Classifier | 액션 타입 분류 + 1~2줄 요약 | LLM Fast 티어 (비용 최적화) |
-| ReAct Agent | 긴급도 5 항목 교차 참조 추가 수집 | LLM Smart 티어 + Tool Registry |
-| Summarizer | 전체 브리핑 헤더·통계 생성 | LLM Smart 티어 |
-| Action Agent | 답장 초안 생성, 외부 API 호출 | LLM Smart 티어 + 도구 |
+"다음에 뭘 할지 결정하지 않으면 Tool이다."
+
+| 구분 | 컴포넌트 | 역할 | 구현 |
+|---|---|---|---|
+| **Tool** | fetch | 소스별 메시지 수집 | OAuth API 커넥터 래핑, LLM 미사용 |
+| **Tool** | scoring | 정량 5-신호 긴급도 계산 | 순수 Python, LLM 미사용 |
+| **Tool** | classify | 액션 타입 분류 + 1~2줄 요약 | LLM Fast 1-shot |
+| **Tool** | storage | TinyDB CRUD | 순수 Python |
+| **Agent** | Briefing Agent | tool_use 루프로 브리핑 파이프라인 조율 | LLM Smart + TOOL_REGISTRY |
+| **Agent** | Action Agent | 답장 초안 생성 (on-demand) | LLM Smart |
 
 ---
 
@@ -542,23 +543,23 @@ Week 3 (AI + UI)            Week 4 (통합 & 마무리)
 
 #### 팀 역할 분리 — 6인 1인 1에이전트
 
-| # | 담당 에이전트 | 핵심 구현 범위 |
+| # | 담당 | 핵심 구현 범위 |
 |---|---|---|
-| 1 | **Orchestrator** | FastAPI 앱 구조, REST API, Priority Queue, TinyDB, 전체 파이프라인 연결 |
-| 2 | **Gmail Connector** | OAuth2 인증 플로우, Gmail API 수집·파싱·스레드 묶음 |
-| 3 | **Slack + Calendar Connector** | Slack OAuth·API (멘션/DM), Google Calendar OAuth·API |
-| 4 | **Urgency Engine** | 5-신호 가중합 공식, fast_urgency(큐용 초경량), 단위 테스트 |
-| 5 | **Classifier + Summarizer** | LLM Client 래퍼 사용, Fast/Smart 프롬프트 설계·튜닝, 브리핑 헤더 생성 |
-| 6 | **Streamlit UI** | app.py, 카드 목록·체크리스트 위젯, FastAPI 연동 |
+| 1 | **Briefing Agent** | `agents/briefing_agent.py` (TOOL_REGISTRY + tool_use 루프), `models.py`, `scheduler.py` |
+| 2 | **Gmail Fetch Tool** | `tools/fetch.py` (gmail 부분), `connectors/gmail.py`, `routers/auth.py` (OAuth) |
+| 3 | **Slack + Calendar Fetch Tool** | `tools/fetch.py` (slack/calendar), `connectors/slack.py`, `connectors/calendar.py` |
+| 4 | **Scoring Tool** | `tools/scoring.py` — 5-신호 가중합 공식, 단위 테스트 |
+| 5 | **Classify + Storage Tool** | `tools/classify.py` (LLM Fast 1-shot), `tools/storage.py` (TinyDB CRUD) |
+| 6 | **Streamlit UI** | `app.py`, `pages/` 전체, `mock_data.py` |
 
 ```
 의존성 흐름 (→ 는 "출력 스키마를 받아야 작업 가능")
 
-Connector #2 ─┐
-Connector #3 ─┼─► Orchestrator #1 ─► Urgency Engine #4 ─► Classifier #5 ─► Streamlit #6
-              │        │ (REST API)                                               ▲
-              └─────── └──────────────────────────────────────────────────────────┘
-                              (WorkCard Pydantic 모델 Week 1 확정 → #6 mock 개발 시작)
+Fetch Tool #2 ─┐
+Fetch Tool #3 ─┼─► Briefing Agent #1 ─► Scoring Tool #4 ─► Classify Tool #5 ─► Streamlit #6
+               │       (tool_use 루프)                                                ▲
+               └──────────────────────────────────────────────────────────────────────┘
+                          (WorkCard·BriefingResult Pydantic 모델 Week 1 확정 → #6 mock 개발 시작)
 ```
 
 ```
@@ -592,11 +593,11 @@ Week 1                  Week 2                  Week 3                  Week 4
 ```
 main          ← 배포 가능 상태만 병합
   └ dev       ← 주간 통합 브랜치
-      ├ feat/orchestrator
-      ├ feat/gmail-connector
-      ├ feat/slack-calendar-connector
-      ├ feat/urgency-engine
-      ├ feat/classifier-summarizer
+      ├ feat/briefing-agent
+      ├ feat/gmail-tool
+      ├ feat/slack-calendar-tool
+      ├ feat/scoring-tool
+      ├ feat/classify-tool
       └ feat/streamlit-ui
 ```
 
