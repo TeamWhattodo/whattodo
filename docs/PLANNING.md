@@ -1,497 +1,313 @@
-# WhatToDo — 직장인 업무 복귀 어시스턴트 기획서
+# WhatToDo — 직장인 업무 보조 에이전트 기획서
 
 ## 1. 서비스 개요
 
-**WhatToDo**는 여러 업무 채널(이메일·슬랙·캘린더·Jira 등)에 흩어진 알림과 태스크를 AI 에이전트가 자동으로 수집·분류·우선순위화해, **"지금 무엇을 해야 하는가"를 매일 제시**하고 **"오늘 무엇을 했는가"를 결산**해주는 AI 업무 인텔리전스 서비스다.
+**WhatToDo**는 직장인의 반복 업무(이메일 확인, 리포트 작성, 항목 처리, 일정 관리 등)를 AI 에이전트가 자율적으로 수행하는 **범용 업무 보조 서비스**다.
 
-출근·복귀 시 쌓인 항목을 브리핑하는 것을 출발점으로, 체크리스트 위젯을 통한 일상적 업무 관리, 일간 결산, 주간 KPI 리포트, 사내 규정 반영까지 확장된다.
+사용자가 자연어로 명령하면 에이전트가 필요한 tool을 스스로 선택·조합해 업무를 완료한다.
 
 | 항목 | 내용 |
 |---|---|
 | 서비스명 | WhatToDo |
 | 타깃 사용자 | 이메일·슬랙·Jira 등 여러 도구를 동시에 사용하는 직장인 |
-| 핵심 가치 | 업무가 쌓이기 전에 파악하고, 하루가 끝나면 무엇을 했는지 안다 |
-| 서비스 형태 | Streamlit 체크리스트 앱 (MVP) → 슬랙 봇 (Phase 2) → 모바일 PWA (Phase 3) |
+| 핵심 가치 | 명령 하나로 업무가 완료된다 |
+| 서비스 형태 | Streamlit 챗 + 카드 UI (전 Phase 고정) |
 
-### 핵심 기능 한눈에 보기
+### 핵심 기능
 
-| 기능 | 설명 | 제공 시점 |
+| 기능 | 설명 | Phase |
 |---|---|---|
-| 복귀 브리핑 | 부재 기간 쌓인 항목을 수집·분류해 우선순위 카드로 제시 | MVP |
-| 체크리스트 위젯 | 긴급도 순 카드 목록, 완료 체크, 섹션별 정리 | MVP |
-| 일간 작업 결산 | 완료 항목·이월 항목·처리 통계 자동 집계 | Phase 2 |
-| 주간 KPI 리포트 | 완료율·응답 시간·채널별 부하 등 개인 생산성 지표 | Phase 3 |
-| 사내 규정 엔진 | 회사별 보고 체계·승인 규정을 에이전트 동작에 반영 | Phase 3 |
+| 복귀 브리핑 | 부재 기간 쌓인 항목 수집·분류·우선순위 카드 | 1 |
+| 자연어 명령 처리 | "정산 리포트 작성해줘" 등 범용 업무 실행 | 1 |
+| 답장 초안 생성 | 이메일·슬랙 답장 초안 자동 작성 | 1 |
+| 항목 상태 관리 | 완료·스누즈·이월 처리 | 1 |
+| 일간 결산 | 완료 항목·이월 항목·처리 통계 자동 집계 | 2 |
+| 주간 KPI 리포트 | 완료율·응답 시간·채널별 부하 등 생산성 지표 | 2 |
+| 사내 규정 엔진 | 회사별 보고 체계·승인 규정을 에이전트 동작에 반영 | 2 |
+| 멀티 에이전트 전환 | Orchestrator + SubAgents 구조로 확장 | 2 |
 
 ---
 
-## 2. 문제 정의
+## 2. 아키텍처 전환 전략
+
+### Phase 1 — 단일 에이전트 + Tool Registry
+
+단일 `WorkAssistantAgent`가 TOOL_REGISTRY에 등록된 tool을 자율 선택·조합해 모든 요청을 처리한다.
 
 ```
-[현재 상황]
-- 하루 쉬고 출근하면 이메일 수십 통, 슬랙 멘션 수백 개
-- 어디서부터 봐야 하는지 몰라 중요한 건 놓치고 급하지 않은 것에 시간 낭비
-- 마감이 지난 태스크를 뒤늦게 발견해 신뢰 손상
-
-[해결하려는 것]
-- 모든 채널을 한 곳에서 집계
-- AI가 중요도·긴급도·담당자를 자동 분류
-- "지금 당장 해야 할 일 TOP 5"를 즉시 제시
+사용자 명령
+    │
+    ▼
+[WorkAssistantAgent]  ← LLM Smart 티어, tool_use 루프
+    │
+    ├─► fetch_messages      (Gmail / Slack / Calendar 수집)
+    ├─► score_urgency       (긴급도 계산, LLM 없음)
+    ├─► classify_items      (액션 타입 + 요약, LLM Fast)
+    ├─► write_report        (리포트·브리핑 생성, LLM Smart)
+    ├─► write_draft         (답장 초안 생성, LLM Smart)
+    ├─► update_item_status  (완료·스누즈, LLM 없음)
+    ├─► search_items        (과거 항목 조회, LLM 없음)
+    └─► compute_stats       (통계 집계, LLM 없음)
+    │
+    ▼
+Streamlit UI (카드 + 채팅 사이드바)
 ```
+
+**Tool 추가 원칙**: 팀원이 기능을 제안하면 업무를 tool 단위로 분해해 TOOL_REGISTRY에 등록한다. 에이전트 로직은 건드리지 않는다.
+
+### Phase 2 — Orchestrator + SubAgents
+
+tool이 누적되고 업무 유형이 다양해지면 Orchestrator가 요청을 전문 SubAgent에게 위임하는 구조로 전환한다.
+
+```
+사용자 명령
+    │
+    ▼
+[Orchestrator]  ← LLM Smart 티어, 라우팅 전담
+    │
+    ├─► [BriefingAgent]   fetch + score + classify + finalize
+    ├─► [ReportAgent]     parse_data + compute_stats + write_report
+    ├─► [ActionAgent]     update_status + write_draft + send_reply
+    └─► [SearchAgent]     search_items + search_docs (RAG)
+    │
+    ▼
+Streamlit UI (변경 없음)
+```
+
+**전환 조건**: tool이 15개 이상 누적되거나, 단일 에이전트의 tool 선택 정확도가 저하될 때 전환한다. Phase 1 tool 코드는 SubAgent에 재배치만 하면 된다.
 
 ---
 
-## 3. 핵심 기능 (MVP)
+## 3. 커버 가능한 업무 및 Tool 분해
 
-### 3-1. 멀티소스 수집
-| 소스 | 수집 대상 |
+### 업무 도메인과 Tool 목록
+
+#### 도메인 A — 수집 (Fetch)
+
+| Tool | 입력 | 출력 | LLM |
+|---|---|---|---|
+| `fetch_emails` | since_hours, max_count | `WorkItem[]` | ❌ |
+| `fetch_slack_messages` | since_hours, mention_only | `WorkItem[]` | ❌ |
+| `fetch_calendar_events` | date_range | `WorkItem[]` | ❌ |
+| `fetch_jira_issues` | assignee, due_within_days | `WorkItem[]` | ❌ |
+| `fetch_uploaded_file` | file_path, file_type | `ParsedFile` | ❌ |
+
+#### 도메인 B — 분류 (Classify)
+
+| Tool | 입력 | 출력 | LLM |
+|---|---|---|---|
+| `score_urgency` | `WorkItem[]` | `ScoredItem[]` | ❌ |
+| `classify_items` | `WorkItem[]` | `ClassifiedItem[]` | ✅ Fast |
+| `group_by_topic` | `WorkItem[]` | `TopicGroup[]` | ✅ Fast |
+| `filter_items` | `WorkItem[]`, condition | `WorkItem[]` | ❌ |
+
+#### 도메인 C — 작성 (Write)
+
+| Tool | 입력 | 출력 | LLM |
+|---|---|---|---|
+| `write_report` | report_type, data | `ReportDraft` | ✅ Smart |
+| `write_draft` | item_id, tone | `DraftText` | ✅ Smart |
+| `write_meeting_agenda` | topic, context | `AgendaText` | ✅ Smart |
+
+#### 도메인 D — 액션 (Action)
+
+| Tool | 입력 | 출력 | LLM |
+|---|---|---|---|
+| `update_item_status` | item_id, status | `UpdateResult` | ❌ |
+| `create_calendar_block` | title, start, end | `CalendarEvent` | ❌ |
+| `update_jira_issue` | issue_key, status | `UpdateResult` | ❌ |
+
+#### 도메인 E — 조회 (Search)
+
+| Tool | 입력 | 출력 | LLM |
+|---|---|---|---|
+| `search_past_items` | query, date_range | `WorkItem[]` | ❌ |
+| `search_company_docs` | query | `DocChunk[]` | ❌ (RAG) |
+| `get_item_thread` | item_id, source | `ThreadItems[]` | ❌ |
+
+#### 도메인 F — 분석 (Compute)
+
+| Tool | 입력 | 출력 | LLM |
+|---|---|---|---|
+| `compute_daily_stats` | date | `DailyStats` | ❌ |
+| `compute_kpi` | period | `KPIAggregated` | ❌ |
+| `parse_billing_data` | file_path, month | `BillingData` | ❌ |
+
+### 업무 → Tool 조합 패턴
+
+에이전트 시스템 프롬프트에 포함해 tool 선택 정확도를 높인다.
+
+| 업무 | Tool 조합 순서 |
 |---|---|
-| Gmail / Outlook | 읽지 않은 이메일, 미수락 캘린더 초대 |
-| Slack | 멘션(@me), DM, 리마인더 |
-| Google Calendar | 오늘~3일 내 일정, 마감 임박 이벤트 |
-| Jira / Linear | 나에게 할당된 미완료 이슈, due date 초과 이슈 |
-| Notion / Confluence | 나를 태그한 댓글, 승인 대기 문서 |
-
-### 3-2. 분류 및 우선순위 결정
-
-**긴급도 — 정량 엔진 (LLM 미사용)**
-
-동일 항목은 항상 동일 점수가 나오고 근거를 사용자에게 설명할 수 있다.
-
-- **MVP**: 마감 잔여 시간(T 신호) 단독 사용. 구현 단순, 부재 항목에 즉각적.
-- **확장**: 온보딩 프로필·사용 이력이 쌓이면 5-신호 가중합으로 전환.
-
-**MVP 공식**
-
-```
-urgency_level = ceil(T × 5)   →  레벨 1~5
-```
-
-| 신호 | 측정 방법 |
-|---|---|
-| T (마감 잔여 시간) | 지수 감쇠 — 초과=1.0, 24h 후=0.12, 없음 최대 0.6 |
-
-**확장 공식**
-
-```
-urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S  →  레벨 1~5
-```
-
-| 신호 | 가중치 | 측정 방법 |
-|---|---|---|
-| T (마감 잔여 시간) | 0.35 | 지수 감쇠 — 마감 초과=1.0, 24h 후=0.12 |
-| A (발신자 권한) | 0.25 | 온보딩 태깅 — 임원=1.0, 팀장=0.8, 동료=0.5, 기본값 0.4 |
-| F (반복 추적) | 0.20 | 미응답 상태의 동일 발신자 메시지 수 (로그 스케일) |
-| K (키워드 신호) | 0.10 | 정규식 매칭 — "urgent"=+0.9, "FYI"=−0.4 |
-| S (소스·채널) | 0.10 | Slack DM=0.85, Jira blocker=0.90, 이메일 CC=0.35 |
-
-**LLM 담당 영역 (의미 이해가 필요한 것만)**
-- **액션 타입** — Reply / Approve / Review / FYI / No-action
-- **1~2줄 요약** — 무엇을 해야 하는지 한 문장으로
-
-**긴급도 5 항목 — 선택적 ReAct**
-
-정량 점수가 최고 레벨인 항목에 한해, 교차 참조(이메일 내 Slack 링크, Jira 댓글 등)를 따라가며 추가 컨텍스트를 수집하는 ReAct 루프를 실행한다. 최대 5회 반복 후 종료.
-
-### 3-3. 복귀 브리핑 리포트
-```
-[복귀 브리핑] 2026-05-13 오전 9:02
-부재 기간: 5월 9일(금) 퇴근 ~ 5월 13일(화) 오전 9시
-수집된 항목: 이메일 47건 / 슬랙 213건 / 지라 8건
-
-▶ 지금 당장 처리 (오늘 마감 또는 이미 지남)
-  1. [이메일] 김대표 → 계약서 최종 서명 요청 (마감: 5/13 오전)
-  2. [지라] PROJ-402 배포 승인 대기 (마감: 5/12 → 초과)
-  3. [슬랙] 박팀장 DM 3건 — 예산 승인 건
-
-▶ 오늘 안에 처리
-  4. [캘린더] 14:00 주간 회의 — 자료 준비 필요
-  5. [이메일] 디자인팀 피드백 요청 14건 (묶음)
-
-▶ 이번 주 내 처리
-  ...
-
-▶ 읽기만 하면 됨 (FYI)
-  ...
-```
-
-### 3-4. 원클릭 액션
-- 브리핑 카드에서 바로 답장 초안 생성
-- 슬랙 메시지 즉시 회신
-- 캘린더 일정 수락/거절
-- 지라 이슈 상태 변경
-
-### 3-5. 연락해야 할 사람 정리
-- 내가 답장하지 않은 메시지를 기다리는 사람 목록
-- 내가 블로커인 이슈의 담당자 목록
-- 추천 답장 초안 제공
-
-### 3-6. 작업 결산 (Daily/Weekly Summary)
-
-하루 또는 한 주가 끝날 때, 오늘 처리한 항목과 남은 항목을 자동 집계해 "오늘 뭘 했는지"를 한눈에 정리해준다.
-
-```
-[작업 결산] 2026-05-13 오후 6:00
-
-▶ 오늘 완료한 일  7건 / 예상 55분 → 실제 48분
-  ✓ [이메일] 김대표 계약서 서명 완료
-  ✓ [지라] PROJ-402 배포 승인
-  ✓ [슬랙] 박팀장 예산 승인 3건 처리
-  ... 외 4건
-
-▶ 내일로 이월  3건
-  · [이메일] 디자인팀 피드백 (스누즈: 내일 오전 10시)
-  · [지라] PROJ-411 코드 리뷰 (마감: 5/15)
-  · [캘린더] 주간 보고 자료 준비
-
-▶ 오늘 통계
-  소스별: 이메일 3건 · 슬랙 2건 · Jira 2건
-  유형별: 승인 3건 · 답장 2건 · 검토 2건
-  평균 응답 시간: 1시간 23분
-```
-
-### 3-7. KPI 보고서
-
-개인 생산성 지표와 팀 관리자용 리포트를 주기적으로 생성한다.
-
-**개인 KPI 대시보드**
-
-| 지표 | 설명 |
-|---|---|
-| 완료율 | 할당 항목 중 기한 내 완료 비율 |
-| 평균 응답 시간 | 수신 → 처리 완료까지 걸린 시간 |
-| 초과 마감 비율 | 기한 초과 후 처리된 항목 비율 |
-| 채널별 부하 | 소스별 수신 항목 수 및 처리 시간 비중 |
-| 이월 누적 추이 | 주별 미완료 항목 잔여량 변화 |
-
-**팀 관리자 리포트 (Team 플랜 이상)**
-- 팀원별 완료율·응답 속도 비교
-- 블로커 병목 지점 (누가 가장 오래 기다리고 있는가)
-- 소스별 팀 전체 알림 부하량
-
-**리포트 주기 및 형식**
-
-```
-일간 결산:  퇴근 시간(기본 오후 6시) 자동 생성 → 위젯 + 슬랙 DM
-주간 리포트: 금요일 오후 5시 자동 생성 → 이메일 + PDF 다운로드
-월간 리포트: 매월 마지막 영업일 → 팀 채널 공유 (Team 플랜)
-```
-
-### 3-8. 사내 규정 엔진 (Policy Engine)
-
-회사마다 다른 업무 규정(보고 체계, 계약 한도, 대응 프로토콜 등)을 에이전트 동작에 반영한다.  
-규정은 **3개 레이어**로 분리 적용된다.
-
-#### 레이어 1 — 하드 오버라이드 (AI 판단 전, 데이터로 덮어씀)
-
-AI가 판단하기 전에 정량 엔진의 점수를 강제로 변경하거나 액션을 고정한다.
-
-```json
-// policy.json 예시
-{
-  "hard_overrides": [
-    {
-      "name": "계약서_CEO_승인",
-      "condition": { "keywords": ["계약서", "서명", "날인"], "sender_role": "external" },
-      "action": { "urgency_level": 5, "action_type": "approve", "require_persons": ["CEO"] }
-    },
-    {
-      "name": "VIP_고객_즉시처리",
-      "condition": { "senders": ["cto@bigclient.com", "ceo@partner.com"] },
-      "action": { "urgency_level": 5 }
-    },
-    {
-      "name": "보안_이슈_강제리뷰",
-      "condition": { "jira_labels": ["security", "compliance"] },
-      "action": { "urgency_level": 5, "action_type": "review", "notify": ["security-team"] }
-    }
-  ]
-}
-```
-
-#### 레이어 2 — 컨텍스트 주입 (AI 판단 시 시스템 프롬프트에 삽입)
-
-AI가 **요약이나 초안**을 생성할 때 회사 맥락을 알아야 하는 경우.
-
-```python
-def build_system_prompt(user_policy: PolicyConfig) -> str:
-    return f"""
-당신은 {user_policy.company_name} 소속 {user_policy.user_role}의 업무 어시스턴트입니다.
-
-[사내 커뮤니케이션 규정]
-{user_policy.communication_rules}  
-# 예: "외부 파트너에게는 반드시 경어체 사용"
-# 예: "법무팀 관련 사안은 요약 없이 원문 그대로 전달"
-
-[보고 체계]
-{user_policy.reporting_structure}
-# 예: "계약 관련 사안은 항상 법무팀장(kim@company.com)을 참조"
-
-[프로젝트 우선순위]
-{user_policy.project_priorities}
-# 예: "Project-Alpha는 이번 분기 최우선 프로젝트"
-"""
-```
-
-#### 레이어 3 — 가드레일 (AI 판단 후, 특정 액션 무조건 차단)
-
-어떤 AI 판단이 나오더라도 허용하지 않는 액션.
-
-```python
-GUARDRAILS = [
-    {
-        "name": "자동_발송_금지",
-        "rule": "action_type in ['reply', 'approve'] AND auto_send == True",
-        "block": True,
-        "reason": "모든 발송은 사용자 확인 후 진행"
-    },
-    {
-        "name": "계약_자동승인_금지",
-        "rule": "action_type == 'approve' AND source == 'email' AND '계약' in summary",
-        "block": True,
-        "reason": "계약 관련 승인은 사람이 직접 처리"
-    },
-    {
-        "name": "외부공유_금지",
-        "rule": "recipient_domain != company_domain AND content_label == 'confidential'",
-        "block": True,
-        "reason": "사내 기밀 문서 외부 공유 차단"
-    }
-]
-```
-
-#### Policy Engine 처리 순서
-
-```
-[수집된 item]
-      │
-      ▼
-[레이어 1] Hard Override 검사
-  → 조건 매칭 시 urgency/action_type 강제 설정
-  → 매칭 없으면 패스
-      │
-      ▼
-[Urgency Engine + Classifier]  ← 레이어 2 컨텍스트 프롬프트 주입됨
-      │
-      ▼
-[레이어 3] Guardrail 검사
-  → 차단 조건 매칭 시 해당 액션 버튼 비활성화 + 사유 표시
-  → 감사 로그(audit log) 기록
-      │
-      ▼
-[UI 카드 스트리밍]
-```
-
-#### Policy 설정 UI (Team/Enterprise 플랜)
-
-```
-┌─────────────────────────────────────────┐
-│  사내 규정 설정                          │
-│                                         │
-│  ▶ 발신자 규정                          │
-│    + VIP 발신자 추가         [추가]      │
-│    + 도메인별 우선순위 설정  [추가]      │
-│                                         │
-│  ▶ 키워드 규정                          │
-│    + 특정 키워드 → 긴급도 설정 [추가]   │
-│                                         │
-│  ▶ 가드레일                             │
-│    ☑ 모든 발송 전 사용자 확인 (권장)    │
-│    ☑ 계약서 자동 승인 차단              │
-│    ☐ 야간 알림 차단 (오후 10시~오전 7시)│
-└─────────────────────────────────────────┘
-```
+| 복귀 브리핑 | fetch_emails → fetch_slack → fetch_calendar → score_urgency → classify_items → write_report(briefing) |
+| 정산 리포트 | fetch_uploaded_file → parse_billing_data → compute_daily_stats → write_report(billing) |
+| 답장 초안 | fetch_emails(filter) → get_item_thread → write_draft |
+| 주간 결산 | search_past_items(7일) → compute_kpi → write_report(weekly) |
+| 미팅 준비 | fetch_calendar_events → search_company_docs → write_meeting_agenda |
+| 긴급 항목 파악 | fetch_emails → fetch_slack → score_urgency → filter_items(urgency≥4) |
 
 ---
 
 ## 4. 사용자 시나리오
 
-### 시나리오 A — 월요일 아침 출근
-1. 오전 8:55 사무실 도착, WhatToDo 앱 열기
-2. 에이전트가 주말 동안 수신된 항목 자동 분석 (30초)
-3. 복귀 브리핑 화면 표시
-4. 사용자가 TOP 3 항목을 처리하며 순서대로 체크
-5. 나머지는 캘린더에 시간 블록으로 자동 배치
+### 시나리오 A — 월요일 아침 복귀 브리핑
 
-### 시나리오 B — 5일 휴가 복귀
-1. 복귀 전날 밤, 앱이 푸시 알림: "내일 복귀 브리핑 준비 중입니다"
-2. 출근 전 모바일로 브리핑 미리 확인
-3. 사무실 도착 전 긴급 항목 2건 처리 완료
-4. 팀원에게 "오늘 오전은 따라잡기 중" 자동 슬랙 공지 (선택)
+```
+사용자: "주말 동안 쌓인 것 정리해줘"
 
-### 시나리오 C — 미팅이 몰린 날 오후
+에이전트:
+  → fetch_emails(since_hours=60)     [이메일 43건 수집]
+  → fetch_slack_messages(since=60h)  [슬랙 187건 수집]
+  → fetch_calendar_events(3일치)     [일정 5건]
+  → score_urgency(전체 235건)        [레벨 1~5 분류]
+  → classify_items(urgency≥3 항목)   [요약 + 액션 타입]
+  → write_report(briefing)
 
-> 복귀 상황이 아니어도, 연속 회의로 알림이 쌓였을 때 위젯이 따라잡기를 도와주는 경우.
+결과: 브리핑 카드 표시
+  🔴 지금 당장 (3건) — 계약서 서명, 배포 승인, 예산 승인
+  🟡 오늘 안에 (7건) — 주간 회의 준비, 디자인 피드백 등
+  ⚪ FYI (180건) — 접혀 있음
+```
 
-1. 오후 2시, 오전 내내 미팅만 4개 연속으로 끝냄
-2. 슬랙·이메일 알림이 47건 쌓여 있음 — 어디서부터 봐야 할지 막막
-3. WhatToDo 위젯 열기 → 에이전트가 "미팅 중 수신 항목" 자동 집계
-4. **긴급도 순 카드 3장**이 상단에 표시됨
-   - 박팀장 DM: "오늘 오후 4시 전 승인 필요"
-   - 고객사 이메일: 내일 오전 제안서 마감
-   - Jira PR 리뷰 요청 (배포 블로킹 중)
-5. 나머지 44건은 "FYI" 섹션으로 접혀 있음 → 무시해도 됨을 즉시 인지
-6. 3건을 30분 안에 처리하고 체크 완료
+### 시나리오 B — 정산 리포트 작성
 
-### 시나리오 D — 퇴근 전 하루 결산 (Phase 2)
+```
+사용자: "5월 정산 리포트 작성해줘" (파일 업로드 포함)
 
-> 오늘 무엇을 했는지, 내일 무엇을 이어받는지 확인하는 루틴.
+에이전트:
+  → fetch_uploaded_file(billing_may.csv)
+  → parse_billing_data(month=2026-05)
+  → compute_daily_stats(기간)
+  → write_report(billing, data=...)
 
-1. 오후 5시 55분, 위젯에 "오늘 결산 준비됐습니다" 알림
-2. 결산 패널 열기
-   - 완료 8건 / 예상 70분 → 실제 55분 ✓
-   - 이월 2건 (내일 마감 1건, 이번 주 내 1건)
-   - "오늘 슬랙 응답이 평균보다 빠릅니다 👍"
-3. 이월 항목 2건을 내일 오전 캘린더 블록으로 자동 배치
-4. 퇴근
+결과: 리포트 초안 Streamlit에 표시 → 다운로드 버튼
+```
 
-### 시나리오 E — 주간 KPI로 업무 패턴 발견 (Phase 3)
+### 시나리오 C — 자연어 항목 처리
 
-> 반복되는 병목을 데이터로 인지하고 행동을 바꾸는 경우.
+```
+사용자: "박팀장 DM 답장 초안 써줘"
 
-1. 금요일 오후 5시, 주간 KPI 리포트 슬랙 DM 수신
-2. 리포트 확인
-   - 완료율 68% — 지난 4주 평균(81%) 대비 낮음
-   - Jira 초과 마감 비율 24% — 이번 주만 유독 높음
-   - "월·화에 Jira 이슈가 집중 할당되는 패턴이 감지됩니다"
-3. AI 제안: "월요일 오전 30분을 Jira 전용 시간 블록으로 예약하시겠어요?"
-4. 수락 → 다음 주 월·화 오전 9시에 캘린더 블록 자동 생성
+에이전트:
+  → search_past_items(query="박팀장 DM", source=slack)
+  → get_item_thread(item_id=...)
+  → write_draft(tone=formal)
+
+결과: 채팅창에 초안 표시 → 사용자 확인 후 복사
+```
+
+### 시나리오 D — 퇴근 전 일간 결산 (Phase 2)
+
+```
+스케줄 트리거 (오후 6시) 또는 사용자: "오늘 결산해줘"
+
+에이전트:
+  → search_past_items(오늘, status=done)
+  → compute_daily_stats(오늘)
+  → write_report(daily_summary)
+
+결과: 결산 카드 표시
+  ✅ 완료 7건 / 실제 48분
+  ⏭ 이월 3건 → 내일 캘린더 블록 제안
+```
 
 ---
 
 ## 5. 기술 아키텍처
 
+### Phase 1
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Client Layer                       │
-│       Streamlit App  /  Slack Bot  /  Mobile            │
-│       ← REST 폴링으로 카드 목록 수신                     │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTPS / REST
-┌────────────────────────▼────────────────────────────────┐
-│                    API Gateway (FastAPI)                 │
-│              Auth (OAuth2) · Rate Limit · Routing       │
-└───────┬──────────────┬──────────────────────────────────┘
-        │              │
-┌───────▼──────┐ ┌─────▼──────────────────────────────────┐
-│ Connector    │ │           Orchestrator Agent             │
-│ Workers      │ │         (Python, LLM 미사용)             │
-│ (병렬 실행)  │ │                                          │
-│              │ │  ┌──────────────────────────────────┐   │
-│ - Gmail ─────┼─┼─►│  Priority Queue (heapq)          │   │
-│ - Slack ─────┼─┼─►│  수집 즉시 투입, 긴급도 추정으로 │   │
-│ - Calendar ──┼─┼─►│  선처리 순서 결정               │   │
-│ - Jira ──────┼─┼─►└──────────────┬───────────────────┘   │
-│ - Notion     │ │                 │                        │
-└──────────────┘ │  ┌──────────────▼───────────────────┐   │
-                 │  │  Urgency Engine (정량 계산)        │   │
-                 │  │  + Classifier (LLM: 액션·요약)    │   │
-                 │  │  → 분류 완료 즉시 TinyDB 저장      │   │
-                 │  └──────────────┬───────────────────┘   │
-                 │                 │ (urgency=5 항목만)     │
-                 │  ┌──────────────▼───────────────────┐   │
-                 │  │  ReAct Loop (교차 참조 추가 수집) │   │
-                 │  │  max 5 iterations                 │   │
-                 │  └──────────────┬───────────────────┘   │
-                 │                 │ (전체 완료 후)         │
-                 │  ┌──────────────▼───────────────────┐   │
-                 │  │  Summarizer (브리핑 헤더 생성)    │   │
-                 │  └──────────────────────────────────┘   │
-                 └─────────────────────────────────────────┘
-                                   │
-┌──────────────────────────────────▼──────────────────────┐
-│                      Data Layer                          │
-│   TinyDB (JSON 파일 기반)  ·  heapq (인메모리 우선순위 큐)│
-│   → Phase 2+: PostgreSQL + Redis 교체 가능               │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│         Streamlit (단일 앱)          │
+│  메인: 브리핑 카드·체크리스트         │
+│  사이드바: 채팅 인터페이스            │
+└──────────────┬──────────────────────┘
+               │ Python 직접 import
+┌──────────────▼──────────────────────┐
+│        WorkAssistantAgent            │
+│   LLM Smart + TOOL_REGISTRY          │
+│   tool_use 루프 (max 10 iter)        │
+└──────┬───────────────────────────────┘
+       │
+┌──────▼──────────────────────────────┐
+│           TOOL_REGISTRY              │
+│  fetch / score / classify / write    │
+│  update / search / compute           │
+└──────┬──────────────────────────────┘
+       │
+┌──────▼──────────────────────────────┐
+│           Data Layer                 │
+│  TinyDB (JSON)  ·  heapq (Queue)    │
+│  → Phase 2+: PostgreSQL + Redis      │
+└─────────────────────────────────────┘
 ```
 
-### 에이전트 + 툴 구성
+### Phase 2 (추가 레이어)
 
-"다음에 뭘 할지 결정하지 않으면 Tool이다."
-
-| 구분 | 컴포넌트 | 역할 | 구현 |
-|---|---|---|---|
-| **Tool** | fetch | 소스별 메시지 수집 | OAuth API 커넥터 래핑, LLM 미사용 |
-| **Tool** | scoring | 정량 5-신호 긴급도 계산 | 순수 Python, LLM 미사용 |
-| **Tool** | classify | 액션 타입 분류 + 1~2줄 요약 | LLM Fast 1-shot |
-| **Tool** | storage | TinyDB CRUD | 순수 Python |
-| **Agent** | Briefing Agent | tool_use 루프로 브리핑 파이프라인 조율 | LLM Smart + TOOL_REGISTRY |
-| **Agent** | Action Agent | 답장 초안 생성 (on-demand) | LLM Smart |
+```
+┌─────────────────────────────────────┐
+│         Streamlit (변경 없음)        │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│           Orchestrator               │
+│   라우팅 전담 · LLM Smart            │
+│   SubAgent 호출을 tool로 등록        │
+└──────┬───────────────────────────────┘
+       │
+  ┌────┴──────────────────────────┐
+  │            SubAgents           │
+  ├─ BriefingAgent (Fast 티어)    │
+  ├─ ReportAgent   (Fast 티어)    │
+  ├─ ActionAgent   (Fast 티어)    │
+  └─ SearchAgent   (Fast 티어)    │
+       │
+┌──────▼──────────────────────────────┐
+│       기존 TOOL_REGISTRY 재사용      │
+└─────────────────────────────────────┘
+```
 
 ---
 
-## 6. 데이터 모델
+## 6. 데이터 모델 (공유 스키마)
 
 ```python
-# 수집된 항목 단위
-class WorkItem:
+# backend/models.py — Week 1 전원 합의 후 확정
+
+class WorkItem(BaseModel):
     id: str
     source: Literal["gmail", "slack", "calendar", "jira", "notion"]
     raw_content: str
-    summary: str              # AI 요약 (1~2문장)
-    urgency: int              # 1~5 (5 = 최고 긴급)
-    urgency_breakdown: dict   # {"T": 0.78, "A": 0.80, ...}
+    summary: str
+    urgency_level: int              # 1~5
+    urgency_breakdown: dict         # {"T": 0.78, ...}
     action_type: Literal["reply", "approve", "review", "fyi", "none"]
     due_at: datetime | None
-    from_person: Person | None
-    linked_items: list[str]   # 연관 항목 ID
+    from_person: str | None
     status: Literal["pending", "done", "snoozed"]
     created_at: datetime
-    completed_at: datetime | None   # 결산 집계용
-    actual_minutes: int | None      # 실제 처리 시간 (완료 시 기록)
-    briefing_id: str
+    completed_at: datetime | None
+    actual_minutes: int | None
 
-# 복귀 브리핑 단위
-class Briefing:
+class WorkCard(BaseModel):          # UI 렌더링 전용 (WorkItem 경량화)
     id: str
-    user_id: str
-    absence_start: datetime
-    absence_end: datetime
-    generated_at: datetime
-    items: list[WorkItem]
-    summary_text: str
-
-# 일간 작업 결산
-class DailySummary:
-    id: str
-    user_id: str
-    date: date
-    completed_items: list[WorkItem]
-    carried_over_items: list[WorkItem]
-    stats: DailyStats
-
-class DailyStats:
-    total_assigned: int
-    total_completed: int
-    completion_rate: float          # completed / assigned
-    avg_response_minutes: float     # 수신 → 완료 평균 시간
-    overdue_count: int
-    by_source: dict[str, int]       # {"gmail": 3, "slack": 2, ...}
-    by_action_type: dict[str, int]  # {"reply": 2, "approve": 3, ...}
+    source: str
+    summary: str
+    urgency_level: int
+    action_type: str
+    from_person: str
     estimated_minutes: int
-    actual_minutes: int
+    due_at: datetime | None
+    status: str
 
-# KPI 리포트 (주간/월간)
-class KPIReport:
-    id: str
-    user_id: str
-    period: Literal["weekly", "monthly"]
-    period_start: date
-    period_end: date
-    generated_at: datetime
-    daily_summaries: list[DailySummary]
-    aggregated: KPIAggregated
-    narrative: str              # LLM Smart 티어가 생성한 자연어 요약
-
-class KPIAggregated:
-    avg_completion_rate: float
-    avg_response_minutes: float
-    overdue_ratio: float
-    busiest_source: str
-    carryover_trend: list[int]  # 날짜별 이월 항목 수 추이
-    total_items_processed: int
-    total_time_saved_estimate: int  # WhatToDo 없이 걸렸을 추정 시간 vs 실제
+class BriefingResult(BaseModel):
+    briefing_id: str
+    absence_days: int
+    stats: dict                     # total, urgent, fyi, estimated_minutes
+    sections: dict                  # immediate, today, this_week, fyi
+    contacts_needed: list[dict]
+    summary_text: str
 ```
 
 ---
@@ -499,10 +315,9 @@ class KPIAggregated:
 ## 7. 개인정보 및 보안
 
 - 이메일·메시지 원문은 처리 후 즉시 삭제, 요약본만 저장
-- OAuth 토큰은 암호화 저장 (AES-256)
-- 모든 AI 처리는 Anthropic API (데이터 학습에 사용되지 않음, Anthropic 정책 기준)
-- SOC 2 Type II 준수 목표 (v2)
-- 온프레미스 배포 옵션 제공 예정 (기업 고객)
+- OAuth 토큰 암호화 저장 (AES-256)
+- AI 처리는 Anthropic API (학습 미사용)
+- 모든 발송 액션은 사용자 확인 필수 (가드레일)
 
 ---
 
@@ -510,184 +325,167 @@ class KPIAggregated:
 
 | 플랜 | 대상 | 가격 | 포함 내용 |
 |---|---|---|---|
-| Free | 개인 | 무료 | 소스 2개, 월 브리핑 10회 |
-| Pro | 개인 | $9/월 | 소스 무제한, 브리핑 무제한, 액션 기능 |
-| Team | 팀 | $6/인/월 | Pro + 팀 워크스페이스, 관리자 대시보드 |
+| Free | 개인 | 무료 | 소스 2개, 월 명령 30회 |
+| Pro | 개인 | $9/월 | 소스 무제한, 명령 무제한, 파일 업로드 |
+| Team | 팀 | $6/인/월 | Pro + 팀 대시보드, 관리자 리포트 |
 | Enterprise | 기업 | 협의 | 온프레미스, SSO, 감사 로그 |
 
 ---
 
 ## 9. 개발 로드맵
 
-### Phase 1 — MVP (4주, ~2026-06-13 목표)
+### Phase 1 — 단일 에이전트 MVP (4주, ~2026-06-13)
 
-#### MVP 확정 범위
+#### 확정 범위
 
-| 포함 | 제외 (Phase 2+) |
+| 포함 | 제외 (Phase 2) |
 |---|---|
-| Gmail + Slack + Google Calendar 커넥터 | Jira / Linear / Notion 커넥터 |
-| Urgency Engine (T 신호 단독) | Urgency 5-신호 가중합 / ReAct Agent |
-| Classifier (rule-based 선구현 → LLM Fast 전환) | 원클릭 답장 초안 |
-| Priority Queue (heapq) | REST API / 일간 결산 / KPI 리포트 |
-| Summarizer (브리핑 헤더) | Policy Engine |
-| Streamlit 체크리스트 UI | 슬랙 봇 인터페이스 |
-| OAuth 인증 (Gmail, Slack) | 스누즈 기능 |
+| WorkAssistantAgent + TOOL_REGISTRY | Orchestrator + SubAgents |
+| 도메인 A·B·C 핵심 tool (8개) | 도메인 E·F 고급 tool |
+| Gmail + Slack + Calendar 커넥터 | Jira / Notion 커넥터 |
+| Streamlit 혼합형 UI | 슬랙 봇 인터페이스 |
+| Urgency Engine (T 신호) | 5-신호 가중합 |
+| TinyDB 저장 | PostgreSQL 마이그레이션 |
+| OAuth 인증 (Gmail, Slack) | Policy Engine |
 
-#### 주차별 일정 — 3단계 구현 순서
+#### 구현 3단계 순서
 
-> **단계 원칙**: 함수 파이프라인 먼저 → LLM 직접 호출로 응답 형식 파악 → tool_use 에이전트 전환
-
-```
-Week 1 (파이프라인 스크립트)          Week 2 (실데이터 + LLM 직접 호출)
-──────────────────────────────────    ──────────────────────────────────
-□ 환경 세팅 (uv, Python 기초)          □ Gmail OAuth 연동
-□ mock_data로 파이프라인 스크립트      □ fetch → 실데이터 교체
-    fetch → score(T) → classify         □ classify에 LLM 직접 호출 추가
-    (rule-based) → WorkCard 출력          (tool_use 아님, messages.create)
-□ WorkCard 스키마 확정 (전원)           □ LLM 응답 형식 파악 + 파싱
-□ Streamlit 브리핑 1페이지             □ Slack 커넥터
-    (mock_data 표시, #6 독립 시작)
-
-Week 3 (tool_use 에이전트 전환)       Week 4 (통합 & 마무리)
-──────────────────────────────────    ──────────────────────────────────
-□ TOOL_REGISTRY 구성                   □ E2E 통합 테스트
-□ briefing_agent tool_use 루프 구현    □ 에러 처리 / 폴백
-□ _dispatch → tools 함수 연결          □ 데모 시나리오 준비
-□ Streamlit → 실데이터 전환             □ 버그 수정
-□ Calendar 커넥터
-```
-
-#### 팀 역할 분리 — 6인 1인 1에이전트
-
-| # | 담당 | 핵심 구현 범위 |
+| 단계 | 기간 | 핵심 |
 |---|---|---|
-| 1 | **Briefing Agent** | `agents/briefing_agent.py` (TOOL_REGISTRY + tool_use 루프), `models.py`, `scheduler.py` |
-| 2 | **Gmail Fetch Tool** | `tools/fetch.py` (gmail 부분), `connectors/gmail.py`, `routers/auth.py` (OAuth) |
-| 3 | **Slack + Calendar Fetch Tool** | `tools/fetch.py` (slack/calendar), `connectors/slack.py`, `connectors/calendar.py` |
-| 4 | **Scoring Tool** | `tools/scoring.py` — T 신호 단독 (MVP), 5-신호 확장 인터페이스 유지, 단위 테스트 |
-| 5 | **Classify + Storage Tool** | `tools/classify.py` (LLM Fast 1-shot), `tools/storage.py` (TinyDB CRUD) |
-| 6 | **Streamlit UI** | `app.py`, `pages/` 전체, `mock_data.py` |
+| 1단계 | Week 1 | mock_data로 tool 함수 파이프라인 동작 확인. LLM 없음. |
+| 2단계 | Week 2 | 실데이터 연결 + `messages.create` 직접 호출로 LLM 응답 형식 파악. tool_use 아님. |
+| 3단계 | Week 3~4 | tool_use 루프 전환. LLM이 tool 순서를 결정. |
+
+#### 주차별 일정
+
+```
+Week 1 (파이프라인 스크립트)        Week 2 (실데이터 + LLM 직접 호출)
+──────────────────────────────      ──────────────────────────────────
+□ 환경 세팅, WorkItem 스키마 확정   □ Gmail OAuth 완료 → 실데이터 교체
+□ mock_data로 fetch → score          □ classify에 LLM messages.create 추가
+    → classify → WorkCard 출력       □ LLM 응답 형식 파악 + 파싱 패턴
+□ Streamlit 기본 UI (mock)           □ Slack 커넥터
+□ TOOL_REGISTRY 인터페이스 확정      □ write_draft 함수 구현
+
+Week 3 (tool_use 에이전트 전환)     Week 4 (통합 & 마무리)
+──────────────────────────────      ──────────────────────────────────
+□ WorkAssistantAgent 구현            □ E2E 통합 테스트
+□ tool_use 루프 + _dispatch 연결     □ 에러 처리 / 폴백
+□ Calendar 커넥터                    □ 시스템 프롬프트 튜닝
+□ Streamlit 채팅 사이드바 UI         □ 데모 시나리오 준비
+□ 브리핑 카드 실데이터 렌더링        □ 버그 수정
+```
+
+#### 팀 역할 — 6인 구조
+
+| # | 역할 | 담당 범위 |
+|---|---|---|
+| 팀장 | **Orchestrator + Frontend** | `agents/assistant_agent.py` (tool_use 루프), `agents/llm_client.py`, `app.py` Streamlit UI, `mock_data.py`, 스키마 확정 주도 |
+| #2 | **Fetch Tools** | `tools/fetch.py`, `connectors/` 전체 (gmail/slack/calendar), `routers/auth.py` |
+| #3 | **Score + Classify Tools** | `tools/scoring.py`, `tools/classify.py`, Urgency Engine 공식 구현 |
+| #4 | **Write Tools** | `tools/write_report.py`, `tools/write_draft.py`, LLM Smart 프롬프트 설계 |
+| #5 | **Action + Search Tools** | `tools/update_status.py`, `tools/search_items.py`, `tools/storage.py`, TinyDB CRUD |
+| #6 | **Compute + Data Tools** | `tools/compute_stats.py`, `tools/parse_billing.py`, `backend/db/store.py`, `scheduler.py` |
 
 ```
 의존성 흐름 (→ 는 "출력 스키마를 받아야 작업 가능")
 
-Fetch Tool #2 ─┐
-Fetch Tool #3 ─┼─► Briefing Agent #1 ─► Scoring Tool #4 ─► Classify Tool #5 ─► Streamlit #6
-               │       (tool_use 루프)                                                ▲
-               └──────────────────────────────────────────────────────────────────────┘
-                          (WorkCard·BriefingResult Pydantic 모델 Week 1 확정 → #6 mock 개발 시작)
+#2 Fetch ──► 팀장 Agent ──► #3 Score/Classify ──► #4 Write
+                              ▲                       ▲
+                    스키마 Week 1 확정 (팀장 주도, 전원 참여)
+#5 Action ◄──────────────────┘
+#6 Compute ◄─────────────────┘
 ```
 
 ```
-Week 1                        Week 2                        Week 3                        Week 4
-──────────────────────────    ──────────────────────────    ──────────────────────────    ──────────────────
-#1 파이프라인 스크립트 연결     #1 LLM 직접 호출 패턴          #1 tool_use 루프 구현          전원 통합·버그수정
-   스키마 확정 주도                classify LLM 붙이기             TOOL_REGISTRY + _dispatch
-                                                                  브리핑 헤더 생성
+Week 1                    Week 2                    Week 3                    Week 4
+──────────────────────    ──────────────────────    ──────────────────────    ──────────────
+팀장 스키마 확정 주도      팀장 LLM 직접 호출 패턴   팀장 tool_use 루프        전원 통합·버그
+     Streamlit 뼈대             classify 연결              _dispatch 구현         수정·데모
+     mock_data 작성             채팅 사이드바 UI            시스템 프롬프트 튜닝
 
-#2 mock fetch 구현             #2 Gmail OAuth 완료            #2 스레드 묶음                데모 시나리오 검증
-   (Gmail 커넥터 뼈대)             실데이터 수집 + 파싱            중복 제거
+#2  mock fetch 구현       #2  Gmail OAuth 완료       #2  Slack 수집 완성       데모 시나리오
+    (Gmail/Slack/Cal)          실데이터 교체               Calendar 완성          검증
 
-#3 mock fetch 구현             #3 Slack 메시지 수집            #3 Calendar 수집
-   (Slack 커넥터 뼈대)             DM·멘션 파싱                   미수락 초대 처리
+#3  T신호 공식 구현        #3  5신호 뼈대 작성         #3  classify LLM 전환     단위 테스트
 
-#4 T신호 공식 구현              #4 단위 테스트 완성              #4 (버퍼 / 5신호 확장 검토)
-   pytest 기초
+#4  write_report 뼈대     #4  LLM Smart 프롬프트      #4  write_draft 완성      리포트 형식
+    (mock 데이터 기반)          설계·튜닝                   브리핑 헤더 연결       마무리
 
-#5 rule-based classify         #5 LLM classify 전환           #5 Storage CRUD 완성
-   Storage 기초                    액션 타입 분류                 브리핑 헤더 연결
+#5  storage CRUD 기초     #5  update_status 완성      #5  search_items 구현     Storage 완성
 
-#6 Streamlit 앱 세팅           #6 카드 UI 완성                 #6 실데이터 렌더링
-   mock으로 카드 UI                섹션·체크리스트                체크 완료 인터랙션
+#6  DailyStats 공식       #6  compute_kpi 기초        #6  scheduler 크론 등록   parse_billing
 ```
 
-> **Week 1 필수 합의 (담당 #1 주도, 전원 참여)**  
-> `WorkCard` · `BriefingHeader` Pydantic 모델 확정 → #6이 mock 데이터로 독립 개발 시작 가능
+> **Week 1 필수 합의 (팀장 주도, 전원 참여)**
+> `WorkItem` · `WorkCard` · `BriefingResult` Pydantic 모델 확정
+> → 각 담당자가 mock 데이터로 독립 개발 시작 가능
 
 #### 브랜치 전략
 
 ```
-main          ← 배포 가능 상태만 병합
-  └ dev       ← 주간 통합 브랜치
-      ├ feat/briefing-agent
-      ├ feat/gmail-tool
-      ├ feat/slack-calendar-tool
-      ├ feat/scoring-tool
-      ├ feat/classify-tool
-      └ feat/streamlit-ui
+main   ← 배포 가능 상태만. 주 1회 (금요일 데모 후) dev → main 병합
+  └ dev ← 주간 통합 브랜치. PR 대상
+      ├ feat/agent-core        (팀장)
+      ├ feat/fetch-tools       (#2)
+      ├ feat/score-classify    (#3)
+      ├ feat/write-tools       (#4)
+      ├ feat/action-search     (#5)
+      └ feat/compute-data      (#6)
 ```
 
-- PR은 `dev`로만. `main` 병합은 주 1회 (금요일 데모 후).
-- 커밋 컨벤션: `feat:` / `fix:` / `chore:` / `docs:`
+커밋 컨벤션: `feat:` / `fix:` / `chore:` / `docs:` / `test:`
 
 ---
 
-### Phase 2 — 액션 + 결산 (5주)
-- [ ] 원클릭 답장 초안 (Action Agent)
-- [ ] 슬랙 봇 인터페이스
-- [ ] Jira / Linear 연동
-- [ ] 스누즈 기능
-- [ ] 일간 작업 결산 (완료 항목 집계 + 이월 목록)
-- [ ] 완료 시 실제 처리 시간 기록
+### 기능 추가 방법 — 확장 사이클
 
-### Phase 3 — 개인화 + KPI (5주)
+> Phase 1 MVP 이후, 새 기능을 추가할 때는 아래 사이클을 반복한다.  
+> 상세 절차(체크리스트·예시 포함)는 [WORKFLOW.md — 확장 사이클](WORKFLOW.md#확장-사이클--새-기능-추가-프로세스)을 참고한다.
+
+```
+① 업무 분석     → "이 업무를 커버해야 하는가?" (반복성·원자성·LLM 필요 여부 체크)
+② Tool 설계     → 기존 tool 재사용 vs 신규 tool, input/output 스키마 확정
+③ 구현          → mock → 등록 → 실로직 → 프롬프트 추가 (순서 중요)
+④ 성능 평가     → tool 단위 테스트 + 에이전트 tool 선택 정확도 측정
+⑤ 프롬프트 업데이트 → TOOL_PATTERNS 테이블에 새 업무 패턴 추가
+```
+
+tool이 15개 이상 누적되거나 tool 선택 정확도가 저하되면 Phase 2 (Orchestrator + SubAgents)로 전환한다.
+
+---
+
+### Phase 2 — Orchestrator + SubAgents (6주)
+
+- [ ] Orchestrator 레이어 추가 (기존 Agent → BriefingAgent로 전환)
+- [ ] ReportAgent, ActionAgent, SearchAgent 분리
+- [ ] Jira / Linear 커넥터
+- [ ] 일간 결산 자동화 (스케줄러)
 - [ ] 주간 KPI 리포트 자동 생성
+- [ ] Policy Engine (사내 규정 3-레이어)
+- [ ] 사내 문서 RAG (ChromaDB, 사용자별 격리 컬렉션)
+- [ ] 슬랙 봇 인터페이스
+
+### Phase 3 — 개인화 + 팀 기능 (6주)
+
 - [ ] 개인 KPI 대시보드 UI
-- [ ] Policy Engine (사내 규정)
+- [ ] 팀 대시보드 · 팀원별 리포트
+- [ ] 5-신호 Urgency Engine (온보딩 프로필 + 사용 이력 기반)
 - [ ] 사용 패턴 학습 (중요도 재조정)
-- [ ] 복귀 전날 사전 알림
-- [ ] 모바일 앱 (PWA)
-- [ ] Notion / Confluence 연동
-
-### Phase 4 — 팀 기능 (6주)
-- [ ] 팀 대시보드
-- [ ] 블로커 감지 & 알림
-- [ ] 팀 관리자용 KPI 리포트 (팀원별 완료율·응답 속도)
-- [ ] 월간 리포트 PDF 내보내기
+- [ ] 모바일 PWA
 - [ ] 온프레미스 배포
-
-### 확장 아이디어 (시간 여유 시 검토)
-
-> 로드맵에 포함되지 않은 선택적 기능. 우선순위 없음.
-
-- [ ] **사내 문서 RAG** — 온보딩 시 사용자가 사내 문서(조직도, 규정집, 프로젝트 개요 등) 업로드 → 개인 벡터 스토어 구축 → Authority 신호 자동 산출 + Policy Engine L2 자동화 + ReAct `search_company_docs()` 도구 추가. 사용자별 격리 컬렉션(ChromaDB).
-- [ ] **브라우저 확장 위젯** — Streamlit 전체 페이지 대신 브라우저 툴바 팝업 형태. FastAPI REST 엔드포인트 추가만으로 전환 가능, 백엔드 재사용.
-- [ ] **발신자 히스토리 RAG** — 과거 수신 항목 임베딩 → 동일 발신자 컨텍스트 자동 요약 + 초안 스타일 학습.
 
 ---
 
 ## 10. 성공 지표 (KPI)
 
-### 서비스 운영 KPI
-
-| 지표 | MVP 목표 | 6개월 목표 |
+| 지표 | Phase 1 목표 | 6개월 목표 |
 |---|---|---|
-| 복귀 후 첫 브리핑 조회율 | 70% | 85% |
 | 브리핑 생성 시간 | < 60초 | < 30초 |
+| 명령 처리 성공률 | 80% | 90% |
 | 분류 정확도 (사용자 피드백) | 75% | 90% |
 | 월간 활성 사용자 | 500 | 5,000 |
 | 유료 전환율 | 10% | 20% |
-| 일간 결산 열람율 (DAU 대비) | 50% | 70% |
-| 주간 KPI 리포트 열람율 | — | 60% |
-
-### 사용자에게 제공되는 KPI 지표 (서비스 내 대시보드)
-
-```
-[개인 주간 KPI] 2026-05-13 (5월 2주차)
-
-완료율          ████████░░  82%   (지난주 74% → +8%)
-평균 응답 시간  2시간 14분        (지난주 3시간 01분 → 개선)
-초과 마감 비율  ░░░░░░░░░░   8%   (지난주 15% → 개선)
-이월 추이       ↓ 11→9→7→5→3건  (감소 중)
-
-채널별 부하
-  Gmail  ████████  45%
-  Slack  █████     28%
-  Jira   ████      22%
-  기타   ░          5%
-
-절약 추정 시간: 약 3.2시간 (WhatToDo 미사용 시 대비)
-```
 
 ---
 
@@ -695,7 +493,7 @@ main          ← 배포 가능 상태만 병합
 
 | 서비스 | 강점 | 약점 | WhatToDo 차별점 |
 |---|---|---|---|
-| Superhuman | 이메일 UX | 이메일만 | 멀티소스 통합 |
-| Notion AI | 문서 요약 | 능동적 수집 없음 | 자동 수집·분류 |
-| Motion | 일정 최적화 | AI 분류 부족 | 복귀 특화 브리핑 |
-| Slack AI | 채널 요약 | Slack 전용 | 채널 횡단 통합 |
+| Superhuman | 이메일 UX | 이메일만 | 멀티소스 + 자연어 명령 |
+| Notion AI | 문서 요약 | 능동적 수집 없음 | 자동 수집·tool 조합 |
+| Motion | 일정 최적화 | AI 분류 부족 | 범용 업무 실행 |
+| Slack AI | 채널 요약 | Slack 전용 | 채널 횡단 + 리포트 생성 |

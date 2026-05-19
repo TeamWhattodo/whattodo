@@ -66,12 +66,27 @@ def fetch_calendar(since_days: int) -> list[WorkItem]:
     return []
 
 
+def fetch_jira(since_days: int) -> list[WorkItem]:
+    # TODO: connectors/jira.py 구현 후 교체
+    now = datetime.now(timezone.utc)
+    return [
+        WorkItem(
+            source="jira", raw_id="PROJ-401",
+            from_email="pm@company.com", from_name="김PM",
+            subject="PROJ-401 백엔드 API 스펙 리뷰 요청",
+            body_snippet="API 스펙 문서를 검토하고 코멘트를 달아주세요.",
+            received_at=now - timedelta(days=1),
+        ),
+    ]
+
+
 def fetch_messages(source: str, since_days: int) -> list[WorkItem]:
     """파이프라인 진입점. source에 따라 각 fetch 함수로 라우팅."""
     dispatch = {
         "gmail": fetch_gmail,
         "slack": fetch_slack,
         "calendar": fetch_calendar,
+        "jira": fetch_jira,
     }
     fn = dispatch.get(source)
     if fn is None:

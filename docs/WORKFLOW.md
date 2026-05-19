@@ -1,768 +1,723 @@
 # WhatToDo — 에이전트 워크플로우
 
-## 구현 단계 전략
+## 구현 전략
 
-이 문서는 최종 목표 워크플로우를 기술한다. 구현은 3단계로 진행한다.
-
-| 단계 | 기간 | 핵심 |
+| 단계 | 기간 | 핵심 목표 |
 |---|---|---|
-| **1단계** | Week 1 | mock_data로 파이프라인 스크립트 동작. 함수 직접 호출. LLM 없음. |
+| **1단계** | Week 1 | mock_data로 tool 함수 파이프라인 동작 확인. LLM 없음. |
 | **2단계** | Week 2 | 실데이터 연결 + `messages.create` 직접 호출로 LLM 응답 형식 파악. tool_use 아님. |
-| **3단계** | Week 3 | tool_use 루프 전환. LLM이 도구 순서를 결정하도록 변경. |
+| **3단계** | Week 3~4 | tool_use 루프 전환. LLM이 tool 순서를 자율 결정. |
+| **Phase 2** | 5주+ | Orchestrator + SubAgents 전환. 기존 tool 코드 재사용. |
 
-> 팀원이 함수 파이프라인을 먼저 이해한 뒤 에이전트로 전환하는 방식.  
-> 아래 워크플로우는 3단계 완료 후의 최종 상태다.
-
----
-
-## 전체 흐름 개요
-
-```
-                      ┌─────────────────────────────────┐
-                      │         트리거 종류               │
-                      │  A) 복귀 브리핑  (출근/복귀 시)  │
-                      │  B) 일간 결산   (매일 오후 6시)  │
-                      │  C) 주간 KPI    (금요일 오후 5시) │
-                      └────────────┬────────────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              ▼                    ▼                    ▼
-     [복귀 브리핑 플로우]   [일간 결산 플로우]   [주간 KPI 플로우]
-              │                    │                    │
-[1] 트리거 감지         [1] 오늘 WorkItem 조회  [1] 주간 DailySummary 조회
-              │                    │                    │
-[2] Connector Workers   [2] DailyStats 집계    [2] KPIAggregated 집계
-    병렬 수집            (순수 연산)            (순수 연산 + 전주 비교)
-              │                    │                    │
-[3] Priority Queue      [3] Narrative 생성     [3] Narrative 생성
-              │             (Fast)                 (Smart)
-              │                    │                    │
-[4-a] Policy L1         [4] DailySummary 저장  [4] KPIReport 저장
-    하드 오버라이드                  │                    │
-    (Tool, LLM ❌)       [5] 결산 위젯 업데이트 [5] 리포트 전송
-              │                                 (이메일/슬랙/PDF)
-[4-b] Briefing Agent
-    tool_use 루프
-    ├─► fetch 툴  (LLM ❌)
-    ├─► scoring 툴 (LLM ❌)
-    ├─► classify 툴 (LLM Fast 1-shot)
-    └─► finalize   (LLM Smart)
-              │
-[4-c] Policy L3 (가드레일) ◄──┘
-    액션 버튼 차단 + 감사 로그
-              │
-[5] 브리핑 확정 제시 (Streamlit)
-              │
-[6] Action Agent (on-demand)
-```
+> 팀원이 함수 파이프라인을 먼저 이해한 뒤 에이전트로 전환하는 방식.
 
 ---
 
-## 상세 워크플로우
+## Phase 1 — 단일 에이전트 워크플로우
 
-### Step 1. 트리거 감지
+### 전체 흐름
 
 ```
-트리거 종류:
-  A) 수동 — 사용자가 앱 열기 / "브리핑 시작" 클릭
-  B) 자동 — 마지막 로그인으로부터 N시간 경과 (기본값: 8시간)
-  C) 스케줄 — 매일 오전 8:30 자동 실행 (사용자 설정)
-  D) 복귀 설정 — 사용자가 "휴가 종료일" 캘린더에 등록
+사용자 명령 (자연어 or 버튼 클릭)
+    │
+    ▼
+[WorkAssistantAgent]
+    LLM Smart 티어 + TOOL_REGISTRY
+    tool_use 루프 (max 10 iterations)
+    │
+    ├── Thought: 어떤 tool이 필요한가?
+    │
+    ├── Act: tool 호출 (에이전트가 자율 결정)
+    │   ├─ fetch_emails / fetch_slack / fetch_calendar
+    │   ├─ score_urgency
+    │   ├─ classify_items
+    │   ├─ write_report / write_draft
+    │   ├─ update_item_status
+    │   ├─ search_past_items
+    │   └─ compute_daily_stats / compute_kpi
+    │
+    ├── Observe: tool 결과 확인
+    │
+    └── 반복 (결과가 충분할 때까지) → 최종 답변
+    │
+    ▼
+Streamlit UI 업데이트
+```
 
-입력:
-  - user_id
-  - absence_start (마지막 활동 시각 또는 명시적 부재 시작)
-  - absence_end   (현재 시각 또는 명시적 복귀 시각)
+### 트리거 유형
 
-출력:
-  - briefing_session_id
-  - collection_window: { start, end }
+```
+A) 채팅 입력  — "정산 리포트 작성해줘", "긴급한 것만 알려줘"
+B) 버튼 클릭  — [브리핑 시작] → "복귀 브리핑 실행해줘" 메시지로 변환
+C) 카드 버튼  — [완료 체크] → "{item_id} 완료 처리해줘" 메시지로 변환
+D) 스케줄     — APScheduler 크론 → 에이전트 직접 호출 (Phase 2)
+```
+
+모든 트리거가 동일한 `run_agent()` 루프를 통해 처리된다.
+
+---
+
+### 시나리오별 tool_use 흐름
+
+#### A. 복귀 브리핑
+
+```
+User: "주말 동안 쌓인 것 정리해줘"
+
+Iteration 1
+  Thought: 이메일, 슬랙, 캘린더를 수집해야 한다.
+  Act:     fetch_emails(since_hours=60, max_count=200)
+  Observe: WorkItem[] 43건 반환
+
+Iteration 2
+  Act:     fetch_slack_messages(since_hours=60, mention_only=true)
+  Observe: WorkItem[] 187건 반환
+
+Iteration 3
+  Act:     fetch_calendar_events(date_range=3)
+  Observe: WorkItem[] 5건 반환
+
+Iteration 4
+  Thought: 수집 완료. 긴급도 계산이 필요하다.
+  Act:     score_urgency(items=[...전체 235건...])
+  Observe: ScoredItem[] 반환 (urgency_level 1~5 부여됨)
+
+Iteration 5
+  Thought: urgency 3 이상 항목에 액션 타입과 요약을 붙여야 한다.
+  Act:     classify_items(items=[...urgency≥3인 55건...])
+  Observe: ClassifiedItem[] 반환 (action_type, summary 포함)
+
+Iteration 6
+  Thought: 브리핑 리포트를 생성한다.
+  Act:     write_report(report_type="briefing", data={...})
+  Observe: BriefingResult 반환
+
+Final:
+  "주말 동안 235건이 수신됐습니다.
+   🔴 지금 당장 처리 (3건): 계약서 서명, 배포 승인, 예산 승인
+   🟡 오늘 안에 (7건): 주간 회의 준비 외 6건
+   ⚪ FYI 225건은 접어두었습니다."
+```
+
+#### B. 정산 리포트 작성 (파일 업로드 포함)
+
+```
+User: "5월 정산 리포트 작성해줘" (billing_may.csv 첨부)
+
+Iteration 1
+  Act:     fetch_uploaded_file(file_path="billing_may.csv", file_type="csv")
+  Observe: ParsedFile 반환
+
+Iteration 2
+  Act:     parse_billing_data(file_path="billing_may.csv", month="2026-05")
+  Observe: BillingData {revenue: 4200만, refunds: 130만, net: 4070만}
+
+Iteration 3
+  Act:     compute_daily_stats(date="2026-05")
+  Observe: DailyStats 반환
+
+Iteration 4
+  Act:     write_report(report_type="billing", data={...})
+  Observe: ReportDraft 반환
+
+Final: 리포트 초안 표시 + 다운로드 버튼
+```
+
+#### C. 답장 초안 작성
+
+```
+User: "박팀장 DM 답장 초안 써줘"
+
+Iteration 1
+  Act:     search_past_items(query="박팀장 DM", source="slack", date_range="7d")
+  Observe: WorkItem[] 3건 반환
+
+Iteration 2
+  Act:     get_item_thread(item_id="slack_xxx", source="slack")
+  Observe: ThreadItems[] (스레드 전체 맥락)
+
+Iteration 3
+  Act:     write_draft(item_id="slack_xxx", tone="formal")
+  Observe: DraftText 반환
+
+Final: 초안 표시 (사용자 확인 후 복사 → 직접 발송)
+```
+
+#### D. 긴급 항목만 파악
+
+```
+User: "긴급한 것만 알려줘"
+
+Iteration 1
+  Act:     fetch_emails(since_hours=8, max_count=50)
+  Observe: WorkItem[] 12건
+
+Iteration 2
+  Act:     fetch_slack_messages(since_hours=8, mention_only=true)
+  Observe: WorkItem[] 27건
+
+Iteration 3
+  Act:     score_urgency(items=[...39건...])
+  Observe: ScoredItem[] (urgency 4~5: 4건)
+
+Iteration 4
+  Thought: urgency 4~5 항목만 분류한다.
+  Act:     classify_items(items=[...urgency≥4인 4건...])
+  Observe: ClassifiedItem[] 4건
+
+Final: "긴급 항목 4건입니다.
+  🔴 PROJ-402 배포 승인 대기 (마감 초과)
+  🔴 박팀장 DM — 예산 승인 요청
+  🟠 고객사 이메일 — 내일 오전 마감
+  🟠 캘린더 — 오후 2시 회의 준비"
 ```
 
 ---
 
-### Step 2. Connector Workers — 병렬 수집 + Priority Queue 투입
-
-> 각 소스 커넥터는 병렬로 실행된다. 수집이 끝날 때까지 기다리지 않고 항목 단위로 즉시 큐에 투입한다.
-
-```
-┌──────────┐  item₁ ──►┐
-│  Gmail   │  item₂ ──►│
-│Connector │  item₃ ──►│   ┌─────────────────────────────┐
-└──────────┘           ├──►│      Priority Queue          │
-┌──────────┐  item₄ ──►│   │  (heapq, 인메모리)           │
-│  Slack   │  item₅ ──►│   │                              │
-│Connector │           ├──►│  score = fast_urgency(item)  │
-└──────────┘           │   │  (키워드+발신자만 보는 0.1초  │
-┌──────────┐  item₆ ──►│   │   초경량 추정)               │
-│Calendar  │           ├──►│                              │
-│Connector │           │   │  [CEO 이메일, est≈0.9]  ←처리│
-└──────────┘           │   │  [Jira blocker, est≈0.85]    │
-┌──────────┐  item₇ ──►│   │  [DM×3, est≈0.7]            │
-│  Jira    │           ├──►│  [채널 멘션, est≈0.4]        │
-│Connector │           │   │  ...                         │
-└──────────┘           │   └─────────────┬────────────────┘
-                       │                 │ 큐에서 꺼내 처리
-                       │                 ▼
-                       │       Urgency Engine + Classifier
-                       │                 │
-                       │                 ▼ 분류 완료 즉시
-                       │           TinyDB 저장 → Streamlit 폴링
-```
-
-**Gmail Connector**
-```
-1. OAuth2 토큰으로 Gmail API 호출
-2. 쿼리: is:unread after:{absence_start}
-3. 각 이메일에서 추출:
-   - sender, subject, snippet, received_at, thread_id
-   - 첨부파일 여부, 캘린더 초대 여부
-4. 스레드 단위로 묶어 중복 제거
-5. 최대 200건 (초과 시 최신순)
-```
-
-**Slack Connector**
-```
-1. Slack Bot Token으로 API 호출
-2. 수집 대상:
-   - conversations.history — 멘션(@me) 포함 메시지
-   - im.history          — DM
-   - 미완료 reminder 목록
-3. 각 메시지에서 추출:
-   - channel, sender, text, ts, thread_ts
-   - 반응(emoji) 여부 (내가 이미 확인했는지 시그널)
-4. 스레드 단위 묶음 처리
-```
-
-**Calendar Connector**
-```
-1. Google Calendar API 호출
-2. 수집 대상:
-   - 부재 기간 중 수락하지 않은 초대
-   - 오늘 ~ 3일 이내 일정 (준비 필요 여부 판단용)
-   - 마감일이 지난 이벤트
-3. 각 이벤트에서 추출:
-   - title, start, end, attendees, description
-   - organizer, RSVP status
-```
-
-**Jira/Linear Connector**
-```
-1. API 토큰으로 호출
-2. JQL 쿼리: assignee = currentUser() AND (
-     updated >= {absence_start} OR
-     due <= {absence_end+3days}
-   )
-3. 각 이슈에서 추출:
-   - key, summary, status, priority, due_date
-   - assignee, reporter, comments (부재 중 추가분)
-   - 블로커 여부 (is_blocked_by, blocks)
-```
-
----
-
-### Step 2-a. Policy Engine — 레이어 1 (하드 오버라이드)
-
-> 큐에서 꺼낸 직후, Urgency Engine 이전에 실행. LLM 없음.
+### 에러 처리
 
 ```python
-def apply_hard_overrides(item: WorkItem, policy: PolicyConfig) -> WorkItem:
-    for rule in policy.hard_overrides:
-        if rule.matches(item):
-            # AI 판단 없이 강제 설정
-            item.urgency_level = rule.action.urgency_level
-            item.action_type   = rule.action.action_type
-            item.policy_applied = rule.name   # 감사 로그용
-            item.skip_urgency_engine = True   # 다음 단계 스킵 플래그
-            break
-    return item
-```
+# runner.py 에서 tool 에러 자동 처리
+# 에이전트가 {"error": "..."} 결과를 받으면 시스템 프롬프트 지시에 따라:
+#   1. 다른 tool로 대체 시도
+#   2. 대체 불가 시 사용자에게 설명 후 중단
+#   3. 동일 파라미터로 재시도 금지
 
-```
-예시:
-  input:  Gmail, sender=cto@bigclient.com, subject="긴급 미팅 요청"
-  규정:   VIP_고객_즉시처리 → urgency_level=5
-  output: urgency_level=5 (Urgency Engine 계산 스킵)
-  로그:   "policy_applied: VIP_고객_즉시처리"
-```
+소스 연결 실패:
+  → {"error": "Gmail API 연결 실패"} 반환
+  → 에이전트: "Gmail 연결에 실패했습니다. Slack과 Calendar로만 브리핑을 생성합니다."
+  → 나머지 소스로 계속 진행
 
----
+AI 분류 실패 (항목):
+  → urgency=3, action_type="review" 기본값으로 처리
+  → 사용자가 수동으로 재분류 가능
 
-### Step 3. scoring 툴 — 정량 긴급도 계산
+타임아웃 (>60초):
+  → urgency 4~5 항목만 먼저 제시 (부분 브리핑)
+  → 백그라운드에서 나머지 처리 후 갱신
 
-> 순수 Python. LLM 호출 없음. 항목당 ~1ms.
-
-**MVP — T 신호 단독**
-
-마감 잔여 시간만으로 긴급도를 계산한다.
-
-```python
-urgency_level = ceil(time_score(item) * 5)   # → 1~5
-
-def time_score(due_at, received_at, now) -> float:
-    if due_at:
-        hours_left = (due_at - now).total_seconds() / 3600
-        if hours_left <= 0: return 1.0          # 이미 초과
-        return 1 - exp(-3 / max(hours_left, 0.5))
-    else:
-        hours_elapsed = (now - received_at).total_seconds() / 3600
-        return min(hours_elapsed / 72, 0.6)     # 마감 없음, 최대 0.6
-```
-
-**확장 — 5-신호 가중합**
-
-온보딩 프로필(A 신호)과 사용 이력(F 신호)이 쌓이면 전환한다.
-
-```python
-urgency_score = 0.35·T + 0.25·A + 0.20·F + 0.10·K + 0.10·S
-urgency_level = ceil(urgency_score * 5)   # → 1~5
-
-# A — 발신자 중요도 (온보딩 user_profile 우선 → 서명 파싱 → 행동 추정 → 기본값 0.4)
-AUTHORITY_TIERS = {
-    "executive":  1.00,
-    "manager":    0.80,
-    "peer":       0.50,
-    "other":      0.30,
-    "unknown":    0.40,
-}
-
-# F — 반복 추적 (미응답 동일 발신자 메시지 수, 로그 스케일)
-followup = min(log1p(unanswered_count) / log1p(5), 1.0)
-
-# K — 키워드 신호 (정규식, clamp to [0, 1])
-KEYWORDS = { r"urgent|긴급": +0.9, r"ASAP|오늘까지": +0.8,
-             r"마감|deadline": +0.6, r"FYI|참고": -0.4 }
-
-# S — 소스·채널 유형
-SOURCE = { ("slack","dm"): 0.85, ("jira","blocker"): 0.90,
-           ("email","direct"): 0.70, ("email","cc"): 0.35 }
-```
-
-**출력 예시**
-
-```json
-{
-  "urgency_score": 0.821,
-  "urgency_level": 5,
-  "breakdown": {
-    "T": 0.78,
-    "A": 0.80,
-    "F": 0.60,
-    "K": 0.80,
-    "S": 0.70
-  }
-}
+max_iterations 초과:
+  → "처리가 복잡합니다. 요청을 더 구체적으로 나눠서 다시 시도해주세요." 반환
 ```
 
 ---
 
-### Step 3-a. Briefing Agent — tool_use 루프 흐름
+## Phase 2 — Orchestrator + SubAgents 전환
 
-> Briefing Agent가 tool_use로 아래 흐름을 자율 조합한다. 긴급도 5 항목은 교차 참조 추가 수집 후 classify 툴로 전달.
+### 전환 시점
+
+- tool이 15개 이상 누적되어 단일 에이전트의 tool 선택 정확도 저하 시
+- 또는 업무 유형별로 담당 팀원이 명확히 분리될 때
+
+### 전환 방법
+
+**기존 Phase 1 코드를 그대로 유지**하면서 Orchestrator 레이어만 추가한다. SubAgent는 Phase 1 tool을 그대로 import해 사용한다.
 
 ```
-Reason: "이메일 본문에 Slack 스레드 링크가 있다. 해당 스레드를 봐야
-         맥락을 파악할 수 있다."
-Act:    fetch_slack_thread(channel="proj-alpha", ts="1234567890.123")
-Observe: [스레드 내용 수신]
+Phase 1 구조 (유지)
+  tools/ ← 코드 변경 없음
+  agents/runner.py ← SubAgent 내부 루프로 재사용
 
-Reason: "스레드에서 박팀장이 최종 결정을 요청했다. 추가 수집 불필요."
-→ STOP (2 iterations)
+Phase 2 추가
+  agents/orchestrator.py ← 신규
+  agents/subagents/
+      briefing_agent.py  ← runner.py + fetch/score/classify tool
+      report_agent.py    ← runner.py + write/compute/parse tool
+      action_agent.py    ← runner.py + update/draft tool
+      search_agent.py    ← runner.py + search/rag tool
 ```
 
-**Tool Registry (ReAct에서만 사용)**
+### Orchestrator 워크플로우
+
+```
+User: "정산 리포트 작성하고, 박팀장 DM 초안도 써줘"
+
+[Orchestrator]
+  Thought: 두 가지 업무다. ReportAgent와 ActionAgent에 위임한다.
+
+  Act: call_report_agent(task="5월 정산 리포트 작성")
+  Observe: ReportAgent 실행 결과 반환
+    └─ [ReportAgent] (Fast 티어)
+         fetch_uploaded_file → parse_billing_data → write_report
+         결과: 리포트 초안 텍스트
+
+  Act: call_action_agent(task="박팀장 DM 답장 초안 작성")
+  Observe: ActionAgent 실행 결과 반환
+    └─ [ActionAgent] (Fast 티어)
+         search_past_items → get_item_thread → write_draft
+         결과: 답장 초안 텍스트
+
+Final: 두 결과를 취합해 사용자에게 전달
+```
+
+### SubAgent 구현 패턴
 
 ```python
-tools = [
-    fetch_email_thread(thread_id),        # 이메일 스레드 전체
-    fetch_slack_thread(channel, ts),       # Slack 스레드 원문
-    fetch_jira_comments(issue_key),        # Jira 댓글 전체
-    search_calendar(keyword, date_range),  # 캘린더 검색
-    get_sender_info(email),                # 발신자 직책·관계
-    extract_references(text),              # 본문 내 링크·이슈키 추출
+# backend/agents/subagents/briefing_agent.py
+
+BRIEFING_AGENT_TOOLS = [
+    "fetch_emails", "fetch_slack_messages", "fetch_calendar_events",
+    "score_urgency", "classify_items", "write_report",
 ]
+
+BRIEFING_AGENT_SYSTEM = """
+당신은 브리핑 전문 에이전트입니다.
+이메일·슬랙·캘린더 수집 → 긴급도 계산 → 분류 → 브리핑 생성 업무만 담당합니다.
+"""
+
+def run_briefing_agent(task: str, **kwargs) -> dict:
+    """
+    Orchestrator의 tool 결과로 반환되는 함수.
+    Phase 1 runner.py를 SubAgent 내부 루프로 재사용.
+    SubAgent는 Fast 티어로 비용 절감.
+    """
+    # Fast 모델 + 도메인 한정 tool만 사용
+    subset_registry = ToolRegistry()
+    for name in BRIEFING_AGENT_TOOLS:
+        subset_registry._tools[name] = registry._tools[name]
+
+    final_text, _ = run_agent(
+        user_message=task,
+        history=[],
+        model_override=settings.fast_model,   # Fast 티어
+        registry_override=subset_registry,    # 도메인 한정 tool
+    )
+    return {"agent": "briefing", "result": final_text}
 ```
 
-**종료 조건 (먼저 충족되는 것)**
+### Phase 2 팀 분업
 
-```python
-STOP_CONDITIONS = [
-    lambda s: s.iteration >= 5,
-    lambda s: "ENOUGH_CONTEXT" in s.scratchpad,
-    lambda s: len(s.new_references) == 0,   # 더 따라갈 참조 없음
-]
-```
+| 담당 | 역할 |
+|---|---|
+| 팀장 | Orchestrator 구현 (`agents/orchestrator.py`), Streamlit UI 유지 |
+| #2 | BriefingAgent 담당 (Phase 1 fetch tool 소유) |
+| #3 | BriefingAgent 내 score/classify (Phase 1 코드 그대로) |
+| #4 | ReportAgent 담당 (write tool 소유) |
+| #5 | ActionAgent 담당 (action/search tool 소유) |
+| #6 | SearchAgent + RAG (ChromaDB 벡터 스토어 추가) |
 
 ---
 
-### Step 3-b. classify 툴 — 액션 타입 + 요약
-
-> LLM Fast 티어 1-shot. 항목당 ~200 토큰. 긴급도는 scoring 툴에서 이미 계산됐으므로 의미 이해만 담당. Briefing Agent가 호출.
-
-```
-입력: raw_item + urgency_result (+ ReAct 추가 컨텍스트 if any) + policy_context
-출력: action_type, summary
-
-프롬프트:
-  System: "아래 업무 항목의 액션 타입과 1~2줄 요약을 JSON으로 반환하라.
-           긴급도는 이미 계산되었으니 판단하지 않는다.
-           
-           [사내 규정 컨텍스트]  ← 레이어 2 주입
-           {policy.communication_rules}
-           {policy.reporting_structure}
-           {policy.project_priorities}"
-
-  User:   "[Gmail] 김대표 → 계약서 서명 요청\n내용: ..."
-
-  → {
-      "action_type": "approve",
-      "summary": "CEO가 계약서 최종 서명을 요청.",
-      "estimated_time_min": 10,
-      "requires_contact": ["김대표"]
-    }
-```
-
-**액션 타입**
-
-```
-reply    — 나의 답변·응답이 필요한 경우
-approve  — 내 승인·서명·수락이 필요한 경우
-review   — 내가 검토해야 하는 문서·코드·디자인
-fyi      — 읽기만 하면 되는 정보성 항목
-none     — 이미 처리됐거나 불필요한 항목
-```
-
----
-
-### Step 3-c. Policy Engine — 레이어 3 (가드레일)
-
-> Classifier 이후, UI 스트리밍 직전에 실행.
-
-```python
-def apply_guardrails(item: ClassifiedItem, policy: PolicyConfig) -> ClassifiedItem:
-    for guardrail in policy.guardrails:
-        if guardrail.matches(item):
-            # 해당 액션 버튼 비활성화, 사유 표시
-            item.blocked_actions.append(guardrail.blocks)
-            item.block_reason = guardrail.reason
-            # 감사 로그 기록 (Enterprise 플랜)
-            audit_log.write(item, guardrail)
-    return item
-```
-
-```
-예시:
-  input:  action_type=approve, summary="계약서 서명 요청"
-  규정:   계약_자동승인_금지
-  output: approve 버튼 비활성화
-          UI에 표시: "⚠️ 계약 관련 승인은 직접 처리 필요"
-          감사 로그: { item_id, guardrail: "계약_자동승인_금지", ts }
-```
-
----
-
-### Step 4. Briefing Agent — finalize (브리핑 헤더 생성)
-
-> Briefing Agent의 `finalize_briefing` 도구 호출. LLM Smart 티어로 품질 확보.
-
-```
-입력: classified_items[] (전체 분류 완료 항목)
-출력: Briefing (구조화된 브리핑 객체)
-
-처리 단계:
-  1. 그룹핑
-     - urgency 5 → "지금 당장"
-     - urgency 3~4 + 오늘 마감 → "오늘 안에"
-     - urgency 2~3 → "이번 주 내"
-     - action_type == "fyi" → "읽기만 하면 됨"
-
-  2. 같은 주제 묶음 처리
-     - 동일 발신자의 연속 메시지 → 1건으로 묶어 요약
-     - 동일 프로젝트 관련 이슈 → 그룹 레이블 부여
-
-  3. "연락해야 할 사람" 목록 생성
-     - 내가 답하지 않아 기다리는 사람
-     - 내가 블로커인 이슈의 담당자
-     - 내가 수락/거절하지 않은 초대 주최자
-
-  4. 브리핑 헤더 문구 생성
-     - 부재 기간 요약
-     - 전체 항목 수 및 긴급 항목 수
-     - 예상 처리 시간 합계
-```
-
-**브리핑 출력 구조**
-
-```json
-{
-  "briefing_id": "brfg_20260513_001",
-  "generated_at": "2026-05-13T09:02:00",
-  "absence": {
-    "start": "2026-05-09T18:00:00",
-    "end": "2026-05-13T09:00:00",
-    "duration_days": 4
-  },
-  "stats": {
-    "total": 268,
-    "urgent": 3,
-    "today": 7,
-    "fyi": 180,
-    "estimated_minutes": 85
-  },
-  "sections": {
-    "immediate": [...],
-    "today": [...],
-    "this_week": [...],
-    "fyi": [...]
-  },
-  "contacts_needed": [
-    {
-      "person": "김대표",
-      "reason": "계약서 서명 답변 대기 중",
-      "channel": "email",
-      "draft_available": true
-    }
-  ],
-  "summary_text": "4일 부재 동안 268건이 수신됐습니다. 긴급 처리가 필요한 항목은 3건이며..."
-}
-```
-
----
-
-### Step 5. 브리핑 제시 (Streamlit)
-
-```python
-# app.py — Streamlit 렌더링 예시
-import streamlit as st
-import httpx, time
-
-def render_briefing():
-    st.title("WhatToDo 복귀 브리핑")
-
-    if st.button("브리핑 시작"):
-        session_id = httpx.post("/briefing/start").json()["session_id"]
-        st.session_state["session_id"] = session_id
-
-    if sid := st.session_state.get("session_id"):
-        briefing = httpx.get(f"/briefing/{sid}").json()
-        st.metric("긴급 항목", briefing["urgent"])
-
-        for card in briefing["sections"]["immediate"]:
-            with st.container(border=True):
-                st.write(f"🔴 {card['summary']}")
-                st.caption(f"{card['from_person']} · {card['estimated_minutes']}분")
-                if st.checkbox("완료", key=card["id"]):
-                    httpx.patch(f"/items/{card['id']}", json={"status": "done"})
-                    st.rerun()
-```
-
-```
-UI 렌더링 순서:
-  1. 헤더 — 부재 기간, 통계, 예상 처리 시간
-  2. "지금 당장" 섹션 (강조 표시)
-  3. "연락해야 할 사람" 패널
-  4. "오늘 안에" 섹션
-  5. "이번 주 내" 섹션 (st.expander로 접힘)
-  6. "FYI" 섹션 (st.expander로 접힘)
-```
-
----
-
-### Step 6. Action Agent — 사용자 액션 처리
-
-> 사용자가 카드에서 액션을 선택할 때 실행.
-
-```
-액션 A: "초안 작성" 클릭
-  입력: work_item + user_context
-  처리:
-    - LLM Smart 티어가 답장/댓글 초안 생성
-    - 사용자 어조(formal/casual) 반영
-    - 사용자 확인 → 수정 → 전송
-  출력: draft_text → 사용자 편집 인터페이스
-
-액션 B: "완료" 체크
-  처리:
-    - status = "done" 업데이트
-    - 해당 소스 읽음 처리 시도 (가능한 경우)
-    - 연관된 "연락해야 할 사람" 목록에서 제거
-
-액션 C: "스누즈"
-  입력: snooze_until (사용자 선택)
-  처리:
-    - status = "snoozed"
-    - snooze_until 시각에 알림 스케줄링
-
-액션 D: "캘린더 블로킹"
-  처리:
-    - 완료 안 된 항목의 예상 시간 합산
-    - Google Calendar에 "업무 정리" 블록 생성 제안
-```
-
----
-
----
-
-## 작업 결산 워크플로우
+## 일간 결산 워크플로우 (Phase 2)
 
 ### 트리거
 
 ```
-A) 스케줄 — 매일 오후 6시 (사용자 설정 가능)
-B) 수동   — 위젯의 "오늘 결산" 버튼 클릭
-C) 주간   — 금요일 오후 5시 (주간 KPI 리포트 포함)
+A) 스케줄 — 매일 오후 6시 (APScheduler)
+B) 수동   — 사용자: "오늘 결산해줘"
 ```
 
-### 결산 생성 흐름
+### 에이전트 처리
 
 ```
-[트리거]
-    │
-    ▼
-[1] 오늘 날짜 기준 WorkItem 조회
-    - status = "done" AND completed_at >= 오늘 00:00  → 완료 목록
-    - status = "pending" OR "snoozed"                → 이월 목록
-    │
-    ▼
-[2] DailyStats 집계 (순수 연산, LLM 미사용)
-    - completion_rate = done / (done + pending)
-    - avg_response_minutes = mean(completed_at - created_at)
-    - overdue_count = count(due_at < completed_at)
-    - by_source, by_action_type 카운트
-    │
-    ▼
-[3] Narrative 생성 (LLM Fast 티어, ~300 토큰)
-    - "오늘 7건을 처리했습니다. 평균 응답 시간이 어제보다 32분 단축됐습니다."
-    - 이월 항목 중 내일 마감인 것 강조
-    │
-    ▼
-[4] DailySummary 저장 → DB
-    │
-    ▼
-[5] 결산 위젯 업데이트 + 슬랙 DM 발송 (선택)
-```
+User: "오늘 결산해줘"
 
-### 결산 위젯 스케치
+[WorkAssistantAgent 또는 Phase 2: ActionAgent]
 
-```
-┌─────────────────────────────────────┐
-│ 오늘 결산  2026-05-13  ✕           │
-│ ──────────────────────────────────  │
-│ ✅ 완료  7건  ·  실제 48분          │
-│ ⏭  이월  3건  ·  예상 35분         │
-│                                     │
-│ 완료율  ████████░░  70%             │
-│ 응답속도  1h 23m  (↓ 어제보다 빠름) │
-│                                     │
-│ 잘한 점: 긴급 항목 3건 모두 처리    │
-│ 내일 주의: 디자인 피드백 마감 임박  │
-│                                     │
-│ [주간 KPI 보기]  [내일 브리핑 예약] │
-└─────────────────────────────────────┘
+Iteration 1
+  Act:     search_past_items(date_range="today", status="done")
+  Observe: 완료 WorkItem[] 7건
+
+Iteration 2
+  Act:     search_past_items(date_range="today", status="pending")
+  Observe: 이월 WorkItem[] 3건
+
+Iteration 3
+  Act:     compute_daily_stats(date="2026-05-13")
+  Observe: DailyStats {completion_rate: 0.70, avg_response: 83min, ...}
+
+Iteration 4
+  Act:     write_report(report_type="daily_summary", data={...})
+  Observe: DailySummary {narrative: "오늘 7건을 처리했습니다..."}
+
+Final:
+  ✅ 완료 7건 / 실제 48분
+  ⏭ 이월 3건 (내일 마감 1건)
+  완료율 70% / 평균 응답 83분
+  "내일 오전 디자인 피드백 마감이 임박합니다."
 ```
 
 ---
 
-## KPI 리포트 워크플로우
+## 주간 KPI 워크플로우 (Phase 2)
 
-### 주간 리포트 생성 흐름
+### 트리거
 
 ```
-[금요일 오후 5시 스케줄]
-    │
-    ▼
-[1] 이번 주 DailySummary 5건 조회 (월~금)
-    │
-    ▼
-[2] KPIAggregated 집계 (순수 연산)
-    - avg_completion_rate: 일간 완료율 평균
-    - avg_response_minutes: 전체 응답 시간 평균
-    - overdue_ratio: 초과 마감 항목 / 전체
-    - busiest_source: 채널별 항목 수 중 최대값
-    - carryover_trend: [월 11건, 화 9건, 수 7건, 목 5건, 금 3건]
-    │
-    ▼
-[3] 지난 주 KPIAggregated와 비교 → 증감 계산
-    │
-    ▼
-[4] Narrative 생성 (LLM Smart 티어, ~500 토큰)
-    입력: aggregated + prev_week_aggregated
-    출력:
-      "이번 주 완료율이 82%로 지난주(74%)보다 8%p 향상됐습니다.
-       평균 응답 시간도 47분 단축됐습니다. 다만 Jira 이슈 초과 마감
-       비율이 15%로 다소 높습니다. 다음 주에는 Jira 항목을 브리핑
-       상단에서 먼저 처리하는 루틴을 추천합니다."
-    │
-    ▼
-[5] KPIReport 저장 → DB
-    │
-    ▼
-[6] 리포트 전송
-    - 이메일 (사용자 선택)
-    - 슬랙 DM
-    - 앱 내 알림
-    - PDF 내보내기 (Pro 이상)
+스케줄 — 금요일 오후 5시 (APScheduler)
 ```
 
-### KPI 리포트 출력 구조
+### 에이전트 처리
 
-```json
-{
-  "report_id": "kpi_weekly_20260513",
-  "period": "weekly",
-  "period_start": "2026-05-09",
-  "period_end": "2026-05-13",
-  "aggregated": {
-    "avg_completion_rate": 0.82,
-    "avg_response_minutes": 83,
-    "overdue_ratio": 0.08,
-    "busiest_source": "gmail",
-    "carryover_trend": [11, 9, 7, 5, 3],
-    "total_items_processed": 47,
-    "total_time_saved_estimate": 192
-  },
-  "vs_prev_week": {
-    "completion_rate_delta": +0.08,
-    "response_time_delta": -47,
-    "overdue_ratio_delta": -0.07
-  },
-  "narrative": "이번 주 완료율이 82%로...",
-  "recommendations": [
-    "Jira 항목 초과 마감 비율 개선 필요",
-    "월요일 브리핑 처리 시간이 평균보다 40% 길음 — 월요일 오전 집중 블록 추천"
-  ]
-}
+```
+[Scheduler → WorkAssistantAgent]
+
+Iteration 1
+  Act:     search_past_items(date_range="this_week")
+  Observe: 이번 주 WorkItem[] 전체
+
+Iteration 2
+  Act:     compute_kpi(period="weekly")
+  Observe: KPIAggregated {avg_completion: 0.82, overdue_ratio: 0.08, ...}
+
+Iteration 3
+  Act:     compute_kpi(period="last_weekly")     # 전주 비교용
+  Observe: 지난주 KPIAggregated
+
+Iteration 4
+  Act:     write_report(report_type="kpi_weekly", data={current: ..., prev: ...})
+  Observe: KPIReport {narrative: "이번 주 완료율 82%로 지난주 대비 +8%p..."}
+
+Final: Streamlit 리포트 페이지 업데이트 + (선택) 슬랙 DM 발송
 ```
 
 ---
 
-## 에러 처리 및 폴백
+## Tool 추가 프로세스
+
+새 기능을 추가할 때는 아래 순서를 따른다. 에이전트 로직은 건드리지 않는다.
 
 ```
-소스 연결 실패:
-  → 해당 소스 스킵 + 사용자에게 "Gmail 연결 오류" 배지 표시
-  → 나머지 소스로 브리핑 생성 계속
+1. 기능 제안
+   팀원: "미팅 전에 안건 요약이 필요해요"
 
-AI 분류 실패 (항목):
-  → urgency=3, action_type="review" 기본값으로 "오늘 안에" 섹션 배치
-  → 사용자가 수동으로 재분류 가능
+2. 업무 분해
+   fetch_calendar_events → search_company_docs → write_meeting_agenda
 
-브리핑 생성 타임아웃 (>60초):
-  → 수집된 항목 중 urgency 4~5만 먼저 제시 (부분 브리핑)
-  → 백그라운드에서 나머지 처리 후 갱신
+3. tool 구현
+   backend/tools/write_agenda.py 에 write_meeting_agenda() 함수 작성
 
-토큰 한도 초과 (항목 수 과다):
-  → Classifier: 배치 처리 (50건씩)
-  → Summarizer: 중요도 하위 항목은 카운트만 포함, 상세 내용 생략
+4. registry 등록
+   tool_registry.py 하단에 Tool() 등록
+
+5. 시스템 프롬프트 업데이트
+   prompts.py의 Tool 조합 패턴 테이블에 추가
+
+6. 끝. 에이전트가 자동으로 활용.
+```
+
+### 신규 Tool 체크리스트
+
+```
+□ 함수 시그니처: 모든 파라미터 타입 명시
+□ 반환 타입: JSON 직렬화 가능한 dict / list[dict]
+□ 에러 처리: try-except → {"error": str(e)} 반환
+□ 단독 테스트: mock 데이터로 독립 실행 가능
+□ input_schema: Anthropic tool_use 스펙 준수
+□ description: 에이전트가 언제 이 tool을 선택할지 명확히 기술
+□ 등록: tool_registry.py에 registry.register() 추가
+□ 패턴 추가: prompts.py Tool 조합 패턴 테이블 업데이트
 ```
 
 ---
 
 ## 데이터 흐름 다이어그램
 
+### Phase 1
+
 ```
-[외부 소스]      [Priority Queue]    [처리 계층]           [클라이언트]
-    │                  │                 │                      │
-Gmail ──item─────►│               │                      │
-Slack ──item─────►│  heapq        │                      │
-Cal   ──item─────►│  (인메모리)   ├──► Urgency Engine    │
-Jira  ──item─────►│  (score=      │    (Python, ~1ms)    │
-                  │   fast_est)   │         │            │
-                  │               │    urgency 1~4       │
-                  │               │         ├──► Classifier (Fast)
-                  │               │         │         │   ──저장──► TinyDB
-                  │               │    urgency 5       │
-                  │               │         └──► ReAct Loop
-                  │               │               (Smart)
-                  │               │                  │
-                  │               │             Classifier (Fast)
-                  │               │                  │   ──저장──► TinyDB
-                  │               │                  │
-                  │          (전체 완료)              │
-                  │               │                  │
-                  │               └──► Summarizer ───────저장──► TinyDB
-                  │                    (Smart)        │
-                  │                                   │
-              [TinyDB]                         Streamlit App
-              classified_items                 (REST 폴링)
-              briefings
+[사용자 입력]
+    │
+    ▼
+[WorkAssistantAgent]  ← LLM Smart + TOOL_REGISTRY
+    │
+    ├─► fetch tools  ──────────────────────────┐
+    │   (Gmail / Slack / Calendar / Jira)       │
+    │                                           ▼
+    ├─► score_urgency ◄──────────────── WorkItem[]
+    │       │
+    │       ▼ ScoredItem[]
+    ├─► classify_items
+    │       │
+    │       ▼ ClassifiedItem[]
+    ├─► write_report / write_draft
+    │       │
+    │       ▼ ReportDraft / DraftText
+    ├─► update_item_status / compute_stats
+    │       │
+    │       ▼ UpdateResult / DailyStats
+    │
+    ▼
+[TinyDB 저장]  ←── 각 tool이 완료 즉시 저장
+    │
+    ▼
+[Streamlit 렌더링]
+```
+
+### Phase 2
+
+```
+[사용자 입력]
+    │
+    ▼
+[Orchestrator]  ← LLM Smart, 라우팅 전담
+    │
+    ├─► call_briefing_agent ──► [BriefingAgent]  Fast 티어
+    │                                │
+    │                           fetch → score → classify → write
+    │
+    ├─► call_report_agent ────► [ReportAgent]    Fast 티어
+    │                                │
+    │                           parse → compute → write
+    │
+    ├─► call_action_agent ────► [ActionAgent]    Fast 티어
+    │                                │
+    │                           search → draft / update
+    │
+    └─► call_search_agent ────► [SearchAgent]    Fast 티어
+                                     │
+                                search_items / search_docs(RAG)
+    │
+    ▼ (각 SubAgent 결과 취합)
+[Orchestrator 최종 답변]
+    │
+    ▼
+[Streamlit 렌더링]  ← 변경 없음
 ```
 
 ---
 
-## 시퀀스 다이어그램 — 복귀 브리핑 생성
+## 시퀀스 다이어그램 — 복귀 브리핑 (Phase 1)
 
 ```
-Streamlit  FastAPI  Orchestrator  Connectors  PQueue  UrgencyEng  Classifier  ReAct  Summarizer  TinyDB
-    │          │         │             │          │        │            │         │        │        │
-    │─POST────►│         │            │          │        │            │         │        │        │
-    │  /start  │─start──►│            │          │        │            │         │        │        │
-    │◄session_id         │─spawn()────►│          │        │            │         │        │        │
-    │          │         │            │─Gmail─►  │        │            │         │        │        │
-    │          │         │            │─Slack─►  │        │            │         │        │        │ ← 병렬
-    │          │         │            │─Cal───►  │        │            │         │        │        │
-    │          │         │            │          │        │            │         │        │        │
-    │          │         │            │─item₁──►│        │            │         │        │        │
-    │          │         │            │─item₂──►│─deq───►│            │         │        │        │
-    │          │         │            │─item₃──►│        │─score(1~4)─►│        │        │        │
-    │          │         │            │         │        │            │─save────────────────────►│
-    │          │         │            │─item₄──►│─deq───►│            │         │        │        │
-    │          │         │            │         │        │─score(5)───────────►│        │        │
-    │          │         │            │         │        │            │─result──►│        │        │
-    │          │         │            │         │        │            │─save────────────────────►│
-    │   ...    │         │            │         │        │            │         │        │        │
-    │─GET─────►│─────────────────────────────────────────────────────────────────────────────────►│
-    │  /brief  │◄────────────────────────────────────────────────────────────────────────────────│
-    │◄cards────│         │────────────────────────────────────────────────────done──►│        │  │
-    │  (폴링)  │         │            │         │        │            │         │─save────────►│  │
-    │─GET─────►│         │            │         │        │            │         │        │     │  │
-    │◄header───│◄────────────────────────────────────────────────────────────────────────────────│
+Streamlit    runner.py     LLM      fetch tool   score tool   classify tool   write tool   TinyDB
+    │             │          │           │             │             │              │          │
+    │─명령────►  │          │           │             │             │              │          │
+    │             │─messages─►│          │             │             │              │          │
+    │             │          │           │             │             │              │          │
+    │             │◄─tool_use─│          │             │             │              │          │
+    │             │  (fetch_emails)       │             │             │              │          │
+    │             │─────────────────────►│             │             │              │          │
+    │             │◄─────────────────────│             │             │              │          │
+    │             │─tool_result──►│      │             │             │              │          │
+    │             │              │       │             │             │              │          │
+    │             │◄─tool_use────│       │             │             │              │          │
+    │             │  (score_urgency)                   │             │              │          │
+    │             │──────────────────────────────────►│             │              │          │
+    │             │◄──────────────────────────────────│             │              │          │
+    │             │─tool_result──►│                   │             │              │          │
+    │             │              │                    │             │              │          │
+    │             │◄─tool_use────│                    │             │              │          │
+    │             │  (classify_items)                              │              │          │
+    │             │───────────────────────────────────────────────►│              │          │
+    │             │◄───────────────────────────────────────────────│              │          │
+    │             │─tool_result──►│                               │              │          │
+    │             │              │                               │              │          │
+    │             │◄─tool_use────│                               │              │          │
+    │             │  (write_report)                                              │          │
+    │             │──────────────────────────────────────────────────────────►│          │
+    │             │◄──────────────────────────────────────────────────────────│          │
+    │             │─tool_result──►│                                           │          │
+    │             │              │                                            │          │
+    │             │◄─end_turn────│                                            │     ─저장─►│
+    │◄─최종답변───│              │                                                        │
+    │─렌더링──────────────────────────────────────────────────────────────────────────────│
 ```
 
 ---
 
-## 환경 변수 및 설정
+## 확장 사이클 — 새 기능 추가 프로세스
 
-```bash
-# LLM Provider 선택 (anthropic | openai)
-LLM_PROVIDER=anthropic
+새 업무를 에이전트에 추가할 때마다 이 5단계를 반복한다.  
+팀원이 바뀌거나 기능이 늘어도 동일한 사이클을 적용하면 일관성이 유지된다.
 
-# Anthropic
-ANTHROPIC_API_KEY=
+```
+① 업무 분석 → ② Tool/Agent 설계 → ③ 구현 → ④ 성능 평가 → ⑤ 시스템 프롬프트 업데이트
+      └──────────────────────────────────────────────────────────────────────────────────┘
+                                        반복
+```
 
-# OpenAI (LLM_PROVIDER=openai 시 사용)
-OPENAI_API_KEY=
+---
 
-# 모델 티어 매핑 — Provider 교체 시 이 두 줄만 변경
-FAST_MODEL=claude-haiku-4-5-20251001   # openai: gpt-4o-mini
-SMART_MODEL=claude-sonnet-4-6          # openai: gpt-4o
+### ① 업무 분석
 
-# 소스 연동
-GMAIL_CLIENT_ID=
-GMAIL_CLIENT_SECRET=
-SLACK_BOT_TOKEN=
-SLACK_SIGNING_SECRET=
-GOOGLE_CALENDAR_CLIENT_ID=
-JIRA_API_TOKEN=
-JIRA_BASE_URL=
+**목표**: "이 서비스로 어떤 업무를 커버할 것인가"를 정의한다.
 
-# 앱 설정
-SECRET_KEY=
+추가 여부를 판단하는 체크리스트:
 
-# 설정값
-COLLECTION_LIMIT_PER_SOURCE=200
-BRIEFING_TIMEOUT_SECONDS=60
-CLASSIFIER_BATCH_SIZE=50
-DEFAULT_ABSENCE_THRESHOLD_HOURS=8
+| 질문 | 기준 |
+|---|---|
+| 반복성 | 사용자가 주 3회 이상 할 만한 업무인가 |
+| 원자성 | 더 작은 단위로 쪼갤 수 있는가 — 쪼개지면 각각 tool |
+| LLM 필요성 | 의미 이해가 필요한가, 아니면 순수 코드로 처리 가능한가 |
 
-# Urgency Engine 가중치
-URGENCY_WEIGHT_TIME=0.35
-URGENCY_WEIGHT_AUTHORITY=0.25
-URGENCY_WEIGHT_FOLLOWUP=0.20
-URGENCY_WEIGHT_KEYWORD=0.10
-URGENCY_WEIGHT_SOURCE=0.10
+**출력물 — 업무 명세서**
 
-# ReAct 설정
-REACT_MAX_ITERATIONS=5
-REACT_URGENCY_THRESHOLD=5
+| 항목 | 내용 |
+|---|---|
+| 업무명 | 예: 미팅 전 안건 브리핑 |
+| 트리거 | 예: "오후 2시 미팅 준비해줘" |
+| 입력 | 예: 오늘 캘린더 일정 |
+| 출력 | 예: 미팅별 안건 요약 + 관련 이메일/슬랙 맥락 |
+| LLM 필요 여부 | 예: ✅ (요약 생성 시 필요) |
+
+---
+
+### ② Tool / Agent 설계
+
+**목표**: 업무를 tool 단위로 분해하고 인터페이스를 확정한다.
+
+결정해야 할 것:
+
+| 질문 | 판단 기준 |
+|---|---|
+| 기존 tool 재사용 vs 신규 tool | 기존 tool의 output이 그대로 쓰이면 재사용 |
+| tool 추가 vs SubAgent 신설 | 단일 에이전트 tool 수 20개 미만이면 tool 추가, 초과 시 SubAgent 분리 |
+| tool 조합 순서 | 에이전트가 자율 결정하게 두되, 순서 제약이 있으면 시스템 프롬프트에 명시 |
+
+**출력물 — Tool 명세서** (구현 시작 전 팀 합의 필수)
+
+```python
+{
+    "name": "write_meeting_agenda",
+    "description": "미팅 주제와 관련 맥락으로 안건 초안 생성",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "meeting_title": {"type": "string"},
+            "context":       {"type": "string"},  # 관련 이메일/슬랙 내용
+        },
+        "required": ["meeting_title"],
+    },
+    # output_type: str (AgendaText)
+    # LLM: Smart 1-shot
+    # 담당자: #3 Processing Tools
+}
+```
+
+---
+
+### ③ 구현
+
+**순서가 중요하다.** 로직 구현보다 인터페이스 확인이 먼저다.
+
+```
+1. mock 함수 구현 (반환값 하드코딩)
+       ↓
+2. TOOL_REGISTRY 등록 → 에이전트가 tool을 선택하는지 확인
+       ↓
+3. 실제 로직 구현
+       ↓
+4. 시스템 프롬프트 Tool 패턴 테이블에 추가
+```
+
+1번을 먼저 하는 이유: 에이전트가 tool을 선택하지 않으면 `description` 문제, 선택했는데 결과가 이상하면 로직 문제다. 두 문제를 분리해서 디버깅할 수 있다.
+
+```python
+# 1단계: mock 함수
+async def write_meeting_agenda(meeting_title: str, context: str = "") -> str:
+    return f"[MOCK] {meeting_title} 안건: 논의 사항 1, 2, 3"  # 하드코딩
+
+# 2단계: TOOL_REGISTRY에 등록 후 에이전트 테스트
+assert "write_meeting_agenda" in extract_tool_calls(
+    agent.chat("오후 2시 미팅 준비해줘")
+)
+
+# 3단계: 실제 로직으로 교체
+async def write_meeting_agenda(meeting_title: str, context: str = "") -> str:
+    return await llm_client.complete(AGENDA_PROMPT.format(...), tier="smart")
+```
+
+---
+
+### ④ 성능 평가
+
+두 레벨로 평가한다.
+
+**Tool 레벨 (단위 테스트)**
+
+```python
+# tests/test_write_meeting_agenda.py
+async def test_agenda_includes_title():
+    result = await write_meeting_agenda("분기 리뷰", context="...")
+    assert "분기 리뷰" in result
+
+async def test_empty_context_returns_generic_agenda():
+    result = await write_meeting_agenda("주간 회의")
+    assert len(result) > 10
+```
+
+**Agent 레벨 (통합 평가)**
+
+| 지표 | 측정 방법 |
+|---|---|
+| Tool 선택 정확도 | 정답 tool 조합 대비 실제 선택 일치율 |
+| 불필요 tool 호출 | 정답 조합에 없는 tool을 추가 호출한 비율 |
+| Iteration 수 | 평균 반복 횟수 (낮을수록 좋음) |
+| 최종 답변 품질 | LLM-as-judge 점수 (1~5) |
+
+```python
+# tests/eval_agent_routing.py
+TEST_CASES = [
+    {
+        "input":    "오후 2시 미팅 준비해줘",
+        "expected": ["fetch_messages", "write_meeting_agenda"],
+    },
+    {
+        "input":    "이 이메일 초안 써줘",
+        "expected": ["write_draft"],
+    },
+]
+
+for case in TEST_CASES:
+    actual = extract_tool_calls(agent.chat(case["input"]))
+    assert actual == case["expected"], f"Expected {case['expected']}, got {actual}"
+```
+
+**평가 결과에 따른 처리**
+
+| 증상 | 원인 | 처치 |
+|---|---|---|
+| tool 선택 안 함 | description 불명확 | description 수정 |
+| 순서 틀림 | 에이전트가 순서를 모름 | 시스템 프롬프트에 패턴 명시 |
+| 불필요 호출 많음 | 종료 조건 불명확 | "충분한 정보가 있으면 추가 호출 금지" 강화 |
+| 출력 품질 낮음 | tool 내부 프롬프트 문제 | tool 프롬프트 수정 |
+
+---
+
+### ⑤ 시스템 프롬프트 업데이트
+
+평가 통과 후, 에이전트 시스템 프롬프트의 Tool 패턴 테이블에 새 업무를 추가한다.
+
+```python
+# agents/assistant_agent.py — SYSTEM_PROMPT 내 패턴 테이블
+TOOL_PATTERNS = """
+| 사용자 요청 패턴         | 사용할 tool 조합                                        |
+|------------------------|-------------------------------------------------------|
+| 브리핑 요청             | fetch_messages → score_urgency → classify_items → finalize_briefing |
+| 초안 작성 요청          | write_draft                                           |
+| 미팅 준비 요청          | fetch_messages(calendar) → write_meeting_agenda       |  ← 새로 추가
+| 상태 조회 요청          | get_briefing_summary                                  |
+| 완료/스누즈 처리        | update_item_status                                    |
+"""
+```
+
+이 테이블이 에이전트의 "레시피 북"이다. 새 기능이 추가될수록 에이전트가 더 정확하게 tool을 조합한다.
+
+---
+
+### 사이클 예시 — "미팅 전 안건 브리핑" 추가
+
+```
+① 업무 분석
+   반복성: 미팅 있는 날마다 → 주 3~5회 ✅
+   입력:   오늘 캘린더 일정
+   출력:   미팅별 안건 요약 + 관련 이메일/슬랙 맥락
+   LLM:    ✅ (요약 생성 시 필요)
+
+② Tool 설계
+   재사용:  fetch_messages (source=calendar) ✅
+   신규:    write_meeting_agenda(meeting_title, context) → AgendaText
+   조합:    fetch_messages → write_meeting_agenda
+
+③ 구현
+   tools/write_agenda.py 작성 (mock → 등록 → 실로직 → 프롬프트 추가)
+
+④ 평가
+   테스트: "오후 2시 미팅 준비해줘"
+   정답 조합: [fetch_messages, write_meeting_agenda]
+   3회 실행, tool 선택 일치율 100% 확인
+
+⑤ 시스템 프롬프트 업데이트
+   TOOL_PATTERNS에 "미팅 준비 요청" 행 추가
 ```
