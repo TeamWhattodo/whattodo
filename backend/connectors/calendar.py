@@ -1,9 +1,8 @@
-from datetime import datetime
+class CalendarConnector:
+    """Google Calendar API 커넥터. Week 2에 구현."""
 
-from backend.connectors.base import BaseConnector
-from backend.models import WorkItem
+    def __init__(self):
+        raise NotImplementedError("Week 2: Google Calendar OAuth 연결 필요")
 
-
-class CalendarConnector(BaseConnector):
-    async def fetch(self, since: datetime, until: datetime) -> list[WorkItem]:
-        ...
+    def get_events(self, date_range: int) -> list[dict]:
+        raise NotImplementedError

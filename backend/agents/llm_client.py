@@ -1,58 +1,30 @@
-"""
-LLM Provider 추상화 — SDK를 직접 import하지 말고 이 파일만 호출한다.
-
-    from backend.agents import llm_client
-    text = await llm_client.complete("요약해줘", tier="fast")
-"""
-from typing import Literal
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from backend.config import settings
 
-Tier = Literal["fast", "smart"]
+
+def get_llm(tier: str = "smart") -> BaseChatModel:
+    """설정된 provider에 맞는 LangChain 채팅 모델을 반환한다."""
+    model = settings.smart_model if tier == "smart" else settings.fast_model
+    if settings.provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key)
+    elif settings.provider == "openai":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model=model, api_key=settings.openai_api_key)
+    else:
+        raise ValueError(f"지원하지 않는 provider: {settings.provider!r}. 'anthropic' 또는 'openai'를 사용하세요.")
 
 
-def _model(tier: Tier) -> str:
-    return settings.fast_model if tier == "fast" else settings.smart_model
-
-
-async def complete(
-    prompt: str,
-    tier: Tier = "fast",
-    system: str | None = None,
-    max_tokens: int = 1024,
-) -> str:
-    """단일 LLM 호출 진입점. LLM_PROVIDER 환경 변수에 따라 라우팅."""
-    if settings.llm_provider == "anthropic":
-        return await _anthropic(prompt, tier, system, max_tokens)
-    if settings.llm_provider == "openai":
-        return await _openai(prompt, tier, system, max_tokens)
-    raise ValueError(f"지원하지 않는 LLM_PROVIDER: {settings.llm_provider!r}")
-
-
-async def _anthropic(prompt: str, tier: Tier, system: str | None, max_tokens: int) -> str:
-    import anthropic
-
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    kwargs: dict = {
-        "model": _model(tier),
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if system:
-        kwargs["system"] = system
-    response = await client.messages.create(**kwargs)
-    return response.content[0].text
-
-
-async def _openai(prompt: str, tier: Tier, system: str | None, max_tokens: int) -> str:
-    import openai
-
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+def complete(prompt: str, tier: str = "smart", system: str = "") -> str:
+    """단일 LLM 호출. tool_use 없음. classify/write 전용."""
     messages = []
     if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
-    response = await client.chat.completions.create(
-        model=_model(tier), messages=messages, max_tokens=max_tokens,
-    )
-    return response.choices[0].message.content
+        messages.append(SystemMessage(content=system))
+    messages.append(HumanMessage(content=prompt))
+    return get_llm(tier).invoke(messages).content
+
+
+if __name__ == "__main__":
+    print(complete("안녕하세요", tier="fast"))
