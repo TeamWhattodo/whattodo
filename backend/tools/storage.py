@@ -1,67 +1,46 @@
-"""
-storage 툴 — 담당 #5.
-TinyDB CRUD. db/store.py의 공개 인터페이스.
-"""
-import uuid
-
-from backend.models import BriefingHeader, BriefingResult, DailySummary, KPIReport, WorkCard
+from backend.db.store import work_items_db as _db, expense_reports_db as _expense_db, ItemQuery as Item
 
 
-def save_work_items(user_id: str, cards: list[WorkCard]) -> None:
-    ...
+def save_items(items: list[dict]) -> None:
+    for item in items:
+        if not _db.search(Item.id == item["id"]):
+            _db.insert(item)
 
 
-def get_pending_cards(user_id: str) -> list[WorkCard]:
-    ...
+def get_pending_items() -> list[dict]:
+    return _db.search(Item.status == "pending")
 
 
-def update_item_status(item_id: str, status: str) -> None:
-    ...
+def get_item_by_id(item_id: str) -> dict | None:
+    results = _db.search(Item.id == item_id)
+    return results[0] if results else None
 
 
-def save_briefing(user_id: str, result: BriefingResult) -> None:
-    ...
+def search_items(query: str = "", status: str = None, source: str = None) -> list[dict]:
+    results = _db.all()
+    if status:
+        results = [r for r in results if r.get("status") == status]
+    if source:
+        results = [r for r in results if r.get("source") == source]
+    if query:
+        q = query.lower()
+        results = [r for r in results if q in (r.get("summary", "") + r.get("raw_content", "")).lower()]
+    return results
 
 
-def get_latest_briefing(user_id: str) -> BriefingResult | None:
-    ...
+def update_item_status(item_id: str, status: str) -> dict:
+    _db.update({"status": status}, Item.id == item_id)
+    return {"success": True, "item_id": item_id, "status": status}
 
 
-def save_daily_summary(user_id: str, summary: DailySummary) -> None:
-    ...
+def save_expense_report(report: dict) -> None:
+    _expense_db.insert(report)
 
 
-def get_daily_summary(user_id: str, date: str) -> DailySummary | None:
-    ...
-
-
-def save_kpi_report(user_id: str, report: KPIReport) -> None:
-    ...
-
-
-def get_latest_kpi_report(user_id: str) -> KPIReport | None:
-    ...
-
-
-def finalize_briefing(cards: list[WorkCard], absence_days: int, user_id: str) -> BriefingResult:
-    """브리핑 헤더 생성 + TinyDB 저장 후 BriefingResult 반환. 담당 #5."""
-    urgent = sum(1 for c in cards if c.urgency_level >= 4)
-    total_minutes = sum(c.estimated_minutes for c in cards)
-
-    header = BriefingHeader(
-        briefing_id=str(uuid.uuid4()),
-        absence_days=absence_days,
-        total=len(cards),
-        urgent=urgent,
-        estimated_minutes=total_minutes,
-        contacts_needed=[
-            {"person": c.from_person, "reason": c.summary, "channel": c.source}
-            for c in cards if c.urgency_level >= 4
-        ],
-        summary_text=(
-            f"{absence_days}일 부재 동안 {len(cards)}건 수신. "
-            f"긴급 항목 {urgent}건."
-        ),
-    )
-    # TODO: save_briefing(user_id, result) — TinyDB 구현 후 추가
-    return BriefingResult(header=header, cards=cards)
+if __name__ == "__main__":
+    test = [{"id": "test_001", "source": "gmail", "status": "pending",
+             "summary": "테스트", "urgency_level": 3}]
+    save_items(test)
+    print("저장:", get_pending_items())
+    update_item_status("test_001", "done")
+    print("업데이트:", get_pending_items())

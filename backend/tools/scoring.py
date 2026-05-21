@@ -1,47 +1,45 @@
-"""
-scoring 툴 — 담당 #4.
-순수 Python. LLM 없음. 항목당 ~1ms.
-MVP: T 신호 단독.  확장: 5-신호 가중합으로 전환.
-"""
-import math
-from datetime import datetime, timezone
-
-from backend.models import WorkItem
+from math import exp, ceil
+from datetime import datetime
 
 
-def calculate_urgency(item: WorkItem) -> tuple[int, dict]:
-    """(urgency_level 1~5, breakdown dict) 반환."""
-    t = _time_score(item)
-    level = max(1, min(5, math.ceil(t * 5)))
-    return level, {"T": round(t, 3)}
-
-
-def _time_score(item: WorkItem) -> float:
-    """마감 기준 지수 감쇠. 초과=1.0, 24h 후≈0.12, 없음=최대 0.6."""
-    now = datetime.now(timezone.utc)
-    if item.due_at:
-        hours_left = (item.due_at - now).total_seconds() / 3600
+def time_score(due_at: datetime | None, received_at: datetime) -> float:
+    now = datetime.now()
+    if due_at:
+        hours_left = (due_at - now).total_seconds() / 3600
         if hours_left <= 0:
             return 1.0
-        return 1 - math.exp(-3 / max(hours_left, 0.5))
+        return 1 - exp(-3 / max(hours_left, 0.5))
     else:
-        hours_elapsed = (now - item.received_at).total_seconds() / 3600
+        hours_elapsed = (now - received_at).total_seconds() / 3600
         return min(hours_elapsed / 72, 0.6)
 
 
-# ── 확장용 신호 (Week 3+ 전환 시 calculate_urgency에 추가) ────────────────────
+def score_urgency(items: list[dict]) -> list[dict]:
+    """
+    WorkItem[] → urgency_level(1~5) + urgency_breakdown 추가 후 반환
+    LLM 미사용. 수식만.
+    """
+    for item in items:
+        due_at = (
+            datetime.fromisoformat(item["due_at"])
+            if item.get("due_at") else None
+        )
+        received_at = datetime.fromisoformat(item["created_at"])
 
-def _authority_score(item: WorkItem) -> float:
-    ...
+        t = time_score(due_at, received_at)
+        item["urgency_level"]     = max(1, ceil(t * 5))
+        item["urgency_breakdown"] = {"T": round(t, 3)}
+
+    return sorted(items, key=lambda x: x["urgency_level"], reverse=True)
 
 
-def _followup_score(item: WorkItem) -> float:
-    ...
-
-
-def _keyword_score(item: WorkItem) -> float:
-    ...
-
-
-def _source_score(item: WorkItem) -> float:
-    ...
+if __name__ == "__main__":
+    from datetime import timedelta
+    test = [
+        {"id": "1", "due_at": (datetime.now() - timedelta(hours=2)).isoformat(),
+         "created_at": datetime.now().isoformat()},
+        {"id": "2", "due_at": None,
+         "created_at": (datetime.now() - timedelta(hours=10)).isoformat()},
+    ]
+    for item in score_urgency(test):
+        print(f"id={item['id']} urgency={item['urgency_level']} {item['urgency_breakdown']}")

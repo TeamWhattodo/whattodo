@@ -1,8 +1,9 @@
-"""
-TinyDB 구현체. tools/storage.py 의 함수가 이 파일에 위임한다.
-직접 import하지 말고 tools/storage.py 를 통해 사용한다.
-"""
 from pathlib import Path
+from tinydb import TinyDB, Query
 
-_DATA_DIR = Path(__file__).parent / "data"
-_DATA_DIR.mkdir(exist_ok=True)
+DB_DIR = Path(__file__).parent / "data"
+DB_DIR.mkdir(parents=True, exist_ok=True)
+
+work_items_db = TinyDB(DB_DIR / "work_items.json")
+expense_reports_db = TinyDB(DB_DIR / "expense_reports.json")
+ItemQuery = Query()

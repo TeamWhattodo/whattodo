@@ -1,9 +1,9 @@
-from datetime import datetime
+# TODO (팀원 B): Slack Bot Token 연결 구현
+# Week 2에 fetch.py의 fetch_slack()에서 호출
 
-from backend.connectors.base import BaseConnector
-from backend.models import WorkItem
+class SlackConnector:
+    def __init__(self):
+        raise NotImplementedError("Week 2 구현 예정 — 팀원 B 담당")
 
-
-class SlackConnector(BaseConnector):
-    async def fetch(self, since: datetime, until: datetime) -> list[WorkItem]:
-        ...
+    def get_mentions(self, since_hours: int = 24) -> list[dict]:
+        raise NotImplementedError

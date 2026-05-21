@@ -172,6 +172,33 @@ Final: "긴급 항목 4건입니다.
   🟠 캘린더 — 오후 2시 회의 준비"
 ```
 
+#### E. 사내 규정 조회 및 정산 검증 (Phase 2)
+
+```
+User: "출장 교통비 한도 얼마야?"
+
+Iteration 1
+  Thought: 사내 규정에서 교통비 한도를 검색한다.
+  Act:     search_company_docs(query="출장 교통비 한도")
+  Observe: DocChunk[] — "3.2절 교통비: 1일 5만원 이내"
+
+Final: "사내 규정(3.2절)에 따르면 출장 교통비 한도는 1일 5만원입니다."
+```
+
+```
+User: "이 영수증 규정에 맞아?" (영수증 이미지 업로드)
+
+Iteration 1
+  Act:     parse_receipt(image_path="receipt.jpg")
+  Observe: ReceiptItem[] [식대 32,000원]
+
+Iteration 2
+  Act:     search_company_docs(query="식대 규정 한도")
+  Observe: DocChunk[] — "식대 1일 30,000원 이내"
+
+Final: "식대 32,000원 / 규정 한도 30,000원 → 2,000원 초과"
+```
+
 ---
 
 ### 에러 처리
@@ -295,6 +322,50 @@ def run_briefing_agent(task: str, **kwargs) -> dict:
 | #4 | ReportAgent 담당 (write tool 소유) |
 | #5 | ActionAgent 담당 (action/search tool 소유) |
 | #6 | SearchAgent + RAG (ChromaDB 벡터 스토어 추가) |
+
+### RAG 구현 노트 (`search_company_docs`)
+
+#### 파일 구조
+
+```
+backend/
+  tools/
+    policy_search.py     ← @tool: search_company_docs(query) -> str
+  db/
+    data/
+      policy_store/      ← ChromaDB 벡터 DB (자동 생성)
+  scripts/
+    ingest_policy.py     ← 문서 임베딩 → 저장 (신규 문서 추가 시 재실행)
+```
+
+#### 지원 문서 형식
+
+| 형식 | 로더 | 상태 |
+|---|---|---|
+| PDF | `PyPDFLoader` | ✅ 현재 |
+| Word (.docx) | `Docx2txtLoader` | 추후 |
+| Markdown | `UnstructuredMarkdownLoader` | 추후 |
+| HTML | `BSHTMLLoader` | 추후 |
+
+#### 인제스트 흐름
+
+```
+ingest_policy.py 실행
+  ├─ 문서 로드 (PyPDFLoader)
+  ├─ 청크 분할 (RecursiveCharacterTextSplitter, chunk_size=500)
+  ├─ 임베딩 생성 (jhgan/ko-sroberta-multitask)
+  └─ ChromaDB 저장 (backend/db/data/policy_store/)
+```
+
+#### tool 인터페이스
+
+```python
+# backend/tools/policy_search.py
+
+def search_company_docs(query: str, top_k: int = 3) -> str:
+    """ChromaDB에서 query와 관련된 사내 문서 청크를 검색해 반환한다."""
+    # top_k개 청크 검색 → 문자열로 취합 반환
+```
 
 ---
 

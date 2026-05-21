@@ -1,94 +1,95 @@
-"""
-fetch 툴 — 담당 #2 (gmail), #3 (slack, calendar).
-커넥터를 래핑해 파이프라인이 호출하는 단일 진입점을 제공한다.
-Week 2에서 httpx 실제 호출로 교체 시 async로 전환.
-"""
-from datetime import datetime, timedelta, timezone
-
-from backend.models import WorkItem
-
-_NOW = datetime.now(timezone.utc)
+# Week 1: mock 반환. Week 2: connector 연결로 교체.
+from datetime import datetime, timedelta
 
 
-def fetch_gmail(since_days: int) -> list[WorkItem]:
-    # TODO: connectors/gmail.py 구현 후 교체
-    now = datetime.now(timezone.utc)
+def fetch_emails(since_hours: int = 24, max_count: int = 50) -> list[dict]:
+    """Gmail 미읽음 이메일 수집. Week 2에 실데이터로 교체."""
+    # TODO (#2): from backend.connectors.gmail import GmailConnector
     return [
-        WorkItem(
-            source="gmail", raw_id="g-001",
-            from_email="ceo@example.com", from_name="김대표",
-            subject="계약서 최종 서명 요청",
-            body_snippet="계약서 서명 부탁드립니다. 마감이 지났습니다.",
-            received_at=now - timedelta(days=2),
-            due_at=now - timedelta(hours=6),
-        ),
-        WorkItem(
-            source="gmail", raw_id="g-002",
-            from_email="dev@company.com", from_name="이개발",
-            subject="PROJ-402 배포 승인 대기",
-            body_snippet="배포 승인 부탁드립니다. 마감 초과 상태입니다.",
-            received_at=now - timedelta(days=1),
-            due_at=now - timedelta(days=1),
-        ),
-        WorkItem(
-            source="gmail", raw_id="g-003",
-            from_email="newsletter@industry.com", from_name="뉴스레터",
-            subject="주간 업계 동향",
-            body_snippet="이번 주 업계 소식입니다. FYI.",
-            received_at=now - timedelta(days=3),
-        ),
+        {
+            "id": "email_mock_001",
+            "source": "gmail",
+            "raw_content": "[Mock] 김대표: 계약서 서명 요청",
+            "summary": "",
+            "urgency_level": 0,
+            "urgency_breakdown": {},
+            "action_type": "none",
+            "from_person": "김대표",
+            "due_at": (datetime.now() + timedelta(hours=18)).isoformat(),
+            "status": "pending",
+            "created_at": (datetime.now() - timedelta(hours=2)).isoformat(),
+        }
     ]
 
 
-def fetch_slack(since_days: int) -> list[WorkItem]:
-    # TODO: connectors/slack.py 구현 후 교체
-    now = datetime.now(timezone.utc)
+def fetch_slack_messages(since_hours: int = 24, mention_only: bool = True) -> list[dict]:
+    """Slack 멘션·DM 수집. Week 2에 실데이터로 교체."""
+    # TODO (#2): from backend.connectors.slack import SlackConnector
     return [
-        WorkItem(
-            source="slack", raw_id="s-001",
-            from_email="lead@company.com", from_name="박팀장",
-            subject="예산 승인 요청",
-            body_snippet="박팀장 DM 3건 — 예산 승인 요청.",
-            received_at=now - timedelta(minutes=30),
-        ),
-        WorkItem(
-            source="slack", raw_id="s-002",
-            from_email="design@company.com", from_name="최디자인",
-            subject="UI 피드백 요청",
-            body_snippet="디자인팀 — UI 피드백 요청. 오늘까지.",
-            received_at=now - timedelta(hours=5),
-        ),
+        {
+            "id": "slack_mock_001",
+            "source": "slack",
+            "raw_content": "[Mock] 박팀장 DM: 예산 승인 요청",
+            "summary": "",
+            "urgency_level": 0,
+            "urgency_breakdown": {},
+            "action_type": "none",
+            "from_person": "박팀장",
+            "due_at": None,
+            "status": "pending",
+            "created_at": (datetime.now() - timedelta(hours=5)).isoformat(),
+        }
     ]
 
 
-def fetch_calendar(since_days: int) -> list[WorkItem]:
-    # TODO: connectors/calendar.py 구현 후 교체
-    return []
-
-
-def fetch_jira(since_days: int) -> list[WorkItem]:
-    # TODO: connectors/jira.py 구현 후 교체
-    now = datetime.now(timezone.utc)
+def fetch_calendar_events(date_range: int = 3) -> list[dict]:
+    """캘린더 일정 수집. Week 2에 실데이터로 교체."""
+    # TODO (#2): from backend.connectors.calendar import CalendarConnector
     return [
-        WorkItem(
-            source="jira", raw_id="PROJ-401",
-            from_email="pm@company.com", from_name="김PM",
-            subject="PROJ-401 백엔드 API 스펙 리뷰 요청",
-            body_snippet="API 스펙 문서를 검토하고 코멘트를 달아주세요.",
-            received_at=now - timedelta(days=1),
-        ),
+        {
+            "id": "cal_mock_001",
+            "source": "calendar",
+            "raw_content": "[Mock] 오후 2시 팀 미팅",
+            "summary": "",
+            "urgency_level": 0,
+            "urgency_breakdown": {},
+            "action_type": "none",
+            "from_person": None,
+            "due_at": (datetime.now() + timedelta(hours=4)).isoformat(),
+            "status": "pending",
+            "created_at": datetime.now().isoformat(),
+        }
     ]
 
 
-def fetch_messages(source: str, since_days: int) -> list[WorkItem]:
-    """파이프라인 진입점. source에 따라 각 fetch 함수로 라우팅."""
-    dispatch = {
-        "gmail": fetch_gmail,
-        "slack": fetch_slack,
-        "calendar": fetch_calendar,
-        "jira": fetch_jira,
-    }
-    fn = dispatch.get(source)
-    if fn is None:
-        return []
-    return fn(since_days)
+def fetch_jira_issues(due_within_days: int = 7, max_count: int = 50) -> list[dict]:
+    """Jira 이슈 수집. Week 2에 실데이터로 교체."""
+    # TODO (#2): from backend.connectors.jira import JiraConnector
+    return [
+        {
+            "id": "jira_mock_001",
+            "source": "jira",
+            "raw_content": "[Mock][PROJ-402] 배포 승인 대기",
+            "summary": "",
+            "urgency_level": 0,
+            "urgency_breakdown": {},
+            "action_type": "none",
+            "from_person": "개발팀",
+            "due_at": (datetime.now() - timedelta(hours=3)).isoformat(),
+            "status": "pending",
+            "created_at": (datetime.now() - timedelta(days=1)).isoformat(),
+        }
+    ]
+
+
+def fetch_uploaded_file(file_path: str, file_type: str = "csv") -> dict:
+    """업로드된 파일 파싱. Week 2에 실로직으로 교체."""
+    # TODO (#2): 파일 타입별 파서 연결
+    return {"file_path": file_path, "file_type": file_type, "rows": [], "parsed": False}
+
+
+if __name__ == "__main__":
+    print(f"Gmail:    {len(fetch_emails())}건")
+    print(f"Slack:    {len(fetch_slack_messages())}건")
+    print(f"Calendar: {len(fetch_calendar_events())}건")
+    print(f"Jira:     {len(fetch_jira_issues())}건")
