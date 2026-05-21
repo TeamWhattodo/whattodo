@@ -3,6 +3,11 @@ from datetime import datetime
 from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+pdfmetrics.registerFont(TTFont("Malgun", "C:/Windows/Fonts/malgun.ttf"))
+pdfmetrics.registerFont(TTFont("Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"))
 
 
 OUTPUT_DIR = "outputs"
@@ -58,21 +63,21 @@ def _write_pdf(items, total, report_type, report_id) -> str:
     c    = canvas.Canvas(path, pagesize=A4)
     w, h = A4
 
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont("Malgun-Bold", 16)
     c.drawString(50, h - 60, f"{report_type} 정산서")
 
-    c.setFont("Helvetica", 10)
+    c.setFont("Malgun", 10)
     c.drawString(50, h - 90, f"작성일: {datetime.now().strftime('%Y-%m-%d')}")
 
     y = h - 130
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Malgun-Bold", 10)
     c.drawString(50,  y, "날짜")
     c.drawString(130, y, "가맹점")
     c.drawString(280, y, "금액")
     c.drawString(360, y, "항목")
 
     y -= 20
-    c.setFont("Helvetica", 10)
+    c.setFont("Malgun", 10)
     for item in items:
         c.drawString(50,  y, item["date"])
         c.drawString(130, y, item["merchant"])
@@ -81,7 +86,7 @@ def _write_pdf(items, total, report_type, report_id) -> str:
         y -= 18
 
     y -= 10
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Malgun-Bold", 10)
     c.drawString(130, y, "합계")
     c.drawString(280, y, f"{total:,}원")
 
