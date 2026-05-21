@@ -17,10 +17,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
+
+from backend.config import settings
 
 POLICY_STORE_DIR = Path(__file__).parent.parent / "db" / "data" / "policy_store"
-EMBEDDING_MODEL = "jhgan/ko-sroberta-multitask"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
 SUPPORTED_LOADERS = {
     ".pdf": PyPDFLoader,
@@ -55,8 +57,8 @@ def ingest(file_path: str) -> int:
     chunks = splitter.split_documents(docs)
     print(f"  청크 수: {len(chunks)}")
 
-    print(f"  임베딩 모델 로드 중: {EMBEDDING_MODEL}")
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    print(f"  임베딩 모델: {EMBEDDING_MODEL}")
+    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=settings.openai_api_key)
 
     print(f"  ChromaDB 저장 중: {POLICY_STORE_DIR}")
     POLICY_STORE_DIR.mkdir(parents=True, exist_ok=True)

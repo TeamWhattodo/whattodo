@@ -19,12 +19,9 @@ dependencies = [
     "langchain-anthropic",
     "langchain-openai",
     "langchain-community",
-    "langchain-huggingface",
     "chromadb",
-    "sentence-transformers",
     "pypdf",
     "openai>=2.37.0",
-    "torchvision>=0.27.0",
 ]
 
 [build-system]

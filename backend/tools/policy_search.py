@@ -1,7 +1,9 @@
 from pathlib import Path
 
+from backend.config import settings
+
 POLICY_STORE_DIR = Path(__file__).parent.parent / "db" / "data" / "policy_store"
-EMBEDDING_MODEL = "jhgan/ko-sroberta-multitask"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
 _vectorstore = None
 
@@ -10,8 +12,8 @@ def _get_vectorstore():
     global _vectorstore
     if _vectorstore is None:
         from langchain_community.vectorstores import Chroma
-        from langchain_huggingface import HuggingFaceEmbeddings
-        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        from langchain_openai import OpenAIEmbeddings
+        embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=settings.openai_api_key)
         _vectorstore = Chroma(
             persist_directory=str(POLICY_STORE_DIR),
             embedding_function=embeddings,

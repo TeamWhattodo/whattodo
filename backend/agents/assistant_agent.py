@@ -1,4 +1,5 @@
 import json
+from typing import Generator
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, BaseMessage
@@ -131,6 +132,38 @@ def run_agent(
     output_messages: list[BaseMessage] = result["messages"]
     output_text = output_messages[-1].content if output_messages else ""
     return output_text, output_messages
+
+
+def stream_agent(
+    user_message: str,
+    history: list[BaseMessage],
+) -> Generator[dict, None, None]:
+    """
+    에이전트 실행을 step별로 yield한다.
+    {"type": "tool_call", "tool": str, "args": dict}
+    {"type": "tool_result", "tool": str, "content": str}
+    {"type": "done", "text": str, "history": list[BaseMessage]}
+    """
+    messages = history + [HumanMessage(content=user_message)]
+    accumulated: list[BaseMessage] = list(messages)
+
+    for chunk in agent.stream({"messages": messages}):
+        for node_state in chunk.values():
+            for msg in node_state.get("messages", []):
+                accumulated.append(msg)
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        yield {"type": "tool_call", "tool": tc["name"], "args": tc.get("args", {})}
+                elif hasattr(msg, "name") and msg.name:  # ToolMessage
+                    content = msg.content
+                    if isinstance(content, list):
+                        content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+                    yield {"type": "tool_result", "tool": msg.name, "content": str(content)}
+
+    final_text = accumulated[-1].content if accumulated else ""
+    if isinstance(final_text, list):
+        final_text = " ".join(b.get("text", "") for b in final_text if isinstance(b, dict))
+    yield {"type": "done", "text": final_text, "history": accumulated}
 
 
 if __name__ == "__main__":

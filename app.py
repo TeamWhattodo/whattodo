@@ -1,5 +1,5 @@
 import streamlit as st
-from backend.agents.assistant_agent import run_agent
+from backend.agents.assistant_agent import stream_agent
 
 st.set_page_config(page_title="WhatToDo", layout="centered")
 
@@ -36,42 +36,48 @@ if query:
         st.markdown(display_query)
     st.session_state.messages.append({"role": "user", "content": display_query})
 
+    response_text = ""
     with st.chat_message("assistant"):
-        with st.spinner("처리 중..."):
+        if query.startswith("__receipt__"):
+            # ── 영수증 정산 경로 ─────────────────────────────────────────
+            from backend.tools.receipt import parse_receipt
+            from backend.tools.expense import build_expense_report
+            import tempfile, os
 
-            if query.startswith("__receipt__"):
-                # ── 영수증 정산 경로 ─────────────────────────────────────────
-                from backend.tools.receipt import parse_receipt
-                from backend.tools.expense import build_expense_report
-                import tempfile, os
+            uploaded_file = st.session_state.pop("uploaded_file")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                tmp.write(uploaded_file.read())
+                tmp_path = tmp.name
 
-                uploaded_file = st.session_state.pop("uploaded_file")
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                    tmp.write(uploaded_file.read())
-                    tmp_path = tmp.name
+            items = parse_receipt(tmp_path)
+            report = build_expense_report(items, "출장비")
+            os.unlink(tmp_path)
 
-                items  = parse_receipt(tmp_path)
-                report = build_expense_report(items, "출장비")
-                os.unlink(tmp_path)
+            response_text = f"정산서 작성 완료 — 총 {report['total_amount']:,}원\n\n"
+            for item in report["items"]:
+                response_text += f"- {item['date']} | {item['merchant']} | {item['amount']:,}원\n"
+            st.markdown(response_text)
 
-                response_text = f"정산서 작성 완료 — 총 {report['total_amount']:,}원\n\n"
-                for item in report["items"]:
-                    response_text += f"- {item['date']} | {item['merchant']} | {item['amount']:,}원\n"
-                st.markdown(response_text)
+            col1, col2 = st.columns(2)
+            with col1:
+                with open(report["xlsx_path"], "rb") as f:
+                    st.download_button("📥 엑셀 다운로드", f, file_name="정산서.xlsx", use_container_width=True)
+            with col2:
+                with open(report["pdf_path"], "rb") as f:
+                    st.download_button("📥 PDF 다운로드", f, file_name="정산서.pdf", use_container_width=True)
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    with open(report["xlsx_path"], "rb") as f:
-                        st.download_button("📥 엑셀 다운로드", f, file_name="정산서.xlsx", use_container_width=True)
-                with col2:
-                    with open(report["pdf_path"], "rb") as f:
-                        st.download_button("📥 PDF 다운로드", f, file_name="정산서.pdf", use_container_width=True)
-
-            else:
-                response_text, st.session_state.chat_history = run_agent(
-                    user_message=query,
-                    history=st.session_state.chat_history,
-                )
-                st.markdown(response_text)
+        else:
+            # ── LangChain 에이전트 + tool 단계 표시 ──────────────────────
+            with st.status("에이전트 실행 중...", expanded=True) as status:
+                for event in stream_agent(query, st.session_state.chat_history):
+                    if event["type"] == "tool_call":
+                        st.write(f"🔧 `{event['tool']}` 호출 중...")
+                    elif event["type"] == "tool_result":
+                        st.write(f"✅ `{event['tool']}` 완료")
+                    elif event["type"] == "done":
+                        response_text = event["text"]
+                        st.session_state.chat_history = event["history"]
+                status.update(label="완료", state="complete", expanded=False)
+            st.markdown(response_text)
 
     st.session_state.messages.append({"role": "assistant", "content": response_text})
