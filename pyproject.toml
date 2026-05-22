@@ -5,23 +5,23 @@ description = "AI 에이전트가 업무 채널을 대신 정리해 주는 복�
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]",
+    "anthropic",
     "streamlit",
     "tinydb",
-    "apscheduler",
-    "anthropic",
-    "openai",
+    "pydantic",
+    "pydantic-settings",
     "httpx",
     "authlib",
-    "pydantic-settings",
-]
-
-[dependency-groups]
-dev = [
-    "pytest",
-    "pytest-asyncio",
-    "httpx",
+    "openpyxl",
+    "reportlab",
+    "python-dotenv",
+    "langchain",
+    "langchain-anthropic",
+    "langchain-openai",
+    "langchain-community",
+    "chromadb",
+    "pypdf",
+    "openai>=2.37.0",
 ]
 
 [build-system]

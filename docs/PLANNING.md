@@ -125,6 +125,13 @@ Streamlit UI (변경 없음)
 | `search_company_docs` | query | `DocChunk[]` | ❌ (RAG) |
 | `get_item_thread` | item_id, source | `ThreadItems[]` | ❌ |
 
+> **`search_company_docs` 구현 노트 (RAG)**
+> - 현재 지원 형식: PDF (`PyPDFLoader`)
+> - 추후 확장: Word (`Docx2txtLoader`), Markdown, HTML
+> - 벡터 DB: ChromaDB (로컬, 서버 불필요) / `backend/db/data/policy_store/`
+> - 임베딩: `jhgan/ko-sroberta-multitask` (한국어 특화, 무료)
+> - 문서 수집: `backend/scripts/ingest_policy.py` (신규 문서 추가 시 재실행)
+
 #### 도메인 F — 분석 (Compute)
 
 | Tool | 입력 | 출력 | LLM |
@@ -145,6 +152,8 @@ Streamlit UI (변경 없음)
 | 주간 결산 | search_past_items(7일) → compute_kpi → write_report(weekly) |
 | 미팅 준비 | fetch_calendar_events → search_company_docs → write_meeting_agenda |
 | 긴급 항목 파악 | fetch_emails → fetch_slack → score_urgency → filter_items(urgency≥4) |
+| 사규 조회 | search_company_docs |
+| 규정 기반 정산 검증 | parse_billing_data → search_company_docs → write_report(billing) |
 
 ---
 
@@ -209,6 +218,27 @@ Streamlit UI (변경 없음)
 결과: 결산 카드 표시
   ✅ 완료 7건 / 실제 48분
   ⏭ 이월 3건 → 내일 캘린더 블록 제안
+```
+
+### 시나리오 E — 사내 규정 조회 및 정산 검증 (Phase 2)
+
+```
+사용자: "출장 교통비 한도 얼마야?"
+
+에이전트:
+  → search_company_docs(query="출장 교통비 한도")
+
+결과: "사내 규정(3.2절)에 따르면 출장 교통비 한도는 1일 5만원입니다."
+```
+
+```
+사용자: "이 영수증 규정에 맞아?" (영수증 이미지 업로드)
+
+에이전트:
+  → parse_receipt(image_path="receipt.jpg")     [항목·금액 추출]
+  → search_company_docs(query="식대 규정 한도")
+
+결과: "식대 3만2천원 / 규정 한도 3만원 → 2천원 초과"
 ```
 
 ---
@@ -463,7 +493,12 @@ tool이 15개 이상 누적되거나 tool 선택 정확도가 저하되면 Phase
 - [ ] 일간 결산 자동화 (스케줄러)
 - [ ] 주간 KPI 리포트 자동 생성
 - [ ] Policy Engine (사내 규정 3-레이어)
-- [ ] 사내 문서 RAG (ChromaDB, 사용자별 격리 컬렉션)
+- [ ] 사내 문서 RAG (`search_company_docs` tool)
+  - 현재: PDF (`PyPDFLoader`)
+  - 추후: Word (`Docx2txtLoader`), Markdown, HTML로 확장
+  - 벡터 DB: ChromaDB (로컬) / 임베딩: `jhgan/ko-sroberta-multitask` (한국어 특화)
+  - 파일: `backend/tools/policy_search.py`, `backend/db/data/policy_store/`, `backend/scripts/ingest_policy.py`
+  - 사용자별 격리 컬렉션
 - [ ] 슬랙 봇 인터페이스
 
 ### Phase 3 — 개인화 + 팀 기능 (6주)
