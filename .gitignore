@@ -11,3 +11,12 @@ wheels/
 
 # 환경 변수
 .env
+
+# 생성된 파일
+outputs/
+data/
+
+# ChromaDB
+*.bin
+*.sqlite3
+chroma/

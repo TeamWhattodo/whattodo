@@ -1,8 +1,9 @@
 import json
+from pathlib import Path
 from typing import Generator
 from langchain.agents import create_agent
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, BaseMessage
 
 from backend.agents.llm_client import get_llm
 from backend.agents.prompts import SYSTEM_PROMPT
@@ -142,28 +143,142 @@ def stream_agent(
     에이전트 실행을 step별로 yield한다.
     {"type": "tool_call", "tool": str, "args": dict}
     {"type": "tool_result", "tool": str, "content": str}
+    {"type": "text_chunk", "text": str}          ← 스트리밍 토큰
     {"type": "done", "text": str, "history": list[BaseMessage]}
     """
     messages = history + [HumanMessage(content=user_message)]
-    accumulated: list[BaseMessage] = list(messages)
+    all_messages: list[BaseMessage] = list(messages)
+    current_ai_chunk: AIMessageChunk | None = None
+    seen_tools: set[str] = set()
 
-    for chunk in agent.stream({"messages": messages}):
-        for node_state in chunk.values():
-            for msg in node_state.get("messages", []):
-                accumulated.append(msg)
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        yield {"type": "tool_call", "tool": tc["name"], "args": tc.get("args", {})}
-                elif hasattr(msg, "name") and msg.name:  # ToolMessage
-                    content = msg.content
-                    if isinstance(content, list):
-                        content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                    yield {"type": "tool_result", "tool": msg.name, "content": str(content)}
+    for chunk, _ in agent.stream({"messages": messages}, stream_mode="messages"):
+        if isinstance(chunk, AIMessageChunk):
+            current_ai_chunk = chunk if current_ai_chunk is None else current_ai_chunk + chunk
 
-    final_text = accumulated[-1].content if accumulated else ""
-    if isinstance(final_text, list):
-        final_text = " ".join(b.get("text", "") for b in final_text if isinstance(b, dict))
-    yield {"type": "done", "text": final_text, "history": accumulated}
+            # 도구 호출 이벤트 (도구명 당 1회만 emit)
+            for tc in (chunk.tool_call_chunks or []):
+                name = tc.get("name", "")
+                if name and name not in seen_tools:
+                    seen_tools.add(name)
+                    yield {"type": "tool_call", "tool": name, "args": {}}
+
+            # 텍스트 토큰 스트리밍
+            if chunk.content and isinstance(chunk.content, str):
+                yield {"type": "text_chunk", "text": chunk.content}
+
+        else:
+            # AI 메시지 누적 완료
+            if current_ai_chunk is not None:
+                all_messages.append(current_ai_chunk)
+                current_ai_chunk = None
+                seen_tools = set()
+            all_messages.append(chunk)
+
+            # 도구 결과 이벤트
+            if hasattr(chunk, "name") and chunk.name:
+                content = chunk.content
+                if isinstance(content, list):
+                    content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+                yield {"type": "tool_result", "tool": chunk.name, "content": str(content)}
+
+    if current_ai_chunk is not None:
+        all_messages.append(current_ai_chunk)
+
+    last = all_messages[-1] if all_messages else None
+    final_text = ""
+    if last:
+        c = getattr(last, "content", "")
+        final_text = c if isinstance(c, str) else str(c)
+
+    yield {"type": "done", "text": final_text, "history": all_messages}
+
+
+SESSION_DIR = Path("data/sessions")
+
+
+def save_session(session_id: str, display_messages: list[dict], langchain_history: list[BaseMessage]) -> None:
+    """대화 히스토리를 JSON 파일로 저장."""
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    simple_history = []
+    for msg in langchain_history:
+        if isinstance(msg, HumanMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            simple_history.append({"type": "human", "content": content})
+        elif isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content.strip():
+            simple_history.append({"type": "ai", "content": msg.content})
+
+    path = SESSION_DIR / f"{session_id}.json"
+    # 기존 name 필드 유지
+    existing_name = None
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                existing_name = json.load(f).get("name")
+        except Exception:
+            pass
+
+    data: dict = {"display": display_messages, "history": simple_history}
+    if existing_name:
+        data["name"] = existing_name
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def rename_session(session_id: str, name: str) -> None:
+    """세션 제목 변경."""
+    path = SESSION_DIR / f"{session_id}.json"
+    if not path.exists():
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    data["name"] = name.strip() or "새 대화"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_session(session_id: str) -> tuple[list[dict], list[BaseMessage]]:
+    """JSON 파일에서 대화 히스토리를 불러옴."""
+    path = SESSION_DIR / f"{session_id}.json"
+    if not path.exists():
+        return [], []
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    history: list[BaseMessage] = []
+    for item in data.get("history", []):
+        if item["type"] == "human":
+            history.append(HumanMessage(content=item["content"]))
+        elif item["type"] == "ai":
+            history.append(AIMessage(content=item["content"]))
+    return data.get("display", []), history
+
+
+def list_sessions() -> list[dict]:
+    """저장된 세션 목록을 최신순으로 반환. [{id, name, mtime}]"""
+    if not SESSION_DIR.exists():
+        return []
+    sessions = []
+    for path in sorted(SESSION_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            display = data.get("display", [])
+            saved_name = data.get("name")
+            if not saved_name:
+                first_user = next(
+                    (m["content"] for m in display if m["role"] == "user"), None
+                )
+                saved_name = (first_user[:20] + "...") if first_user and len(first_user) > 20 else (first_user or "새 대화")
+            sessions.append({"id": path.stem, "name": saved_name})
+        except Exception:
+            continue
+    return sessions
+
+
+def delete_session(session_id: str) -> None:
+    """세션 파일 삭제."""
+    path = SESSION_DIR / f"{session_id}.json"
+    if path.exists():
+        path.unlink()
 
 
 if __name__ == "__main__":
