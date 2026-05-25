@@ -22,6 +22,7 @@ dependencies = [
     "chromadb",
     "pypdf",
     "openai>=2.37.0",
+    "langchain-mcp-adapters>=0.2.2",
 ]
 
 [build-system]

@@ -11,3 +11,9 @@ wheels/
 
 # 환경 변수
 .env
+
+# macOS
+.DS_Store
+
+# VectorDB 바이너리
+backend/db/data/policy_store/
