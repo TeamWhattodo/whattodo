@@ -30,10 +30,25 @@ def search_company_docs(query: str, top_k: int = 3) -> str:
         return "사내 문서가 아직 등록되지 않았습니다. backend/scripts/ingest_policy.py를 실행해 문서를 먼저 등록해주세요."
     try:
         vs = _get_vectorstore()
-        docs = vs.similarity_search(query, k=top_k)
+        # 자식 청크 검색. 부모 매핑을 위해 k=5로 넉넉하게 검색
+        docs = vs.similarity_search(query, k=5)
         if not docs:
             return f"'{query}'와 관련된 규정을 찾을 수 없습니다."
-        return "\n\n".join(f"[{i+1}] {doc.page_content}" for i, doc in enumerate(docs))
+            
+        seen_parents = set()
+        parent_contexts = []
+        for doc in docs:
+            parent_text = doc.metadata.get('parent_text')
+            # 계층적 청킹이 적용안된 옛 문서 호환성을 위해 parent_text가 없으면 page_content 활용
+            text_to_use = parent_text if parent_text else doc.page_content
+            if text_to_use not in seen_parents:
+                seen_parents.add(text_to_use)
+                parent_contexts.append(text_to_use)
+                
+        # 최종 부모 문맥 최대 top_k개 조합
+        final_contexts = parent_contexts[:top_k]
+        
+        return "\n\n".join(f"[{i+1}] {ctx}" for i, ctx in enumerate(final_contexts))
     except Exception as e:
         return f"문서 검색 오류: {e}"
 

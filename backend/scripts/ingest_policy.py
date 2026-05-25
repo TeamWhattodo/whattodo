@@ -50,12 +50,21 @@ def ingest(file_path: str) -> int:
     docs = loader.load()
     print(f"  페이지 수: {len(docs)}")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
-    )
-    chunks = splitter.split_documents(docs)
-    print(f"  청크 수: {len(chunks)}")
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300)
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=150, chunk_overlap=30)
+
+    parent_docs = parent_splitter.split_documents(docs)
+    chunks = []
+    
+    for p_idx, p_doc in enumerate(parent_docs):
+        c_docs = child_splitter.split_documents([p_doc])
+        for c_doc in c_docs:
+            c_doc.metadata['parent_text'] = p_doc.page_content
+            c_doc.metadata['parent_id'] = f"{path.name}_p{p_idx}"
+            chunks.append(c_doc)
+
+    print(f"  부모 청크 수: {len(parent_docs)}")
+    print(f"  자식 청크 수(저장 단위): {len(chunks)}")
 
     print(f"  임베딩 모델: {EMBEDDING_MODEL}")
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=settings.openai_api_key)
