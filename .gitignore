@@ -17,3 +17,9 @@ wheels/
 
 # VectorDB 바이너리
 backend/db/data/policy_store/
+
+# 생성된 파일
+outputs/
+
+# ChromaDB
+chroma/
