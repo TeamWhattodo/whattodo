@@ -71,6 +71,20 @@ def search_company_docs(query: str, top_k: int = 3) -> str:
     """사내 규정·문서에서 query와 관련된 내용을 검색합니다. 규정 조회, 정산 검증, 미팅 준비 시 사용."""
     return _search_docs(query, top_k)
 
+@tool
+def process_expense_report(image_paths: list[str]) -> str:
+    """업로드된 영수증 이미지를 분석해 경비정산서(엑셀·PDF)를 작성합니다. image_paths: 이미지 파일 경로 목록."""
+    from backend.tools.receipt import parse_receipt
+    from backend.tools.expense import build_expense_report
+    items  = parse_receipt(image_paths)
+    report = build_expense_report(items)
+    return json.dumps({
+        "total_amount": report["total_amount"],
+        "items":        report["items"],
+        "xlsx_path":    report["xlsx_path"],
+        "pdf_path":     report["pdf_path"],
+    }, ensure_ascii=False, default=str)
+
 
 # ── 영구 백그라운드 이벤트 루프 (MCP 세션 유지용) ─────────────────────────────
 
@@ -101,6 +115,7 @@ PROCESSING_TOOLS = [
     update_item_status,
     search_past_items,
     search_company_docs,
+    process_expense_report,
 ]
 
 TOOLS = PROCESSING_TOOLS + _load_mcp_tools_sync()

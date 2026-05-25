@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from openpyxl import Workbook
+from openpyxl import load_workbook, Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -10,7 +10,17 @@ pdfmetrics.registerFont(TTFont("Malgun", "C:/Windows/Fonts/malgun.ttf"))
 pdfmetrics.registerFont(TTFont("Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"))
 
 
-OUTPUT_DIR = "outputs"
+OUTPUT_DIR    = "outputs"
+TEMPLATE_PATH = "backend/db/data/Form/경비정산서 양식.xlsx"
+
+CATEGORY_MAP = {
+    "식비":   "식비",
+    "숙박비": "숙박비",
+    "유류비": "교통비",
+    "출장비": "기타",
+    "기타":   "기타",
+}
+
 
 
 def build_expense_report(items: list[dict], report_type: str = "출장비") -> dict:
@@ -37,22 +47,28 @@ def build_expense_report(items: list[dict], report_type: str = "출장비") -> d
 
 def _write_xlsx(items, total, report_type, report_id) -> str:
     path = f"{OUTPUT_DIR}/{report_id}.xlsx"
-    wb   = Workbook()
-    ws   = wb.active
-    ws.title = report_type
 
-    ws.append(["날짜", "가맹점", "금액(원)", "항목", "메모"])
+    wb = load_workbook(TEMPLATE_PATH)
+    ws = wb.active
 
-    for item in items:
-        ws.append([
-            item["date"],
-            item["merchant"],
-            item["amount"],
-            item["category"],
-            item.get("memo", ""),
-        ])
+    # 데이터 시작 행("내역")과 총액 행("경비 총액") 동적 탐지
+    data_start_row = None
+    total_row      = None
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value == "내역":
+                data_start_row = cell.row
+            elif cell.value == "경비 총액":
+                total_row = cell.row
 
-    ws.append(["", "합계", total, "", ""])
+    for i, item in enumerate(items):
+        row = data_start_row + i
+        ws[f"C{row}"] = item["date"]
+        ws[f"E{row}"] = CATEGORY_MAP.get(item["category"], "기타")
+        ws[f"G{row}"] = item["amount"]
+        ws[f"I{row}"] = item.get("memo") or ""
+
+    ws[f"D{total_row}"] = total
 
     wb.save(path)
     return path
