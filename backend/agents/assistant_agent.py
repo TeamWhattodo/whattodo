@@ -1,19 +1,17 @@
+import asyncio
 import json
+import threading
 from typing import Generator
+
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, BaseMessage
 
 from backend.agents.llm_client import get_llm
 from backend.agents.prompts import SYSTEM_PROMPT
+from backend.mcp_client import load_mcp_tools, MCP_SERVER_CONFIG
 
-# ── 기반 함수 임포트 ─────────────────────────────────────────────────────────
-from backend.tools.fetch import (
-    fetch_emails as _fetch_emails,
-    fetch_slack_messages as _fetch_slack,
-    fetch_calendar_events as _fetch_calendar,
-    fetch_jira_issues as _fetch_jira,
-)
+# ── 후처리 툴 임포트 ──────────────────────────────────────────────────────────
 from backend.tools.scoring import score_urgency as _score_urgency
 from backend.tools.classify import classify_items as _classify, filter_items as _filter
 from backend.tools.write_report import write_report as _write_report
@@ -23,27 +21,7 @@ from backend.tools.search_items import search_past_items as _search
 from backend.tools.policy_search import search_company_docs as _search_docs
 
 
-# ── LangChain @tool 래퍼 ──────────────────────────────────────────────────────
-
-@tool
-def fetch_emails(since_hours: int = 24, max_count: int = 50) -> str:
-    """Gmail에서 미읽음 이메일을 수집합니다. since_hours: 몇 시간 전부터."""
-    return json.dumps(_fetch_emails(since_hours, max_count), ensure_ascii=False, default=str)
-
-@tool
-def fetch_slack_messages(since_hours: int = 24, mention_only: bool = True) -> str:
-    """Slack 멘션·DM을 수집합니다."""
-    return json.dumps(_fetch_slack(since_hours, mention_only), ensure_ascii=False, default=str)
-
-@tool
-def fetch_calendar_events(date_range: int = 3) -> str:
-    """오늘 기준 date_range일 내 캘린더 일정을 수집합니다."""
-    return json.dumps(_fetch_calendar(date_range), ensure_ascii=False, default=str)
-
-@tool
-def fetch_jira_issues(due_within_days: int = 7) -> str:
-    """Jira에서 나에게 할당된 이슈를 수집합니다."""
-    return json.dumps(_fetch_jira(due_within_days), ensure_ascii=False, default=str)
+# ── 후처리 @tool 래퍼 ─────────────────────────────────────────────────────────
 
 @tool
 def score_urgency(items: list) -> str:
@@ -93,13 +71,27 @@ def search_company_docs(query: str, top_k: int = 3) -> str:
     return _search_docs(query, top_k)
 
 
+# ── 영구 백그라운드 이벤트 루프 (MCP 세션 유지용) ─────────────────────────────
+
+_bg_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+threading.Thread(target=_bg_loop.run_forever, daemon=True).start()
+
+
+def _run(coro):
+    """백그라운드 루프에서 코루틴을 실행하고 결과를 반환한다."""
+    return asyncio.run_coroutine_threadsafe(coro, _bg_loop).result()
+
+
+def _load_mcp_tools_sync() -> list:
+    """MCP 서버 툴을 백그라운드 루프에서 로드한다. 세션은 루프가 살아 있는 한 유지된다."""
+    if not MCP_SERVER_CONFIG:
+        return []
+    return _run(load_mcp_tools())
+
+
 # ── 에이전트 구성 ──────────────────────────────────────────────────────────────
 
-TOOLS = [
-    fetch_emails,
-    fetch_slack_messages,
-    fetch_calendar_events,
-    fetch_jira_issues,
+PROCESSING_TOOLS = [
     score_urgency,
     classify_items,
     filter_items,
@@ -110,6 +102,8 @@ TOOLS = [
     search_company_docs,
 ]
 
+TOOLS = PROCESSING_TOOLS + _load_mcp_tools_sync()
+
 agent = create_agent(
     model=get_llm("smart"),
     tools=TOOLS,
@@ -117,53 +111,58 @@ agent = create_agent(
 )
 
 
-def run_agent(
+async def _run_agent_async(
     user_message: str,
     history: list[BaseMessage],
-    on_step=None,       # Week 3: Streamlit 단계별 렌더링 콜백 (현재 미사용)
 ) -> tuple[str, list[BaseMessage]]:
-    """
-    LangChain 에이전트 실행.
-    history: LangChain Message 객체 리스트 (HumanMessage, AIMessage)
-    반환: (최종 답변 텍스트, 업데이트된 history)
-    """
     messages = history + [HumanMessage(content=user_message)]
-    result = agent.invoke({"messages": messages})
+    result = await agent.ainvoke({"messages": messages})
     output_messages: list[BaseMessage] = result["messages"]
     output_text = output_messages[-1].content if output_messages else ""
     return output_text, output_messages
+
+
+def run_agent(
+    user_message: str,
+    history: list[BaseMessage],
+    on_step=None,
+) -> tuple[str, list[BaseMessage]]:
+    return _run(_run_agent_async(user_message, history))
+
+
+async def _stream_agent_async(
+    user_message: str,
+    history: list[BaseMessage],
+) -> list[dict]:
+    messages = history + [HumanMessage(content=user_message)]
+    accumulated: list[BaseMessage] = list(messages)
+    events: list[dict] = []
+
+    async for chunk in agent.astream({"messages": messages}):
+        for node_state in chunk.values():
+            for msg in node_state.get("messages", []):
+                accumulated.append(msg)
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        events.append({"type": "tool_call", "tool": tc["name"], "args": tc.get("args", {})})
+                elif hasattr(msg, "name") and msg.name:
+                    content = msg.content
+                    if isinstance(content, list):
+                        content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+                    events.append({"type": "tool_result", "tool": msg.name, "content": str(content)})
+
+    final_text = accumulated[-1].content if accumulated else ""
+    if isinstance(final_text, list):
+        final_text = " ".join(b.get("text", "") for b in final_text if isinstance(b, dict))
+    events.append({"type": "done", "text": final_text, "history": accumulated})
+    return events
 
 
 def stream_agent(
     user_message: str,
     history: list[BaseMessage],
 ) -> Generator[dict, None, None]:
-    """
-    에이전트 실행을 step별로 yield한다.
-    {"type": "tool_call", "tool": str, "args": dict}
-    {"type": "tool_result", "tool": str, "content": str}
-    {"type": "done", "text": str, "history": list[BaseMessage]}
-    """
-    messages = history + [HumanMessage(content=user_message)]
-    accumulated: list[BaseMessage] = list(messages)
-
-    for chunk in agent.stream({"messages": messages}):
-        for node_state in chunk.values():
-            for msg in node_state.get("messages", []):
-                accumulated.append(msg)
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        yield {"type": "tool_call", "tool": tc["name"], "args": tc.get("args", {})}
-                elif hasattr(msg, "name") and msg.name:  # ToolMessage
-                    content = msg.content
-                    if isinstance(content, list):
-                        content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-                    yield {"type": "tool_result", "tool": msg.name, "content": str(content)}
-
-    final_text = accumulated[-1].content if accumulated else ""
-    if isinstance(final_text, list):
-        final_text = " ".join(b.get("text", "") for b in final_text if isinstance(b, dict))
-    yield {"type": "done", "text": final_text, "history": accumulated}
+    yield from _run(_stream_agent_async(user_message, history))
 
 
 if __name__ == "__main__":

@@ -17,10 +17,14 @@ class Settings(BaseSettings):
 
     slack_bot_token: str = ""
     slack_bot_user_id: str = ""
+    slack_team_id: str = ""
 
     jira_api_token: str = ""
     jira_email: str = ""
     jira_base_url: str = ""
+
+    notion_api_token: str = ""
+    github_token: str = ""
 
     class Config:
         env_file = ".env"
