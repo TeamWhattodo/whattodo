@@ -1,11 +1,58 @@
 import os
+import sys
 from datetime import datetime
-from openpyxl import Workbook
+from openpyxl import load_workbook, Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# (font_name, regular_path, bold_name, bold_path) 순서로 우선 탐색
+_FONT_CANDIDATES: list[tuple[str, str, str, str]] = []
+if sys.platform == "win32":
+    _FONT_CANDIDATES = [
+        ("Malgun", "C:/Windows/Fonts/malgun.ttf", "Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"),
+    ]
+elif sys.platform == "darwin":
+    _FONT_CANDIDATES = [
+        ("AppleGothic", "/Library/Fonts/AppleGothic.ttf",
+         "AppleGothic", "/Library/Fonts/AppleGothic.ttf"),
+        ("AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+         "AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf"),
+    ]
+
+_FONT_REGULAR = "Helvetica"
+_FONT_BOLD    = "Helvetica-Bold"
+_fonts_ready  = False
 
 
-OUTPUT_DIR = "outputs"
+def _ensure_fonts() -> None:
+    """처음 호출 시 한 번만 폰트를 등록한다."""
+    global _FONT_REGULAR, _FONT_BOLD, _fonts_ready
+    if _fonts_ready:
+        return
+    for reg_name, reg_path, bold_name, bold_path in _FONT_CANDIDATES:
+        if os.path.exists(reg_path):
+            pdfmetrics.registerFont(TTFont(reg_name, reg_path))
+            if bold_name != reg_name and os.path.exists(bold_path):
+                pdfmetrics.registerFont(TTFont(bold_name, bold_path))
+            _FONT_REGULAR = reg_name
+            _FONT_BOLD    = bold_name
+            break
+    _fonts_ready = True
+
+
+OUTPUT_DIR    = "outputs"
+TEMPLATE_PATH = "backend/db/data/Form/경비정산서 양식.xlsx"
+
+CATEGORY_MAP = {
+    "식비":   "식비",
+    "숙박비": "숙박비",
+    "유류비": "교통비",
+    "출장비": "기타",
+    "기타":   "기타",
+}
+
 
 
 def build_expense_report(items: list[dict], report_type: str = "출장비") -> dict:
@@ -32,47 +79,55 @@ def build_expense_report(items: list[dict], report_type: str = "출장비") -> d
 
 def _write_xlsx(items, total, report_type, report_id) -> str:
     path = f"{OUTPUT_DIR}/{report_id}.xlsx"
-    wb   = Workbook()
-    ws   = wb.active
-    ws.title = report_type
 
-    ws.append(["날짜", "가맹점", "금액(원)", "항목", "메모"])
+    wb = load_workbook(TEMPLATE_PATH)
+    ws = wb.active
 
-    for item in items:
-        ws.append([
-            item["date"],
-            item["merchant"],
-            item["amount"],
-            item["category"],
-            item.get("memo", ""),
-        ])
+    # 데이터 시작 행("내역")과 총액 행("경비 총액") 동적 탐지
+    data_start_row = None
+    total_row      = None
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value == "내역":
+                data_start_row = cell.row
+            elif cell.value == "경비 총액":
+                total_row = cell.row
 
-    ws.append(["", "합계", total, "", ""])
+    for i, item in enumerate(items):
+        row = data_start_row + i
+        ws[f"C{row}"] = item["date"]
+        ws[f"E{row}"] = CATEGORY_MAP.get(item["category"], "기타")
+        ws[f"G{row}"] = item["amount"]
+        ws[f"I{row}"] = item.get("memo") or ""
+
+    ws[f"D{total_row}"] = total
 
     wb.save(path)
     return path
 
 
 def _write_pdf(items, total, report_type, report_id) -> str:
+    _ensure_fonts()
+
     path = f"{OUTPUT_DIR}/{report_id}.pdf"
     c    = canvas.Canvas(path, pagesize=A4)
     w, h = A4
 
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont(_FONT_BOLD, 16)
     c.drawString(50, h - 60, f"{report_type} 정산서")
 
-    c.setFont("Helvetica", 10)
+    c.setFont(_FONT_REGULAR, 10)
     c.drawString(50, h - 90, f"작성일: {datetime.now().strftime('%Y-%m-%d')}")
 
     y = h - 130
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(_FONT_BOLD, 10)
     c.drawString(50,  y, "날짜")
     c.drawString(130, y, "가맹점")
     c.drawString(280, y, "금액")
     c.drawString(360, y, "항목")
 
     y -= 20
-    c.setFont("Helvetica", 10)
+    c.setFont(_FONT_REGULAR, 10)
     for item in items:
         c.drawString(50,  y, item["date"])
         c.drawString(130, y, item["merchant"])
@@ -81,7 +136,7 @@ def _write_pdf(items, total, report_type, report_id) -> str:
         y -= 18
 
     y -= 10
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(_FONT_BOLD, 10)
     c.drawString(130, y, "합계")
     c.drawString(280, y, f"{total:,}원")
 

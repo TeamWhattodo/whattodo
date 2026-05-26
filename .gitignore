@@ -9,5 +9,20 @@ wheels/
 # Virtual environments
 .venv
 
+# Node.js
+node_modules/
+
 # 환경 변수
 .env
+
+# macOS
+.DS_Store
+
+# VectorDB 바이너리
+backend/db/data/policy_store/
+
+# 생성된 파일
+outputs/
+
+# ChromaDB
+chroma/
