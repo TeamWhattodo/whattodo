@@ -14,14 +14,15 @@ CLASSIFY_SYSTEM = """
 
 
 def classify_one(item: dict) -> dict:
-    prompt = f"항목 내용: {item['raw_content']}\n발신자: {item.get('from_person', '알 수 없음')}"
+    content = item.get('raw_content', item.get('summary', '내용 없음'))
+    prompt = f"항목 내용: {content}\n발신자: {item.get('from_person', '알 수 없음')}"
     try:
         raw = complete(prompt, tier="fast", system=CLASSIFY_SYSTEM)
         parsed = json.loads(raw.strip())
         item.update(parsed)
     except Exception:
         item["action_type"]       = "review"
-        item["summary"]           = item["raw_content"][:50]
+        item["summary"]           = content[:50]
         item["estimated_minutes"] = 10
     return item
 

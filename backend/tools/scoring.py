@@ -24,7 +24,7 @@ def score_urgency(items: list[dict]) -> list[dict]:
             datetime.fromisoformat(item["due_at"])
             if item.get("due_at") else None
         )
-        received_at = datetime.fromisoformat(item["created_at"])
+        received_at = datetime.fromisoformat(item.get("created_at", datetime.now().isoformat()))
 
         t = time_score(due_at, received_at)
         item["urgency_level"]     = max(1, ceil(t * 5))
