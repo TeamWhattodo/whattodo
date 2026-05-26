@@ -175,3 +175,4 @@ if query:
     save_session(st.session_state.session_id,
                  st.session_state.messages,
                  st.session_state.chat_history)
+    st.rerun()
