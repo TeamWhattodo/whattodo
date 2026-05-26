@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime
 from openpyxl import load_workbook, Workbook
 from reportlab.lib.pagesizes import A4
@@ -6,8 +7,39 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-pdfmetrics.registerFont(TTFont("Malgun", "C:/Windows/Fonts/malgun.ttf"))
-pdfmetrics.registerFont(TTFont("Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"))
+# (font_name, regular_path, bold_name, bold_path) 순서로 우선 탐색
+_FONT_CANDIDATES: list[tuple[str, str, str, str]] = []
+if sys.platform == "win32":
+    _FONT_CANDIDATES = [
+        ("Malgun", "C:/Windows/Fonts/malgun.ttf", "Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"),
+    ]
+elif sys.platform == "darwin":
+    _FONT_CANDIDATES = [
+        ("AppleGothic", "/Library/Fonts/AppleGothic.ttf",
+         "AppleGothic", "/Library/Fonts/AppleGothic.ttf"),
+        ("AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+         "AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf"),
+    ]
+
+_FONT_REGULAR = "Helvetica"
+_FONT_BOLD    = "Helvetica-Bold"
+_fonts_ready  = False
+
+
+def _ensure_fonts() -> None:
+    """처음 호출 시 한 번만 폰트를 등록한다."""
+    global _FONT_REGULAR, _FONT_BOLD, _fonts_ready
+    if _fonts_ready:
+        return
+    for reg_name, reg_path, bold_name, bold_path in _FONT_CANDIDATES:
+        if os.path.exists(reg_path):
+            pdfmetrics.registerFont(TTFont(reg_name, reg_path))
+            if bold_name != reg_name and os.path.exists(bold_path):
+                pdfmetrics.registerFont(TTFont(bold_name, bold_path))
+            _FONT_REGULAR = reg_name
+            _FONT_BOLD    = bold_name
+            break
+    _fonts_ready = True
 
 
 OUTPUT_DIR    = "outputs"
@@ -75,25 +107,27 @@ def _write_xlsx(items, total, report_type, report_id) -> str:
 
 
 def _write_pdf(items, total, report_type, report_id) -> str:
+    _ensure_fonts()
+
     path = f"{OUTPUT_DIR}/{report_id}.pdf"
     c    = canvas.Canvas(path, pagesize=A4)
     w, h = A4
 
-    c.setFont("Malgun-Bold", 16)
+    c.setFont(_FONT_BOLD, 16)
     c.drawString(50, h - 60, f"{report_type} 정산서")
 
-    c.setFont("Malgun", 10)
+    c.setFont(_FONT_REGULAR, 10)
     c.drawString(50, h - 90, f"작성일: {datetime.now().strftime('%Y-%m-%d')}")
 
     y = h - 130
-    c.setFont("Malgun-Bold", 10)
+    c.setFont(_FONT_BOLD, 10)
     c.drawString(50,  y, "날짜")
     c.drawString(130, y, "가맹점")
     c.drawString(280, y, "금액")
     c.drawString(360, y, "항목")
 
     y -= 20
-    c.setFont("Malgun", 10)
+    c.setFont(_FONT_REGULAR, 10)
     for item in items:
         c.drawString(50,  y, item["date"])
         c.drawString(130, y, item["merchant"])
@@ -102,7 +136,7 @@ def _write_pdf(items, total, report_type, report_id) -> str:
         y -= 18
 
     y -= 10
-    c.setFont("Malgun-Bold", 10)
+    c.setFont(_FONT_BOLD, 10)
     c.drawString(130, y, "합계")
     c.drawString(280, y, f"{total:,}원")
 

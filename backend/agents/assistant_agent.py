@@ -101,7 +101,11 @@ def _load_mcp_tools_sync() -> list:
     """MCP 서버 툴을 백그라운드 루프에서 로드한다. 세션은 루프가 살아 있는 한 유지된다."""
     if not MCP_SERVER_CONFIG:
         return []
-    return _run(load_mcp_tools())
+    try:
+        return _run(load_mcp_tools())
+    except Exception as e:
+        print(f"[MCP] 툴 로드 중 오류 발생, MCP 없이 시작합니다: {e}")
+        return []
 
 
 # ── 에이전트 구성 ──────────────────────────────────────────────────────────────

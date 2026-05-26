@@ -1,8 +1,9 @@
 import openai
 import base64
 import json
-import os
 import logging
+
+from backend.config import settings
 
 def parse_receipt(image_path: str | list[str]) -> list[dict]:
     """
@@ -35,7 +36,7 @@ def parse_receipt(image_path: str | list[str]) -> list[dict]:
             "image_url": {"url": f"data:{media_type};base64,{image_data}"},
         })
 
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = openai.OpenAI(api_key=settings.openai_api_key)
 
     response = client.chat.completions.create(
         model="gpt-4o",
