@@ -68,7 +68,7 @@ WEEKLY_REPORT_SYSTEM = """
 * 작성 가이드 *
 - 'past_week_tasks'(추진사항)와 'next_week_plans'(계획사항) 항목은 아주 구체적이고 길게 서술형으로 작성해도 좋습니다.
 - 'past_week_results'(실적/목표)와 'next_week_goals'(목표) 항목은 서술형 문장으로 길게 적지 마세요.
-- 명확한 수치, 결과, 또는 핵심 내용만 개조식(단답형 또는 핵심 키워드 중심)으로 매우 간결하게 작성해야 합니다.
+- 명확한 수치, 결과, 또는 핵심 내용만 개조식(단답형 또는 핵심 키워드 중심)으로 매우 간결하게 작성하되, **내용이 여러 개이거나 한 문장이 끝날 때마다 반드시 줄바꿈(\\n)을 기입하여 줄을 나누어 주세요.**
 
 {
   "date": "2024년 9월 4일",
@@ -393,38 +393,40 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
         ]
         
         t_main_data = [
-            [Paragraph("전주<br/>실행<br/>사항", left_menu), t_data[0][0], t_data[0][1]],
-            ['', t_data[1][0], t_data[1][1]],
-            [Paragraph("차주<br/>계획", left_menu), t_data[2][0], t_data[2][1]],
-            ['', t_data[3][0], t_data[3][1]],
-            [Paragraph("특기<br/>사항", left_menu), t_data[4][0], t_data[4][1]],
-            [Paragraph("지시<br/>사항", left_menu), t_data[5][0], t_data[5][1]],
+            [Paragraph("전주<br/>실행<br/>사항", left_menu), t_data[0][0], t_data[0][1], Spacer(1, 0)],
+            ['', t_data[1][0], t_data[1][1], Spacer(1, 5.5*cm)],
+            [Paragraph("차주<br/>계획", left_menu), t_data[2][0], t_data[2][1], Spacer(1, 0)],
+            ['', t_data[3][0], t_data[3][1], Spacer(1, 5.5*cm)],
+            [Paragraph("특기<br/>사항", left_menu), t_data[4][0], t_data[4][1], Spacer(1, 3.5*cm)],
+            [Paragraph("지시<br/>사항", left_menu), t_data[5][0], t_data[5][1], Spacer(1, 3.5*cm)],
         ]
         
-        t_main = Table(t_main_data, colWidths=[col1_w, col2_w, col3_w], rowHeights=[0.8*cm, 5.5*cm, 0.8*cm, 5.5*cm, 3.5*cm, 3.5*cm])
+        t_main = Table(t_main_data, colWidths=[col1_w, col2_w, col3_w, 0], rowHeights=[0.8*cm, None, 0.8*cm, None, None, None])
         t_main.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('LINEABOVE', (0,0), (-1,0), 1, colors.black),
-            ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), 
-            ('BACKGROUND', (1,0), (-1,0), colors.whitesmoke), 
-            ('BACKGROUND', (1,2), (-1,2), colors.whitesmoke), 
+            ('GRID', (0,0), (2,5), 0.5, colors.grey),
+            ('LINEABOVE', (0,0), (2,0), 1, colors.black),
+            ('BACKGROUND', (0,0), (0,5), colors.whitesmoke), 
+            ('BACKGROUND', (1,0), (2,0), colors.whitesmoke), 
+            ('BACKGROUND', (1,2), (2,2), colors.whitesmoke), 
             ('SPAN', (0,0), (0,1)), 
             ('SPAN', (0,2), (0,3)), 
             ('SPAN', (1,4), (2,4)), 
             ('SPAN', (1,5), (2,5)), 
-            ('VALIGN', (0,0), (0,-1), 'MIDDLE'), 
-            ('ALIGN', (0,0), (0,-1), 'CENTER'),
-            ('VALIGN', (1,0), (-1,0), 'MIDDLE'), 
-            ('ALIGN', (1,0), (-1,0), 'CENTER'),
-            ('VALIGN', (1,2), (-1,2), 'MIDDLE'), 
-            ('ALIGN', (1,2), (-1,2), 'CENTER'),
-            ('VALIGN', (1,1), (-1,1), 'TOP'), 
-            ('VALIGN', (1,3), (-1,3), 'TOP'), 
-            ('VALIGN', (1,4), (-1,5), 'TOP'), 
-            ('LEFTPADDING', (1,1), (-1,5), 10),
-            ('RIGHTPADDING', (1,1), (-1,5), 10),
-            ('TOPPADDING', (1,1), (-1,5), 10),
-            ('BOTTOMPADDING', (1,1), (-1,5), 10),
+            ('VALIGN', (0,0), (0,5), 'MIDDLE'), 
+            ('ALIGN', (0,0), (0,5), 'CENTER'),
+            ('VALIGN', (1,0), (2,0), 'MIDDLE'), 
+            ('ALIGN', (1,0), (2,0), 'CENTER'),
+            ('VALIGN', (1,2), (2,2), 'MIDDLE'), 
+            ('ALIGN', (1,2), (2,2), 'CENTER'),
+            ('VALIGN', (1,1), (2,1), 'TOP'), 
+            ('VALIGN', (1,3), (2,3), 'TOP'), 
+            ('VALIGN', (1,4), (2,5), 'TOP'), 
+            ('LEFTPADDING', (1,1), (2,5), 10),
+            ('RIGHTPADDING', (1,1), (2,5), 10),
+            ('TOPPADDING', (1,1), (2,5), 10),
+            ('BOTTOMPADDING', (1,1), (2,5), 10),
+            ('LEFTPADDING', (3,0), (3,-1), 0),
+            ('RIGHTPADDING', (3,0), (3,-1), 0),
         ]))
         story.append(t_main)
         
@@ -477,7 +479,7 @@ def _generate_monthly_report_pdf(data: dict, report_type: str) -> str:
         
         def make_section_table(items, col_headers, keys, min_rows=5):
             # Header Row
-            row_data = [[Paragraph(h, table_normal) for h in col_headers]]
+            row_data = [[Paragraph(h, table_normal) for h in col_headers] + ['']]
             
             # Body Rows
             for item in items:
@@ -486,26 +488,28 @@ def _generate_monthly_report_pdf(data: dict, report_type: str) -> str:
                     val = item.get(k, "")
                     style = body_style if idx == 0 else body_center
                     cells.append(Paragraph(val, style))
-                row_data.append(cells)
+                row_data.append(cells + [Spacer(1, 1.0*cm)])
                 
             # Fill remaining rows
             while len(row_data) <= min_rows:
-                row_data.append(['', '', '', ''])
+                row_data.append(['', '', '', '', Spacer(1, 1.0*cm)])
                 
-            col_w = [cw*0.45, cw*0.15, cw*0.25, cw*0.15]
-            t = Table(row_data, colWidths=col_w, rowHeights=[0.8*cm] + [1.0*cm]*(len(row_data)-1))
+            col_w = [cw*0.45, cw*0.15, cw*0.25, cw*0.15, 0]
+            t = Table(row_data, colWidths=col_w, rowHeights=[0.8*cm] + [None]*(len(row_data)-1))
             
             t_style = [
-                ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('LINEABOVE', (0,0), (-1,0), 1, colors.grey),
-                ('LINEBELOW', (0,0), (-1,0), 1, colors.grey),
-                ('LINEBELOW', (0,-1), (-1,-1), 1, colors.grey),
+                ('BACKGROUND', (0,0), (3,0), colors.whitesmoke),
+                ('VALIGN', (0,0), (3,-1), 'MIDDLE'),
+                ('LINEABOVE', (0,0), (3,0), 1, colors.grey),
+                ('LINEBELOW', (0,0), (3,0), 1, colors.grey),
+                ('LINEBELOW', (0,-1), (3,-1), 1, colors.grey),
+                ('LEFTPADDING', (4,0), (4,-1), 0),
+                ('RIGHTPADDING', (4,0), (4,-1), 0),
             ]
             
             # Add dashed lines for body rows
             for i in range(1, len(row_data)):
-                t_style.append(('LINEBELOW', (0,i), (-1,i), 0.5, colors.grey, 1, (2, 2))) # dashed
+                t_style.append(('LINEBELOW', (0,i), (3,i), 0.5, colors.grey, 1, (2, 2))) # dashed
                 t_style.append(('LINEAFTER', (0,i), (2,i), 0.5, colors.lightgrey)) # vertical separators
                 
             # Add vertical lines for header
