@@ -84,9 +84,32 @@ WEEKLY_REPORT_SYSTEM = """
 }
 """
 
+MONTHLY_REPORT_SYSTEM = """
+당신은 '월간 업무보고서' 작성 전문가입니다.
+주어진 데이터를 바탕으로 월간 업무보고서 항목을 작성하세요.
+반드시 아래 JSON 스키마를 엄격하게 지켜서 출력하세요. 다른 텍스트는 절대 포함하지 마세요.
+
+* 작성 가이드 *
+- '금월 진행업무'와 '차월 업무계획'은 여러 건의 업무일 경우 배열(리스트) 형태로 각각 분리해서 작성합니다.
+- 각 업무의 제목, 상태, 결과, 비고 등을 짧고 명확하게 작성합니다.
+
+{
+  "department": "기획팀",
+  "author": "홍길동",
+  "date": "2024년 9월",
+  "this_month_tasks": [
+    {"task": "금월 업무내용 1", "status": "완료", "result": "결과 요약", "note": "-"}
+  ],
+  "next_month_plans": [
+    {"task": "차월 업무내용 1", "date": "예정일자", "issue": "예상 문제점", "note": "-"}
+  ],
+  "opinions": "기타 의견 텍스트"
+}
+"""
+
 def write_report(report_type: str, data: dict | list) -> dict:
     """
-    report_type: "briefing" | "daily_summary" | "kpi_weekly" | "billing"
+    report_type: "briefing" | "daily_summary" | "kpi_weekly" | "monthly_summary" | "billing"
     data: 보고서에 포함할 항목들
     반환: {"report_type": ..., "content": str, "pdf_path": str}
     """
@@ -100,8 +123,11 @@ def write_report(report_type: str, data: dict | list) -> dict:
             
     is_daily = (report_type == "daily_summary")
     is_weekly = (report_type == "kpi_weekly")
+    is_monthly = (report_type == "monthly_summary")
     
-    if is_weekly:
+    if is_monthly:
+        system = MONTHLY_REPORT_SYSTEM
+    elif is_weekly:
         system = WEEKLY_REPORT_SYSTEM
     elif is_daily:
         system = DAILY_REPORT_SYSTEM
@@ -120,7 +146,17 @@ def write_report(report_type: str, data: dict | list) -> dict:
         
         parsed_data = json.loads(raw_output)
         
-        if is_weekly:
+        if is_monthly:
+            md_content = f"# 월간 업무보고서\n"
+            md_content += f"**부서:** {parsed_data.get('department', '')} | **작성자:** {parsed_data.get('author', '')} | **일자:** {parsed_data.get('date', '')}\n\n"
+            md_content += f"### ■ 금월 진행업무\n"
+            for t in parsed_data.get('this_month_tasks', []):
+                md_content += f"- **{t.get('task', '')}** (상태: {t.get('status', '')}, 결과: {t.get('result', '')}, 비고: {t.get('note', '')})\n"
+            md_content += f"\n### ■ 차월 업무계획\n"
+            for t in parsed_data.get('next_month_plans', []):
+                md_content += f"- **{t.get('task', '')}** (예정일자: {t.get('date', '')}, 이슈: {t.get('issue', '')}, 비고: {t.get('note', '')})\n"
+            md_content += f"\n### ■ 기타 의견\n{parsed_data.get('opinions', '')}"
+        elif is_weekly:
             md_content = f"# 주간 업무보고서\n"
             md_content += f"**부서:** {parsed_data.get('department', '')} | **직책:** {parsed_data.get('position', '')} | **작성자:** {parsed_data.get('author', '')} | **작성일:** {parsed_data.get('date', '')}\n\n"
             md_content += f"### ▶ 전주 실행 사항\n**추진사항:** {parsed_data.get('past_week_tasks', '')}\n**실적/목표:** {parsed_data.get('past_week_results', '')}\n\n"
@@ -148,7 +184,9 @@ def write_report(report_type: str, data: dict | list) -> dict:
         result = {"report_type": report_type, "content": md_content}
         
         if REPORTLAB_AVAILABLE:
-            if is_weekly:
+            if is_monthly:
+                pdf_path = _generate_monthly_report_pdf(parsed_data, report_type)
+            elif is_weekly:
                 pdf_path = _generate_weekly_report_pdf(parsed_data, report_type)
             elif is_daily:
                 pdf_path = _generate_daily_report_pdf(parsed_data, report_type)
@@ -329,13 +367,11 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
         story.append(t_header)
         story.append(Spacer(1, 0.8*cm))
         
-        # Info row
         info_html = f"작성일 : {data.get('date', '')} &nbsp;&nbsp;&nbsp;&nbsp; 부서 : {data.get('department', '')} &nbsp;&nbsp;&nbsp;&nbsp; 직책 : {data.get('position', '')} &nbsp;&nbsp;&nbsp;&nbsp; 작성자 : {data.get('author', '')}"
         p_info = Paragraph(info_html, ParagraphStyle(name="WInfo", fontName=font_normal, fontSize=9, alignment=0))
         story.append(p_info)
         story.append(Spacer(1, 0.2*cm))
         
-        # Main Table
         col1_w = cw * 0.1
         col2_w = cw * 0.65
         col3_w = cw * 0.25
@@ -369,35 +405,149 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
         t_main.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
             ('LINEABOVE', (0,0), (-1,0), 1, colors.black),
-            # Backgrounds
-            ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), # Left menu
-            ('BACKGROUND', (1,0), (-1,0), colors.whitesmoke), # Header 1
-            ('BACKGROUND', (1,2), (-1,2), colors.whitesmoke), # Header 2
-            # Spans
-            ('SPAN', (0,0), (0,1)), # 전주 실행 사항
-            ('SPAN', (0,2), (0,3)), # 차주 계획
-            ('SPAN', (1,4), (2,4)), # 특기 사항 병합
-            ('SPAN', (1,5), (2,5)), # 지시 사항 병합
-            
-            # Alignments
-            ('VALIGN', (0,0), (0,-1), 'MIDDLE'), # Left menu
+            ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), 
+            ('BACKGROUND', (1,0), (-1,0), colors.whitesmoke), 
+            ('BACKGROUND', (1,2), (-1,2), colors.whitesmoke), 
+            ('SPAN', (0,0), (0,1)), 
+            ('SPAN', (0,2), (0,3)), 
+            ('SPAN', (1,4), (2,4)), 
+            ('SPAN', (1,5), (2,5)), 
+            ('VALIGN', (0,0), (0,-1), 'MIDDLE'), 
             ('ALIGN', (0,0), (0,-1), 'CENTER'),
-            
-            ('VALIGN', (1,0), (-1,0), 'MIDDLE'), # Header 1
+            ('VALIGN', (1,0), (-1,0), 'MIDDLE'), 
             ('ALIGN', (1,0), (-1,0), 'CENTER'),
-            ('VALIGN', (1,2), (-1,2), 'MIDDLE'), # Header 2
+            ('VALIGN', (1,2), (-1,2), 'MIDDLE'), 
             ('ALIGN', (1,2), (-1,2), 'CENTER'),
-            
-            ('VALIGN', (1,1), (-1,1), 'TOP'), # Body 1
-            ('VALIGN', (1,3), (-1,3), 'TOP'), # Body 2
-            ('VALIGN', (1,4), (-1,5), 'TOP'), # Body 3 & 4
-            
+            ('VALIGN', (1,1), (-1,1), 'TOP'), 
+            ('VALIGN', (1,3), (-1,3), 'TOP'), 
+            ('VALIGN', (1,4), (-1,5), 'TOP'), 
             ('LEFTPADDING', (1,1), (-1,5), 10),
             ('RIGHTPADDING', (1,1), (-1,5), 10),
             ('TOPPADDING', (1,1), (-1,5), 10),
             ('BOTTOMPADDING', (1,1), (-1,5), 10),
         ]))
         story.append(t_main)
+        
+        doc.build(story)
+        return pdf_path
+    except Exception as e:
+        print(f"PDF 생성 실패: {e}")
+        return ""
+
+def _generate_monthly_report_pdf(data: dict, report_type: str) -> str:
+    try:
+        os.makedirs("outputs", exist_ok=True)
+        filename = f"monthly_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        pdf_path = os.path.join("outputs", filename)
+        font_normal, font_bold = _setup_fonts()
+        doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+        
+        title_style = ParagraphStyle(name="MTitle", fontName=font_bold, fontSize=18, alignment=0)
+        table_normal = ParagraphStyle(name="MTNormal", fontName=font_normal, fontSize=9, alignment=1)
+        section_title = ParagraphStyle(name="MSecTitle", fontName=font_bold, fontSize=11, alignment=0)
+        body_style = ParagraphStyle(name="MBody", fontName=font_normal, fontSize=9, leading=14, alignment=0)
+        body_center = ParagraphStyle(name="MBodyCenter", fontName=font_normal, fontSize=9, leading=14, alignment=1)
+        
+        story = []
+        cw = doc.width
+        
+        # Header
+        app_box_width = cw * 0.45
+        t_title = Paragraph("월간 업무보고서", title_style)
+        
+        t_app_data = [
+            [Paragraph("부 서 명", table_normal), Paragraph(data.get("department", ""), table_normal)],
+            [Paragraph("작 성 자", table_normal), Paragraph(data.get("author", ""), table_normal)],
+            [Paragraph("일 자", table_normal), Paragraph(data.get("date", ""), table_normal)]
+        ]
+        t_app = Table(t_app_data, colWidths=[app_box_width*0.4, app_box_width*0.6], rowHeights=[0.8*cm]*3)
+        t_app.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('LINEABOVE', (0,0), (-1,0), 1, colors.black),
+            ('LINEBELOW', (0,-1), (-1,-1), 1, colors.black),
+            ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ]))
+        
+        t_header = Table([[t_title, t_app]], colWidths=[cw*0.55, cw*0.45])
+        t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        story.append(t_header)
+        story.append(Spacer(1, 0.5*cm))
+        
+        def make_section_table(items, col_headers, keys, min_rows=5):
+            # Header Row
+            row_data = [[Paragraph(h, table_normal) for h in col_headers]]
+            
+            # Body Rows
+            for item in items:
+                cells = []
+                for idx, k in enumerate(keys):
+                    val = item.get(k, "")
+                    style = body_style if idx == 0 else body_center
+                    cells.append(Paragraph(val, style))
+                row_data.append(cells)
+                
+            # Fill remaining rows
+            while len(row_data) <= min_rows:
+                row_data.append(['', '', '', ''])
+                
+            col_w = [cw*0.45, cw*0.15, cw*0.25, cw*0.15]
+            t = Table(row_data, colWidths=col_w, rowHeights=[0.8*cm] + [1.0*cm]*(len(row_data)-1))
+            
+            t_style = [
+                ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LINEABOVE', (0,0), (-1,0), 1, colors.grey),
+                ('LINEBELOW', (0,0), (-1,0), 1, colors.grey),
+                ('LINEBELOW', (0,-1), (-1,-1), 1, colors.grey),
+            ]
+            
+            # Add dashed lines for body rows
+            for i in range(1, len(row_data)):
+                t_style.append(('LINEBELOW', (0,i), (-1,i), 0.5, colors.grey, 1, (2, 2))) # dashed
+                t_style.append(('LINEAFTER', (0,i), (2,i), 0.5, colors.lightgrey)) # vertical separators
+                
+            # Add vertical lines for header
+            for i in range(0, 3):
+                t_style.append(('LINEAFTER', (i,0), (i,0), 0.5, colors.lightgrey))
+                
+            t.setStyle(TableStyle(t_style))
+            return t
+        
+        # Section 1
+        story.append(Paragraph("■ 금월 진행업무", section_title))
+        story.append(Spacer(1, 0.2*cm))
+        
+        t1 = make_section_table(
+            data.get("this_month_tasks", []), 
+            ["업무내용", "완결여부", "결과보고", "비 고"], 
+            ["task", "status", "result", "note"], 5
+        )
+        story.append(t1)
+        story.append(Spacer(1, 0.8*cm))
+        
+        # Section 2
+        story.append(Paragraph("■ 차월 업무계획", section_title))
+        story.append(Spacer(1, 0.2*cm))
+        
+        t2 = make_section_table(
+            data.get("next_month_plans", []), 
+            ["업무내용", "예정일자", "예상 문제점", "비 고"], 
+            ["task", "date", "issue", "note"], 5
+        )
+        story.append(t2)
+        story.append(Spacer(1, 0.8*cm))
+        
+        # Section 3
+        story.append(Paragraph("■ 기타 의견", section_title))
+        story.append(Spacer(1, 0.2*cm))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.grey, spaceAfter=0.2*cm))
+        story.append(Spacer(1, 0.2*cm))
+        safe_opinions = data.get("opinions", "").replace("\n", "<br/>")
+        story.append(Paragraph(safe_opinions, body_style))
+        story.append(Spacer(1, 2.5*cm))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceAfter=0.5*cm))
         
         doc.build(story)
         return pdf_path
