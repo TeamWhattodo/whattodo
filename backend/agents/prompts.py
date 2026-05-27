@@ -22,7 +22,8 @@ Data sources and how to access them:
 Common tool patterns:
 | User request              | Tool sequence |
 |---------------------------|---------------|
-| 긴급 업무 브리핑          | 1) slack_list_channels로 channel_id 수집 → 2) 각 채널에 slack_get_channel_history(channel_id) 호출 → 3) jira_search(jql="project=SCRUM ORDER BY created DESC") → 4) API-post-search → write_report(briefing) |
+| 긴급 업무 브리핑, 기안서    | 1) 데이터 수집 → 2) write_report("briefing") |
+| 일일 / 주간 / 월간 보고서   | 1) 데이터 수집 → 2) write_report("daily_summary" 또는 "kpi_weekly" 또는 "monthly_summary") |
 | Notion 검색/조회          | API-post-search → API-retrieve-a-page → API-get-block-children |
 | Slack 채널 확인           | slack_list_channels → 각 채널에 slack_get_channel_history(channel_id) |
 | Jira 이슈 조회            | jira_search(jql="project=SCRUM ORDER BY created DESC") |

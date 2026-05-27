@@ -42,7 +42,15 @@ def filter_items(items: list, min_urgency: int = 3) -> str:
 
 @tool
 def write_report(report_type: str, data: str) -> str:
-    """업무 보고서를 작성합니다. report_type: briefing | daily_summary | kpi_weekly | billing. data: JSON 문자열."""
+    """업무 보고서를 작성합니다. 
+    report_type은 사용자의 요청에 따라 반드시 다음 중 하나를 선택하세요:
+    - 'briefing' : 긴급 보고서, 공문서, 기안서
+    - 'daily_summary' : 일일 업무보고서
+    - 'kpi_weekly' : 주간 업무보고서
+    - 'monthly_summary' : 월간 업무보고서
+    - 'billing' : 정산서
+    data: 보고서에 들어갈 내용을 담은 JSON 문자열.
+    """
     try:
         parsed = json.loads(data)
     except Exception:
