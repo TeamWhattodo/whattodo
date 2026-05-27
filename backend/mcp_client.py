@@ -7,8 +7,13 @@ MCP 서버 설정. .env에 토큰이 입력된 서버만 자동으로 활성화�
   Jira    : uvx mcp-atlassian
   GitHub  : npx -y @modelcontextprotocol/server-github
 """
+import os
 import sys
+from pathlib import Path
 from backend.config import settings
+
+_ENV = dict(os.environ)
+_ROOT = Path(__file__).resolve().parent.parent  # 프로젝트 루트
 
 # Windows에서 npx는 .cmd 배치 스크립트이므로 cmd.exe를 경유해야 한다.
 if sys.platform == "win32":
@@ -26,21 +31,25 @@ def _build_config() -> dict:
             "args": _NPX_PREFIX + ["-y", "@notionhq/notion-mcp-server"],
             "transport": "stdio",
             "env": {
+                **_ENV,
                 "OPENAPI_MCP_HEADERS": (
                     f'{{"Authorization": "Bearer {settings.notion_api_token}",'
                     f' "Notion-Version": "2022-06-28"}}'
-                )
+                ),
             },
         }
 
     if settings.slack_bot_token and settings.slack_team_id:
+        _slack_entry = str(_ROOT / "node_modules" / "@modelcontextprotocol" / "server-slack" / "dist" / "index.js")
         config["slack"] = {
-            "command": _NPX_CMD,
-            "args": _NPX_PREFIX + ["-y", "@modelcontextprotocol/server-slack"],
+            "command": "node",
+            "args": [_slack_entry],
             "transport": "stdio",
             "env": {
+                **_ENV,
                 "SLACK_BOT_TOKEN": settings.slack_bot_token,
                 "SLACK_TEAM_ID": settings.slack_team_id,
+                "SLACK_BOT_USER_ID": settings.slack_bot_user_id,
             },
         }
 
@@ -50,6 +59,7 @@ def _build_config() -> dict:
             "args": ["mcp-atlassian"],
             "transport": "stdio",
             "env": {
+                **_ENV,
                 "JIRA_URL": settings.jira_base_url,
                 "JIRA_USERNAME": settings.jira_email,
                 "JIRA_API_TOKEN": settings.jira_api_token,
@@ -61,7 +71,7 @@ def _build_config() -> dict:
             "command": _NPX_CMD,
             "args": _NPX_PREFIX + ["-y", "@modelcontextprotocol/server-github"],
             "transport": "stdio",
-            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": settings.github_token},
+            "env": {**_ENV, "GITHUB_PERSONAL_ACCESS_TOKEN": settings.github_token},
         }
 
     return config
@@ -81,5 +91,12 @@ async def load_mcp_tools() -> list:
             client = MultiServerMCPClient({name: cfg})
             tools.extend(await client.get_tools())
         except Exception as e:
-            print(f"[MCP] '{name}' 연결 실패 (건너뜀): {e}")
+            def _print_causes(exc):
+                subs = getattr(exc, "exceptions", None)
+                if subs:
+                    for s in subs:
+                        _print_causes(s)
+                else:
+                    print(f"[MCP] '{name}' 연결 실패: {type(exc).__name__}: {exc}")
+            _print_causes(e)
     return tools

@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Node.js
+node_modules/
+
 # 환경 변수
 .env
 

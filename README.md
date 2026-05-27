@@ -67,11 +67,13 @@
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
+- Node.js 18+
 
 ### 백엔드
 
 ```bash
 uv sync
+npm install            # Slack MCP 서버 설치
 cp .env.example .env   # API 키와 OAuth 정보 입력
 uv run uvicorn backend.main:app --reload
 ```
