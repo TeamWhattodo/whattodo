@@ -20,6 +20,7 @@ from backend.tools.write_draft import write_draft as _write_draft
 from backend.tools.update_status import update_item_status as _update_status
 from backend.tools.search_items import search_past_items as _search
 from backend.tools.policy_search import search_company_docs as _search_docs
+from backend.tools.spellcheck import check_spelling as _check_spelling
 
 
 # ── 후처리 @tool 래퍼 ─────────────────────────────────────────────────────────
@@ -85,6 +86,11 @@ def process_expense_report(image_paths: list[str]) -> str:
         "pdf_path":     report["pdf_path"],
     }, ensure_ascii=False, default=str)
 
+@tool
+def spell_check(text: str) -> str:
+    """주어진 한국어 텍스트의 맞춤법, 띄어쓰기, 어색한 문맥을 교정합니다. text: 교정할 원본 텍스트."""
+    return json.dumps(_check_spelling(text), ensure_ascii=False, default=str)
+
 
 # ── 영구 백그라운드 이벤트 루프 (MCP 세션 유지용) ─────────────────────────────
 
@@ -120,6 +126,7 @@ PROCESSING_TOOLS = [
     search_past_items,
     search_company_docs,
     process_expense_report,
+    spell_check,
 ]
 
 TOOLS = PROCESSING_TOOLS + _load_mcp_tools_sync()

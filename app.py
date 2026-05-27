@@ -87,14 +87,16 @@ st.caption("업무 보조 에이전트")
 
 def _show_download_buttons(report: dict):
     col1, col2 = st.columns(2)
+    file_prefix = report.get("report_type", "문서")
+    
     with col1:
         if os.path.exists(report.get("xlsx_path", "")):
             with open(report["xlsx_path"], "rb") as f:
-                st.download_button("📥 엑셀 다운로드", f, file_name="정산서.xlsx", use_container_width=True)
+                st.download_button("📥 엑셀 다운로드", f, file_name=f"{file_prefix}.xlsx", key=report["xlsx_path"], use_container_width=True)
     with col2:
         if os.path.exists(report.get("pdf_path", "")):
             with open(report["pdf_path"], "rb") as f:
-                st.download_button("📥 PDF 다운로드", f, file_name="정산서.pdf", use_container_width=True)
+                st.download_button("📥 PDF 다운로드", f, file_name=f"{file_prefix}.pdf", key=report["pdf_path"], use_container_width=True)
 
 
 for msg in st.session_state.messages:
@@ -148,7 +150,7 @@ if query:
                     st.write(f"🔧 `{event['tool']}` 호출 중...")
                 elif event["type"] == "tool_result":
                     st.write(f"✅ `{event['tool']}` 완료")
-                    if event["tool"] == "process_expense_report":
+                    if event["tool"] in ["process_expense_report", "write_report"]:
                         try:
                             report_data = json.loads(event["content"])
                         except (json.JSONDecodeError, TypeError):
