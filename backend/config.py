@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     gmail_client_id: str = ""
     gmail_client_secret: str = ""
+    gmail_max_results: int = 20
+    calendar_days: int = 7
 
     slack_bot_token: str = ""
     slack_bot_user_id: str = ""

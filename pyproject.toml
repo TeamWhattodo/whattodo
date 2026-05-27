@@ -23,6 +23,9 @@ dependencies = [
     "pypdf",
     "openai>=2.37.0",
     "langchain-mcp-adapters>=0.2.2",
+    "google-auth>=2.53.0",
+    "google-auth-oauthlib>=1.4.0",
+    "google-api-python-client>=2.196.0",
 ]
 
 [build-system]

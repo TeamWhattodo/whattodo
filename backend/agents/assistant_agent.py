@@ -20,6 +20,8 @@ from backend.tools.write_draft import write_draft as _write_draft
 from backend.tools.update_status import update_item_status as _update_status
 from backend.tools.search_items import search_past_items as _search
 from backend.tools.policy_search import search_company_docs as _search_docs
+from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
+from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar
 
 
 # ── 후처리 @tool 래퍼 ─────────────────────────────────────────────────────────
@@ -72,6 +74,16 @@ def search_company_docs(query: str, top_k: int = 3) -> str:
     return _search_docs(query, top_k)
 
 @tool
+def fetch_gmail(max_results: int = 20) -> str:
+    """Gmail 미읽음 메일을 가져와 WorkItem 목록으로 반환합니다. Google 인증이 필요합니다."""
+    return json.dumps(_fetch_gmail(max_results), ensure_ascii=False, default=str)
+
+@tool
+def fetch_calendar(days: int = 7) -> str:
+    """Google Calendar 일정을 가져와 WorkItem 목록으로 반환합니다. days: 조회할 일수(기본 7일)."""
+    return json.dumps(_fetch_calendar(days), ensure_ascii=False, default=str)
+
+@tool
 def process_expense_report(image_paths: list[str]) -> str:
     """업로드된 영수증 이미지를 분석해 경비정산서(엑셀·PDF)를 작성합니다. image_paths: 이미지 파일 경로 목록."""
     from backend.tools.receipt import parse_receipt
@@ -120,6 +132,8 @@ PROCESSING_TOOLS = [
     search_past_items,
     search_company_docs,
     process_expense_report,
+    fetch_gmail,
+    fetch_calendar,
 ]
 
 TOOLS = PROCESSING_TOOLS + _load_mcp_tools_sync()

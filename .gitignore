@@ -18,6 +18,9 @@ node_modules/
 # macOS
 .DS_Store
 
+# 런타임 데이터 (토큰, 세션, DB)
+data/
+
 # VectorDB 바이너리
 backend/db/data/policy_store/
 

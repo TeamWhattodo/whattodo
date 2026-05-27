@@ -6,8 +6,19 @@ from datetime import datetime
 from backend.agents.assistant_agent import (
     stream_agent, save_session, load_session, list_sessions, delete_session, rename_session
 )
+from backend.google_auth import get_auth_url, handle_callback, is_authenticated
 
 st.set_page_config(page_title="WhatToDo", layout="centered")
+
+# ── Google OAuth 콜백 처리 (URL에 ?code= 파라미터가 있을 때) ─────────
+_params = st.query_params
+if "code" in _params and not is_authenticated():
+    try:
+        handle_callback(_params["code"])
+        st.query_params.clear()
+        st.rerun()
+    except Exception as e:
+        st.error(f"Google 인증 실패: {e}")
 
 # ── 첫 실행 시 세션 초기화 ────────────────────────────────────────────
 if "session_id" not in st.session_state:
@@ -18,6 +29,16 @@ if "chat_history" not in st.session_state:
 
 # ── 사이드바: 대화 목록 ──────────────────────────────────────────────
 with st.sidebar:
+    # ── Google 연동 상태 ──
+    st.header("🔗 Google 연동")
+    if is_authenticated():
+        st.success("Gmail · Calendar 연결됨")
+    else:
+        st.warning("Google 미연결")
+        auth_url = get_auth_url()
+        st.link_button("Google 계정 연결", auth_url, use_container_width=True)
+
+    st.divider()
     st.header("💬 대화 목록")
 
     if st.button("➕ 새 대화", use_container_width=True):
