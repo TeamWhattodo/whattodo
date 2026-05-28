@@ -12,15 +12,25 @@ from backend.agents.llm_client import get_llm
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
+import operator
+
+def merge_results(left: dict, right: dict) -> dict:
+    if not left: left = {}
+    if not right: right = {}
+    return {**left, **right}
+
+def merge_bool(left: bool, right: bool) -> bool:
+    return left or right
+
 class WhatToDoState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]  # 대화 이력 자동 누적
     user_input: str
     intent: str               # briefing | report | action | search | chat
     work_items: list[dict]
-    results: dict
+    results: Annotated[dict, merge_results]
     error: str | None
     retry_count: int          # output_validator 재시도 횟수 (max 2)
-    has_write_output: bool    # write_* 호출 여부 → validator 진입 조건
+    has_write_output: Annotated[bool, merge_bool]    # write_* 호출 여부 → validator 진입 조건
     user_preferences: dict    # Phase 3: memory 레이어
 
 
@@ -102,15 +112,19 @@ _REGENERATE_PROMPT = """\
 # ── 헬퍼 ───────────────────────────────────────────────────────────────────────
 
 def _get_result_text(results: dict) -> str:
-    """results dict에서 최종 응답 텍스트를 추출한다."""
+    """results dict에서 최종 응답 텍스트를 모두 추출하여 병합한다."""
+    texts = []
     for key in ("briefing", "report", "action", "search", "chat"):
         r = results.get(key)
         if not r:
             continue
         if isinstance(r, dict):
-            return r.get("text", json.dumps(r, ensure_ascii=False, default=str))
-        return str(r)
-    return ""
+            text = r.get("text", "")
+            if text:
+                texts.append(text)
+        elif isinstance(r, str):
+            texts.append(r)
+    return "\n\n---\n\n".join(texts)
 
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
@@ -129,7 +143,7 @@ def intent_classifier(state: WhatToDoState) -> WhatToDoState:
     parts = [p.strip() for p in llm_intent.split(",")]
     clean_intent = ",".join(p for p in parts if p in _VALID_INTENTS) or "chat"
     intent = validate_intent(clean_intent, state["user_input"])
-    return {**state, "intent": intent}
+    return {"intent": intent}
 
 
 def collect_results(state: WhatToDoState) -> WhatToDoState:
@@ -147,7 +161,7 @@ def collect_results(state: WhatToDoState) -> WhatToDoState:
         -_ACTION_PRIORITY.get(x.get("action_type", "none"), 0),
         -x.get("urgency_level", 0),
     ))
-    return {**state, "work_items": all_items}
+    return {"work_items": all_items}
 
 
 def output_validator(state: WhatToDoState) -> WhatToDoState:
@@ -158,7 +172,10 @@ def output_validator(state: WhatToDoState) -> WhatToDoState:
     if state.get("has_write_output"):
         llm = get_llm("fast")
         while retry < 2:
-            results_text = json.dumps(results, ensure_ascii=False, default=str)
+            results_text = _get_result_text(results)
+            if not results_text:
+                break
+                
             verdict_raw = llm.invoke([
                 SystemMessage(content=_VERIFY_PROMPT),
                 HumanMessage(content=f"사용자 요청: {state['user_input']}\n\n출력:\n{results_text}"),
@@ -190,7 +207,7 @@ def output_validator(state: WhatToDoState) -> WhatToDoState:
 
     # 최종 응답을 대화 이력에 추가 (add_messages reducer가 누적 처리)
     final_text = _get_result_text(results)
-    new_state = {**state, "results": results, "retry_count": retry}
+    new_state = {"results": results, "retry_count": retry}
     if final_text:
         new_state["messages"] = [AIMessage(content=final_text)]
     return new_state
@@ -200,7 +217,7 @@ def general_chat(state: WhatToDoState) -> WhatToDoState:
     """tool 없는 단순 Q&A. 전체 대화 이력을 LLM에 전달한다."""
     messages = state.get("messages") or [HumanMessage(content=state["user_input"])]
     response = get_llm("fast").invoke(messages).content
-    return {**state, "results": {**state.get("results", {}), "chat": response}}
+    return {"results": {"chat": {"text": response}}}
 
 
 # ── Routing ────────────────────────────────────────────────────────────────────

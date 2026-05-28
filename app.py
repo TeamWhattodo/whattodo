@@ -114,34 +114,49 @@ def _extract_response(state: dict) -> str:
     return state.get("error") or "처리가 완료되었습니다."
 
 
-def _extract_report(state: dict) -> dict | None:
-    """다운로드 가능한 보고서 데이터가 있으면 반환한다."""
+def _extract_reports(state: dict) -> list[dict]:
+    """다운로드 가능한 보고서 데이터 목록을 반환한다."""
+    reports = []
     results = state.get("results", {})
     for r in results.values():
-        if isinstance(r, dict) and (r.get("xlsx_path") or r.get("pdf_path")):
-            return r
-    return None
+        if isinstance(r, dict):
+            if "reports" in r and isinstance(r["reports"], list):
+                reports.extend(r["reports"])
+            # 하위 호환성 (단일 리포트인 경우)
+            elif r.get("xlsx_path") or r.get("pdf_path"):
+                reports.append(r)
+    return reports
 
 
-def _show_download_buttons(report: dict):
-    col1, col2 = st.columns(2)
-    file_prefix = report.get("report_type", "문서")
+def _show_download_buttons(reports: list[dict]):
+    report_type_map = {
+        "briefing": "긴급 보고서",
+        "daily_summary": "일일 보고서",
+        "kpi_weekly": "주간 보고서",
+        "monthly_summary": "월간 보고서",
+        "billing": "경비 정산서"
+    }
     
-    with col1:
-        if os.path.exists(report.get("xlsx_path", "")):
-            with open(report["xlsx_path"], "rb") as f:
-                st.download_button("📥 엑셀 다운로드", f, file_name=f"{file_prefix}.xlsx", key=report.get("xlsx_path", ""), use_container_width=True)
-    with col2:
-        if os.path.exists(report.get("pdf_path", "")):
-            with open(report["pdf_path"], "rb") as f:
-                st.download_button("📥 PDF 다운로드", f, file_name=f"{file_prefix}.pdf", key=report.get("pdf_path", ""), use_container_width=True)
+    for i, report in enumerate(reports):
+        col1, col2 = st.columns(2)
+        raw_type = report.get("report_type", f"문서_{i}")
+        file_prefix = report_type_map.get(raw_type, raw_type)
+        
+        with col1:
+            if os.path.exists(report.get("xlsx_path", "")):
+                with open(report["xlsx_path"], "rb") as f:
+                    st.download_button(f"📥 {file_prefix} (엑셀)", f, file_name=f"{file_prefix}.xlsx", key=f"xlsx_{i}_{report.get('xlsx_path', '')}", use_container_width=True)
+        with col2:
+            if os.path.exists(report.get("pdf_path", "")):
+                with open(report["pdf_path"], "rb") as f:
+                    st.download_button(f"📥 {file_prefix} (PDF)", f, file_name=f"{file_prefix}.pdf", key=f"pdf_{i}_{report.get('pdf_path', '')}", use_container_width=True)
 
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        if msg.get("report"):
-            _show_download_buttons(msg["report"])
+        if msg.get("reports"):
+            _show_download_buttons(msg["reports"])
 
 if st.button("📋 브리핑 시작", use_container_width=True):
     st.session_state.pending_query = "긴급한 업무 정리해줘"
@@ -208,7 +223,7 @@ if query:
         with st.spinner("에이전트 실행 중..."):
             state = run_graph(agent_query, thread_id=st.session_state.session_id)
         response_text = _extract_response(state)
-        report_data   = _extract_report(state)
+        report_data   = _extract_reports(state)
         st.markdown(response_text)
         if report_data:
             _show_download_buttons(report_data)
@@ -222,7 +237,7 @@ if query:
     st.session_state.messages.append({
         "role":    "assistant",
         "content": response_text,
-        "report":  report_data,
+        "reports": report_data,
     })
     save_session(st.session_state.session_id, st.session_state.messages, [])
     st.rerun()

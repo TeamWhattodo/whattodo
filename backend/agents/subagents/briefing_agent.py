@@ -98,10 +98,9 @@ async def _run_async(user_input: str) -> tuple[str, bool]:
     return output_text, has_write
 
 
-def briefing_agent_node(state: WhatToDoState) -> WhatToDoState:
+def briefing_agent_node(state: WhatToDoState) -> dict:
     text, has_write = _run(_run_async(state["user_input"]))
     return {
-        **state,
-        "results": {**state.get("results", {}), "briefing": {"text": text}},
-        "has_write_output": state.get("has_write_output", False) or has_write,
+        "results": {"briefing": {"text": text}},
+        "has_write_output": has_write,
     }

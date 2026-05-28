@@ -62,10 +62,9 @@ async def _run_async(user_input: str) -> tuple[str, bool]:
     return output_text, False  # search는 write 없음
 
 
-def search_agent_node(state: WhatToDoState) -> WhatToDoState:
+def search_agent_node(state: WhatToDoState) -> dict:
     text, has_write = _run(_run_async(state["user_input"]))
     return {
-        **state,
-        "results": {**state.get("results", {}), "search": {"text": text}},
-        "has_write_output": state.get("has_write_output", False) or has_write,
+        "results": {"search": {"text": text}},
+        "has_write_output": has_write,
     }
