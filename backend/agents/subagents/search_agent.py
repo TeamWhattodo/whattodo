@@ -39,15 +39,22 @@ def _build_tools(all_tools: list) -> list:
     ]
 
 
-_agent = create_agent(
-    model=get_llm("fast"),
-    tools=_build_tools(load_all_tools()),
-    system_prompt=SEARCH_AGENT_SYSTEM,
-)
+_agent = None
+
+
+def _get_agent():
+    global _agent
+    if _agent is None:
+        _agent = create_agent(
+            model=get_llm("fast"),
+            tools=_build_tools(load_all_tools()),
+            system_prompt=SEARCH_AGENT_SYSTEM,
+        )
+    return _agent
 
 
 async def _run_async(user_input: str) -> tuple[str, bool]:
-    result = await _agent.ainvoke({"messages": [HumanMessage(content=user_input)]})
+    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=user_input)]})
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
     return output_text, False  # search는 write 없음

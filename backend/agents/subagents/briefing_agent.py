@@ -7,26 +7,32 @@ from backend.agents.orchestrator import WhatToDoState
 from backend.agents.llm_client import get_llm
 from backend.agents.tools_registry import load_all_tools, _run
 
-BRIEFING_AGENT_LOCAL_TOOLS: list[str] = [
-    "score_urgency",
-    "classify_items",
-    "write_report",
-]
+BRIEFING_AGENT_LOCAL_TOOLS: list[str] = []
 
-BRIEFING_AGENT_MCP_PREFIXES: list[str] = ["slack_", "jira_"]
+BRIEFING_AGENT_MCP_PREFIXES: list[str] = ["slack_", "jira_", "API-"]
 
 BRIEFING_AGENT_SYSTEM = """\
-당신은 브리핑 전담 에이전트입니다.
-사용 가능한 tool: slack_* (Slack 수집), jira_* (Jira 이슈 수집),
-                  score_urgency, classify_items, write_report
+당신은 브리핑 전담 에이전트입니다. 아래 순서대로 데이터를 수집한 뒤 정리합니다.
 
-제약:
-- score_urgency는 반드시 fetch 완료 후 실행
-- write_report는 반드시 classify 완료 후 실행
-- 수집 결과가 0건이면 score/classify 생략 가능
-- 소스 연결 실패 시 가능한 소스로만 진행하고 사용자에게 알림
+━━ 수집 단계 (이 툴만 사용) ━━
 
-이 외 순서와 tool 선택은 상황에 맞게 판단하세요.\
+[Slack]
+① slack_list_channels(limit=100) 호출
+② 응답에서 is_member=true 인 채널만 선택 (is_member=false 채널은 건너뜀)
+③ 선택된 채널의 id 값(C로 시작하는 문자열)으로만 slack_get_channel_history 호출
+   예: slack_get_channel_history(channel_id="C0AJ7P7G03E", limit=50)
+   절대 금지: channel_id에 채널 이름(kosa-team, general 등) 사용
+
+[Jira]
+① jira_search(jql="statusCategory not in (Done) ORDER BY updated DESC", limit=20)
+
+[Notion]
+① API-post-search(query="") → 최근 업무 페이지 조회
+
+━━ 정리 단계 ━━
+수집 완료 후 추가 툴 호출 없이 바로 한국어 마크다운으로 정리해 출력하세요.
+형식: 소스별로 ## 헤더 → 항목 제목·내용·긴급도 순 나열
+소스 연결 실패 시: 실패한 소스를 명시하고 나머지로 계속 진행\
 """
 
 
@@ -40,15 +46,25 @@ def _build_tools(all_tools: list) -> list:
     ]
 
 
-_agent = create_agent(
-    model=get_llm("fast"),
-    tools=_build_tools(load_all_tools()),
-    system_prompt=BRIEFING_AGENT_SYSTEM,
-)
+_agent = None
+
+
+def _get_agent():
+    global _agent
+    if _agent is None:
+        _agent = create_agent(
+            model=get_llm("fast"),
+            tools=_build_tools(load_all_tools()),
+            system_prompt=BRIEFING_AGENT_SYSTEM,
+        )
+    return _agent
 
 
 async def _run_async(user_input: str) -> tuple[str, bool]:
-    result = await _agent.ainvoke({"messages": [HumanMessage(content=user_input)]})
+    result = await _get_agent().ainvoke(
+        {"messages": [HumanMessage(content=user_input)]},
+        config={"recursion_limit": 15},
+    )
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
     has_write = any(getattr(m, "name", "") == "write_report" for m in messages)

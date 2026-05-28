@@ -38,15 +38,22 @@ def _build_tools(all_tools: list) -> list:
     return [t for t in all_tools if t.name in local_names]
 
 
-_agent = create_agent(
-    model=get_llm("fast"),
-    tools=_build_tools(load_all_tools()),
-    system_prompt=REPORT_AGENT_SYSTEM,
-)
+_agent = None
+
+
+def _get_agent():
+    global _agent
+    if _agent is None:
+        _agent = create_agent(
+            model=get_llm("fast"),
+            tools=_build_tools(load_all_tools()),
+            system_prompt=REPORT_AGENT_SYSTEM,
+        )
+    return _agent
 
 
 async def _run_async(user_input: str) -> tuple[str, bool]:
-    result = await _agent.ainvoke({"messages": [HumanMessage(content=user_input)]})
+    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=user_input)]})
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
     has_write = any(getattr(m, "name", "") == "write_report" for m in messages)
