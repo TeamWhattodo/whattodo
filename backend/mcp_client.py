@@ -79,6 +79,9 @@ def _build_config() -> dict:
 
 MCP_SERVER_CONFIG: dict = _build_config()
 
+# GC 방지용 — 클라이언트가 살아있어야 MCP 서버 프로세스 연결이 유지된다.
+_alive_clients: list = []
+
 
 async def load_mcp_tools() -> list:
     """서버별로 독립 연결해 툴을 수집한다. 한 서버가 실패해도 나머지는 계속 로드한다."""
@@ -89,14 +92,16 @@ async def load_mcp_tools() -> list:
     for name, cfg in MCP_SERVER_CONFIG.items():
         try:
             client = MultiServerMCPClient({name: cfg})
-            tools.extend(await client.get_tools())
+            server_tools = await client.get_tools()
+            tools.extend(server_tools)
+            _alive_clients.append(client)  # 연결 유지
         except Exception as e:
-            def _print_causes(exc):
+            def _print_causes(exc, _name=name):
                 subs = getattr(exc, "exceptions", None)
                 if subs:
                     for s in subs:
                         _print_causes(s)
                 else:
-                    print(f"[MCP] '{name}' 연결 실패: {type(exc).__name__}: {exc}")
+                    print(f"[MCP] '{_name}' 연결 실패: {type(exc).__name__}: {exc}")
             _print_causes(e)
     return tools

@@ -19,25 +19,6 @@ class WorkItem(BaseModel):
     actual_minutes: int | None = None
 
 
-class WorkCard(BaseModel):          # UI 렌더링 전용
-    id: str
-    source: str
-    summary: str
-    urgency_level: int
-    action_type: str
-    from_person: str | None = None
-    estimated_minutes: int = 10
-    due_at: datetime | None = None
-    status: str = "pending"
-
-
-class BriefingResult(BaseModel):
-    briefing_id: str
-    stats: dict                     # total, urgent, fyi, estimated_minutes
-    sections: dict                  # immediate, today, fyi
-    summary_text: str
-
-
 class ReceiptItem(BaseModel):
     date: str
     merchant: str
