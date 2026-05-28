@@ -110,29 +110,54 @@ if st.button("📋 브리핑 시작", use_container_width=True):
 
 chat_input = st.chat_input("업무 명령을 입력하세요",
                             accept_file="multiple",
-                            file_type=["jpg", "jpeg", "png"])
+                            file_type=["jpg", "jpeg", "png", "pdf", "txt", "md"])
 
 query          = None
 uploaded_files = []
 
 if chat_input:
-    query          = chat_input.text or "첨부한 영수증으로 정산서를 작성해줘"
+    query          = chat_input.text or "요청 사항을 입력하세요"
     uploaded_files = chat_input.files or []
 elif st.session_state.get("pending_query"):
     query = st.session_state.pop("pending_query")
 
 if query:
     tmp_paths = []
+    extracted_texts = []
     for uf in uploaded_files:
-        suffix = os.path.splitext(uf.name)[-1] or ".jpg"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(uf.read())
-            tmp_paths.append(tmp.name)
+        suffix = os.path.splitext(uf.name)[-1].lower() or ".jpg"
+        
+        if suffix == ".pdf":
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(uf)
+                text = f"--- {uf.name} 시작 ---\n"
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+                text += f"--- {uf.name} 끝 ---\n"
+                extracted_texts.append(text)
+            except Exception as e:
+                extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
+        elif suffix in [".txt", ".md", ".csv"]:
+            try:
+                text = uf.read().decode("utf-8")
+                extracted_texts.append(f"--- {uf.name} 시작 ---\n{text}\n--- {uf.name} 끝 ---\n")
+            except Exception as e:
+                extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
+        else:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(uf.read())
+                tmp_paths.append(tmp.name)
 
-    if tmp_paths:
-        display_query = f"{query} (파일 {len(tmp_paths)}개 첨부)"
-        paths_str     = "\n".join(f"- {p}" for p in tmp_paths)
-        agent_query   = f"{query}\n\n첨부된 파일:\n{paths_str}"
+    if tmp_paths or extracted_texts:
+        display_query = f"{query} (파일 첨부 완료)"
+        agent_query = query
+        if extracted_texts:
+            texts_str = "\n".join(extracted_texts)
+            agent_query += f"\n\n첨부된 문서 내용:\n{texts_str}"
+        if tmp_paths:
+            paths_str = "\n".join(f"- {p}" for p in tmp_paths)
+            agent_query += f"\n\n첨부된 파일 경로:\n{paths_str}"
     else:
         display_query = query
         agent_query   = query
