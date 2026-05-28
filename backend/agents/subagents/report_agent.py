@@ -50,18 +50,29 @@ def _get_agent():
     return _agent
 
 
-async def _run_async(user_input: str) -> tuple[str, bool]:
+import json
+
+async def _run_async(user_input: str) -> tuple[str, bool, list[dict]]:
     result = await _get_agent().ainvoke({"messages": [HumanMessage(content=user_input)]})
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
-    has_write = any(getattr(m, "name", "") == "write_report" for m in messages)
-    return output_text, has_write
+    
+    reports = []
+    has_write = False
+    for m in messages:
+        if getattr(m, "name", "") in ["write_report", "process_expense_report"]:
+            has_write = True
+            try:
+                reports.append(json.loads(m.content))
+            except Exception:
+                pass
+                
+    return output_text, has_write, reports
 
 
-def report_agent_node(state: WhatToDoState) -> WhatToDoState:
-    text, has_write = _run(_run_async(state["user_input"]))
+def report_agent_node(state: WhatToDoState) -> dict:
+    text, has_write, reports = _run(_run_async(state["user_input"]))
     return {
-        **state,
-        "results": {**state.get("results", {}), "report": {"text": text}},
-        "has_write_output": state.get("has_write_output", False) or has_write,
+        "results": {"report": {"text": text, "reports": reports}},
+        "has_write_output": has_write,
     }

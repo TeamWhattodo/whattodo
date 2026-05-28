@@ -21,7 +21,7 @@ from backend.tools.compute_stats import compute_daily_stats as _compute_daily, c
 from backend.tools.receipt import parse_receipt as _parse_receipt
 from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar
-
+from backend.tools.spellcheck import check_spelling as _check_spelling
 
 # ── @tool 래퍼 ────────────────────────────────────────────────────────────────
 
@@ -140,6 +140,12 @@ def process_expense_report(image_paths: list[str]) -> str:
     }, ensure_ascii=False, default=str)
 
 
+@tool
+def spell_check(text: str) -> str:
+    """주어진 한국어 텍스트의 맞춤법, 띄어쓰기, 어색한 문맥을 교정합니다. text: 교정할 원본 텍스트."""
+    return json.dumps(_check_spelling(text), ensure_ascii=False, default=str)
+
+
 LOCAL_TOOLS = [
     score_urgency,
     classify_items,
@@ -157,6 +163,7 @@ LOCAL_TOOLS = [
     fetch_gmail,
     fetch_calendar,
     process_expense_report,
+    spell_check,
 ]
 
 
