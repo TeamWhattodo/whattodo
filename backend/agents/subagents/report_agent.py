@@ -16,8 +16,6 @@ REPORT_AGENT_LOCAL_TOOLS: list[str] = [
     "write_report",
 ]
 
-REPORT_AGENT_MCP_PREFIXES: list[str] = []
-
 REPORT_AGENT_SYSTEM = """\
 당신은 리포트 작성 전담 에이전트입니다.
 사용 가능한 tool: fetch_uploaded_file, parse_billing_data, parse_receipt,
@@ -34,8 +32,8 @@ REPORT_AGENT_SYSTEM = """\
 
 def _build_tools(all_tools: list) -> list:
     """로컬 툴(이름 매칭) 반환. MCP 없음."""
-    local_names = set(REPORT_AGENT_LOCAL_TOOLS)
-    return [t for t in all_tools if t.name in local_names]
+    allowed = set(REPORT_AGENT_LOCAL_TOOLS)
+    return [t for t in all_tools if t.name in allowed]
 
 
 _agent = None

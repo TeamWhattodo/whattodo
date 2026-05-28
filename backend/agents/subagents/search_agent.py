@@ -13,12 +13,18 @@ SEARCH_AGENT_LOCAL_TOOLS: list[str] = [
     "get_item_thread",
 ]
 
-SEARCH_AGENT_MCP_PREFIXES: list[str] = ["jira_", "API-"]
+SEARCH_AGENT_MCP_TOOLS: list[str] = [
+    "slack_search_messages",
+    "jira_search",
+    "API-post-search",
+    "API-get-block-children",
+]
 
 SEARCH_AGENT_SYSTEM = """\
 당신은 조회 전담 에이전트입니다.
 사용 가능한 tool: search_past_items, search_company_docs, get_item_thread,
-                  jira_* (Jira 이슈 조회), API-* (Notion 페이지 조회)
+                  slack_search_messages, jira_search,
+                  API-post-search, API-get-block-children
 
 제약:
 - 사내 규정 질문은 search_company_docs 우선 사용
@@ -30,13 +36,9 @@ SEARCH_AGENT_SYSTEM = """\
 
 
 def _build_tools(all_tools: list) -> list:
-    """로컬 툴(이름 매칭) + MCP 툴(prefix 매칭) 반환."""
-    local_names = set(SEARCH_AGENT_LOCAL_TOOLS)
-    return [
-        t for t in all_tools
-        if t.name in local_names
-        or any(t.name.startswith(p) for p in SEARCH_AGENT_MCP_PREFIXES)
-    ]
+    """로컬 툴(이름 매칭) + MCP 툴(이름 매칭) 반환."""
+    allowed = set(SEARCH_AGENT_LOCAL_TOOLS) | set(SEARCH_AGENT_MCP_TOOLS)
+    return [t for t in all_tools if t.name in allowed]
 
 
 _agent = None
