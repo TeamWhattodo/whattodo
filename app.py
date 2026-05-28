@@ -3,31 +3,52 @@ import json
 import tempfile
 import streamlit as st
 from datetime import datetime
-from backend.agents.assistant_agent import (
-    stream_agent, save_session, load_session, list_sessions, delete_session, rename_session
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from backend.agents.graph import run_graph
+from backend.agents.sessions import (
+    save_session, load_session, list_sessions, delete_session, rename_session,
 )
+from backend.google_auth import get_auth_url, handle_callback, is_authenticated
 
 st.set_page_config(page_title="WhatToDo", layout="centered")
 
-# ── 첫 실행 시 세션 초기화 ────────────────────────────────────────────
+# ── Google OAuth 콜백 처리 (URL에 ?code= 파라미터가 있을 때) ─────────
+_params = st.query_params
+if "code" in _params and not is_authenticated():
+    try:
+        handle_callback(_params["code"])
+        st.query_params.clear()
+        st.rerun()
+    except Exception as e:
+        st.error(f"Google 인증 실패: {e}")
+
+# ── 첫 실행 시 세션 초기화 ─────────────────────────────────────────────
 if "session_id" not in st.session_state:
     st.session_state.session_id = datetime.now().strftime("session_%Y%m%d_%H%M%S")
     st.session_state.messages = []
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
 
-# ── 사이드바: 대화 목록 ──────────────────────────────────────────────
+# ── 사이드바: 대화 목록 ───────────────────────────────────────────────
 with st.sidebar:
+    # ── Google 연동 상태 ──
+    st.header("🔗 Google 연동")
+    if is_authenticated():
+        st.success("Gmail · Calendar 연결됨")
+    else:
+        st.warning("Google 미연결")
+        auth_url = get_auth_url()
+        st.link_button("Google 계정 연결", auth_url, use_container_width=True)
+
+    st.divider()
     st.header("💬 대화 목록")
 
     if st.button("➕ 새 대화", use_container_width=True):
-        save_session(st.session_state.session_id,
-                     st.session_state.messages,
-                     st.session_state.chat_history)
+        save_session(st.session_state.session_id, st.session_state.messages, [])
         new_id = datetime.now().strftime("session_%Y%m%d_%H%M%S")
         st.session_state.session_id = new_id
         st.session_state.messages = []
-        st.session_state.chat_history = []
         st.rerun()
 
     st.divider()
@@ -39,7 +60,6 @@ with st.sidebar:
         is_current = s["id"] == st.session_state.session_id
 
         if st.session_state.editing_session == s["id"]:
-            # ── 제목 편집 모드 ──
             new_name = st.text_input("", value=s["name"], key=f"rename_{s['id']}",
                                      label_visibility="collapsed")
             c1, c2 = st.columns(2)
@@ -53,19 +73,16 @@ with st.sidebar:
                     st.session_state.editing_session = None
                     st.rerun()
         else:
-            # ── 일반 모드 ──
             col1, col2, col3 = st.columns([4, 1, 1])
             with col1:
                 label = f"**· {s['name']}**" if is_current else s["name"]
                 if st.button(label, key=f"sess_{s['id']}", use_container_width=True):
                     if s["id"] != st.session_state.session_id:
                         save_session(st.session_state.session_id,
-                                     st.session_state.messages,
-                                     st.session_state.chat_history)
-                        display, history = load_session(s["id"])
+                                     st.session_state.messages, [])
+                        display, _ = load_session(s["id"])
                         st.session_state.session_id = s["id"]
                         st.session_state.messages = display
-                        st.session_state.chat_history = history
                         st.rerun()
             with col2:
                 if st.button("✏️", key=f"edit_{s['id']}"):
@@ -77,12 +94,33 @@ with st.sidebar:
                     if st.session_state.session_id == s["id"]:
                         st.session_state.session_id = "default"
                         st.session_state.messages = []
-                        st.session_state.chat_history = []
                     st.rerun()
 
-# ── 메인 화면 ─────────────────────────────────────────────────────────
+# ── 메인 화면 ──────────────────────────────────────────────────────────
 st.title("WhatToDo")
 st.caption("업무 보조 에이전트")
+
+
+def _extract_response(state: dict) -> str:
+    """state.results에서 최종 응답 텍스트를 추출한다."""
+    results = state.get("results", {})
+    for key in ("briefing", "report", "action", "search", "chat"):
+        r = results.get(key)
+        if not r:
+            continue
+        if isinstance(r, dict):
+            return r.get("text", json.dumps(r, ensure_ascii=False, default=str))
+        return str(r)
+    return state.get("error") or "처리가 완료되었습니다."
+
+
+def _extract_report(state: dict) -> dict | None:
+    """다운로드 가능한 보고서 데이터가 있으면 반환한다."""
+    results = state.get("results", {})
+    for r in results.values():
+        if isinstance(r, dict) and (r.get("xlsx_path") or r.get("pdf_path")):
+            return r
+    return None
 
 
 def _show_download_buttons(report: dict):
@@ -92,11 +130,11 @@ def _show_download_buttons(report: dict):
     with col1:
         if os.path.exists(report.get("xlsx_path", "")):
             with open(report["xlsx_path"], "rb") as f:
-                st.download_button("📥 엑셀 다운로드", f, file_name=f"{file_prefix}.xlsx", key=report["xlsx_path"], use_container_width=True)
+                st.download_button("📥 엑셀 다운로드", f, file_name=f"{file_prefix}.xlsx", key=report.get("xlsx_path", ""), use_container_width=True)
     with col2:
         if os.path.exists(report.get("pdf_path", "")):
             with open(report["pdf_path"], "rb") as f:
-                st.download_button("📥 PDF 다운로드", f, file_name=f"{file_prefix}.pdf", key=report["pdf_path"], use_container_width=True)
+                st.download_button("📥 PDF 다운로드", f, file_name=f"{file_prefix}.pdf", key=report.get("pdf_path", ""), use_container_width=True)
 
 
 for msg in st.session_state.messages:
@@ -166,24 +204,11 @@ if query:
         st.markdown(display_query)
     st.session_state.messages.append({"role": "user", "content": display_query})
 
-    response_text = ""
-    report_data   = None
     with st.chat_message("assistant"):
-        with st.status("에이전트 실행 중...", expanded=True) as status:
-            for event in stream_agent(agent_query, st.session_state.chat_history):
-                if event["type"] == "tool_call":
-                    st.write(f"🔧 `{event['tool']}` 호출 중...")
-                elif event["type"] == "tool_result":
-                    st.write(f"✅ `{event['tool']}` 완료")
-                    if event["tool"] in ["process_expense_report", "write_report"]:
-                        try:
-                            report_data = json.loads(event["content"])
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                elif event["type"] == "done":
-                    response_text = event["text"]
-                    st.session_state.chat_history = event["history"]
-            status.update(label="완료", state="complete", expanded=False)
+        with st.spinner("에이전트 실행 중..."):
+            state = run_graph(agent_query, thread_id=st.session_state.session_id)
+        response_text = _extract_response(state)
+        report_data   = _extract_report(state)
         st.markdown(response_text)
         if report_data:
             _show_download_buttons(report_data)
@@ -199,7 +224,5 @@ if query:
         "content": response_text,
         "report":  report_data,
     })
-    save_session(st.session_state.session_id,
-                 st.session_state.messages,
-                 st.session_state.chat_history)
+    save_session(st.session_state.session_id, st.session_state.messages, [])
     st.rerun()
