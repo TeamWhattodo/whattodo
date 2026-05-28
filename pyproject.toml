@@ -26,6 +26,7 @@ dependencies = [
     "google-auth>=2.53.0",
     "google-auth-oauthlib>=1.4.0",
     "google-api-python-client>=2.196.0",
+    "langgraph>=1.2.0",
 ]
 
 [build-system]

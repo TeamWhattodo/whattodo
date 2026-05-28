@@ -144,13 +144,14 @@ ORCHESTRATOR_SYSTEM = """
 ```python
 BRIEFING_AGENT_TOOLS = [
     "fetch_emails", "fetch_slack_messages", "fetch_calendar_events",
-    "fetch_jira_issues", "score_urgency", "classify_items", "write_report",
+    # Jira: MCP 툴 이름은 mcp-atlassian 서버 로드 후 확정
+    "score_urgency", "classify_items", "write_report",
 ]
 
 BRIEFING_AGENT_SYSTEM = """
 당신은 브리핑 전담 에이전트입니다.
 사용 가능한 tool: fetch_emails, fetch_slack_messages, fetch_calendar_events,
-                  fetch_jira_issues, score_urgency, classify_items, write_report
+                  Jira MCP 툴, score_urgency, classify_items, write_report
 
 제약:
 - score_urgency는 반드시 fetch 완료 후 실행

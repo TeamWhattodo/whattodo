@@ -245,7 +245,7 @@ Orchestrator가 SubAgent를 tool처럼 호출한다.
 
 ```
 BriefingAgent (Fast 티어)
-  fetch_emails · fetch_slack_messages · fetch_calendar_events · fetch_jira_issues
+  fetch_emails · fetch_slack_messages · fetch_calendar_events · Jira MCP 툴
   score_urgency · classify_items · write_report
 
 ReportAgent (Fast 티어)
