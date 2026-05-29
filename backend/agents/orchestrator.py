@@ -45,14 +45,16 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
     "search":   ["규정", "한도", "찾아", "검색", "얼마"],
 }
 
-_BRIEFING_SOURCES = ["slack", "슬랙", "슬렉", "jira", "지라", "notion", "노션"]
+_BRIEFING_SOURCES = ["slack", "슬랙", "슬렉", "jira", "지라", "notion", "노션",
+                     "gmail", "메일", "이메일"]
 
 
 def validate_intent(intent: str, user_input: str) -> str:
-    # 소스명 + 정리/브리핑/현황 패턴은 briefing으로 강제
+    # 소스명 + 정리/브리핑/현황/조회 동사 패턴은 briefing으로 강제
     u = user_input.lower()
     has_source = any(s in u for s in _BRIEFING_SOURCES)
-    has_briefing_verb = any(w in u for w in ["정리", "브리핑", "현황", "요약"])
+    has_briefing_verb = any(w in u for w in ["정리", "브리핑", "현황", "요약",
+                                              "알려줘", "보여줘", "꺼내줘", "조회"])
     if has_source and has_briefing_verb:
         return "briefing"
 

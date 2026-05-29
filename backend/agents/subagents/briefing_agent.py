@@ -7,6 +7,7 @@ from backend.agents.orchestrator import WhatToDoState
 from backend.agents.llm_client import get_llm
 from backend.agents.tools_registry import load_all_tools, _run
 
+_GMAIL_TOOLS = {"fetch_gmail"}
 _SLACK_TOOLS = {"slack_list_channels", "slack_get_channel_history"}
 _JIRA_TOOLS = {"jira_search_issues"}
 _NOTION_TOOLS = {"notion_search", "notion_get_page_content"}
@@ -17,6 +18,9 @@ BRIEFING_AGENT_SYSTEM = """\
 tool이 여러 개 제공된 경우 모든 소스를 수집해야 합니다. 일부만 수집하면 안 됩니다.
 
 ━━ 소스별 수집 방법 ━━
+
+[Gmail] — fetch_gmail 사용 시
+fetch_gmail(max_results=20) 호출 → 미읽음 메일 목록 수집
 
 [Slack] — slack_list_channels, slack_get_channel_history 사용 시
 ① slack_list_channels(limit=100) 호출
@@ -38,6 +42,10 @@ jira_search_issues(jql="statusCategory not in (Done) ORDER BY updated DESC", max
 
 수집 완료 후 추가 툴 호출 없이 수집한 소스에 대해서만 출력:
 
+## Gmail (수집한 경우만)
+- 발신자 · 제목 · 날짜 나열
+- 업무 관련 메일만, 광고·수신거부 메일 제외
+
 ## Slack (수집한 경우만)
 - 채널별 실제 메시지 나열 (발신자 · 내용 · 시각)
 - 업무 관련 메시지만, 채널 description · 시스템 메시지 제외
@@ -56,17 +64,21 @@ jira_search_issues(jql="statusCategory not in (Done) ORDER BY updated DESC", max
 def _detect_sources(text: str) -> list[str]:
     t = text.lower()
     sources = []
+    if any(w in t for w in ["gmail", "메일", "이메일", "mail"]):
+        sources.append("gmail")
     if any(w in t for w in ["slack", "슬랙", "슬렉", "채널", "메시지", "dm"]):
         sources.append("slack")
     if any(w in t for w in ["jira", "지라", "이슈", "티켓", "스프린트"]):
         sources.append("jira")
     if any(w in t for w in ["notion", "노션", "문서", "페이지"]):
         sources.append("notion")
-    return sources or ["slack", "jira", "notion"]
+    return sources or ["gmail", "slack", "jira", "notion"]
 
 
 def _build_tools(all_tools: list, sources: list) -> list:
     allowed: set[str] = set()
+    if "gmail" in sources:
+        allowed |= _GMAIL_TOOLS
     if "slack" in sources:
         allowed |= _SLACK_TOOLS
     if "jira" in sources:

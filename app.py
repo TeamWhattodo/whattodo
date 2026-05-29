@@ -159,7 +159,7 @@ for msg in st.session_state.messages:
             _show_download_buttons(msg["reports"])
 
 if st.button("📋 브리핑 시작", use_container_width=True):
-    st.session_state.pending_query = "Slack, Jira, Notion 업무 전체 정리해줘"
+    st.session_state.pending_query = "Gmail, Slack, Jira, Notion 업무 전체 정리해줘"
 
 chat_input = st.chat_input("업무 명령을 입력하세요",
                             accept_file="multiple",
