@@ -39,14 +39,23 @@ class WhatToDoState(TypedDict):
 _VALID_INTENTS: set[str] = {"briefing", "report", "action", "search", "chat"}
 
 _INTENT_KEYWORDS: dict[str, list[str]] = {
-    "briefing": ["정리", "브리핑", "쌓인", "복귀", "출근"],
+    "briefing": ["정리", "브리핑", "쌓인", "복귀", "출근", "현황"],
     "report":   ["리포트", "정산", "결산", "KPI", "작성"],
     "action":   ["초안", "답장", "완료", "처리", "잡아"],
     "search":   ["규정", "한도", "찾아", "검색", "얼마"],
 }
 
+_BRIEFING_SOURCES = ["slack", "슬랙", "슬렉", "jira", "지라", "notion", "노션"]
+
 
 def validate_intent(intent: str, user_input: str) -> str:
+    # 소스명 + 정리/브리핑/현황 패턴은 briefing으로 강제
+    u = user_input.lower()
+    has_source = any(s in u for s in _BRIEFING_SOURCES)
+    has_briefing_verb = any(w in u for w in ["정리", "브리핑", "현황", "요약"])
+    if has_source and has_briefing_verb:
+        return "briefing"
+
     matched = [k for k, words in _INTENT_KEYWORDS.items()
                if any(w in user_input for w in words)]
     if len(matched) > 1 and "," not in intent:
@@ -80,10 +89,12 @@ _ORCHESTRATOR_SYSTEM = """\
 당신은 업무 요청을 분류해 적합한 SubAgent에 라우팅합니다.
 
 분류 기준:
-- briefing : 부재 기간 정리, 복귀 브리핑, 긴급 항목 파악
+- briefing : 업무 현황 정리·브리핑·요약. Slack/슬랙/Jira/지라/Notion/노션 등 소스별 업무 정리 포함.
+             예) "지라 업무 정리", "슬랙 정리해줘", "노션 현황", "쌓인 업무 브리핑"
 - report   : 정산 리포트, 일간 결산, 주간 KPI, 파일 분석
 - action   : 답장 초안 작성, 항목 완료·스누즈, 캘린더 블록 생성
-- search   : 사내 규정 조회, 과거 항목 검색, 영수증 검증
+- search   : 특정 키워드·조건으로 데이터 검색. 사내 규정 조회, 과거 항목 검색, 영수증 검증.
+             예) "OOO 찾아줘", "OOO 검색해줘", "규정 알려줘"
 - chat     : 위에 해당하지 않는 일반 질문
 
 복합 의도(예: 영수증 검증 + 규정 조회)는 쉼표로 구분해 반환하세요.

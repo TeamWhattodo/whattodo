@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     jira_base_url: str = ""
 
     notion_api_token: str = ""
-    github_token: str = ""
 
     class Config:
         env_file = ".env"
