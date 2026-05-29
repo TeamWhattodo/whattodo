@@ -46,7 +46,8 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
 }
 
 _BRIEFING_SOURCES = ["slack", "슬랙", "슬렉", "jira", "지라", "notion", "노션",
-                     "gmail", "메일", "이메일"]
+                     "gmail", "메일", "이메일",
+                     "calendar", "캘린더", "스케줄", "스케쥴", "스캐쥴", "스캐줄"]
 
 
 def validate_intent(intent: str, user_input: str) -> str:
@@ -91,8 +92,9 @@ _ORCHESTRATOR_SYSTEM = """\
 당신은 업무 요청을 분류해 적합한 SubAgent에 라우팅합니다.
 
 분류 기준:
-- briefing : 업무 현황 정리·브리핑·요약. Slack/슬랙/Jira/지라/Notion/노션 등 소스별 업무 정리 포함.
-             예) "지라 업무 정리", "슬랙 정리해줘", "노션 현황", "쌓인 업무 브리핑"
+- briefing : 업무 현황 정리·브리핑·요약. Slack/슬랙/Jira/지라/Notion/노션/Gmail/캘린더 등 소스별 업무 정리 포함.
+             예) "지라 업무 정리", "슬랙 정리해줘", "노션 현황", "쌓인 업무 브리핑",
+                 "캘린더 일정 확인", "스케줄 정리", "메일 현황 알려줘"
 - report   : 정산 리포트, 일간 결산, 주간 KPI, 파일 분석
 - action   : 답장 초안 작성, 항목 완료·스누즈, 캘린더 블록 생성
 - search   : 특정 키워드·조건으로 데이터 검색. 사내 규정 조회, 과거 항목 검색, 영수증 검증.
