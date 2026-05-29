@@ -20,7 +20,7 @@ BRIEFING_AGENT_MCP_TOOLS: list[str] = [
 BRIEFING_AGENT_SYSTEM = """\
 당신은 브리핑 전담 에이전트입니다.
 
-사용 가능한 tool: slack_list_channels, slack_get_channel_history, jira_search, API-post-search
+사용 가능한 tool: slack_list_channels, slack_get_channel_history, jira_search, API-post-search, API-get-block-children
 
 ━━ 수집 소스 결정 ━━
 
@@ -68,7 +68,6 @@ jira_search(jql="statusCategory not in (Done) ORDER BY updated DESC", limit=20)
 
 
 def _build_tools(all_tools: list) -> list:
-    """로컬 툴(이름 매칭) + MCP 툴(이름 매칭) 반환."""
     allowed = set(BRIEFING_AGENT_LOCAL_TOOLS) | set(BRIEFING_AGENT_MCP_TOOLS)
     return [t for t in all_tools if t.name in allowed]
 
@@ -90,7 +89,7 @@ def _get_agent():
 async def _run_async(user_input: str) -> tuple[str, bool]:
     result = await _get_agent().ainvoke(
         {"messages": [HumanMessage(content=user_input)]},
-        config={"recursion_limit": 30},
+        config={"recursion_limit": 50},
     )
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""

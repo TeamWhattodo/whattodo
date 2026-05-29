@@ -3,18 +3,16 @@ MCP 서버 설정. .env에 토큰이 입력된 서버만 자동으로 활성화�
 
 필수 패키지:
   Notion  : npx -y @notionhq/notion-mcp-server
-  Slack   : npx -y @modelcontextprotocol/server-slack
   Jira    : uvx mcp-atlassian
   GitHub  : npx -y @modelcontextprotocol/server-github
+
+Slack은 slack_sdk(@tool)로 직접 연동 — MCP 미사용.
 """
 import os
 import sys
-from pathlib import Path
 from backend.config import settings
 
 _ENV = dict(os.environ)
-_ROOT = Path(__file__).resolve().parent.parent  # 프로젝트 루트
-
 # Windows에서 npx는 .cmd 배치 스크립트이므로 cmd.exe를 경유해야 한다.
 if sys.platform == "win32":
     _NPX_CMD, _NPX_PREFIX = "cmd", ["/c", "npx"]
@@ -36,20 +34,6 @@ def _build_config() -> dict:
                     f'{{"Authorization": "Bearer {settings.notion_api_token}",'
                     f' "Notion-Version": "2022-06-28"}}'
                 ),
-            },
-        }
-
-    if settings.slack_bot_token and settings.slack_team_id:
-        _slack_entry = str(_ROOT / "node_modules" / "@modelcontextprotocol" / "server-slack" / "dist" / "index.js")
-        config["slack"] = {
-            "command": "node",
-            "args": [_slack_entry],
-            "transport": "stdio",
-            "env": {
-                **_ENV,
-                "SLACK_BOT_TOKEN": settings.slack_bot_token,
-                "SLACK_TEAM_ID": settings.slack_team_id,
-                "SLACK_BOT_USER_ID": settings.slack_bot_user_id,
             },
         }
 

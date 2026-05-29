@@ -22,6 +22,7 @@ from backend.tools.receipt import parse_receipt as _parse_receipt
 from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
+from backend.tools.slack_fetch import SLACK_TOOLS
 
 # ── @tool 래퍼 ────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ LOCAL_TOOLS = [
     fetch_calendar,
     process_expense_report,
     spell_check,
+    *SLACK_TOOLS,
 ]
 
 
@@ -193,4 +195,14 @@ ALL_TOOLS: list = LOCAL_TOOLS + _MCP_TOOLS
 
 def load_all_tools() -> list:
     """로컬 @tool + MCP 툴 전체 목록을 반환한다."""
+    return ALL_TOOLS
+
+
+def reload_mcp_tools() -> list:
+    """MCP 툴을 다시 연결해 반환한다. 연결이 끊겼을 때 호출."""
+    global _MCP_TOOLS, ALL_TOOLS
+    from backend.mcp_client import _alive_clients
+    _alive_clients.clear()
+    _MCP_TOOLS = _load_mcp_tools_sync()
+    ALL_TOOLS = LOCAL_TOOLS + _MCP_TOOLS
     return ALL_TOOLS
