@@ -4,15 +4,18 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from backend.config import settings
 
 
-def get_llm(tier: str = "smart") -> BaseChatModel:
+def get_llm(tier: str = "smart", temperature: float | None = None) -> BaseChatModel:
     """설정된 provider에 맞는 LangChain 채팅 모델을 반환한다."""
     model = settings.smart_model if tier == "smart" else settings.fast_model
+    kwargs: dict = {}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     if settings.llm_provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key)
+        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, **kwargs)
     elif settings.llm_provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=model, api_key=settings.openai_api_key)
+        return ChatOpenAI(model=model, api_key=settings.openai_api_key, **kwargs)
     else:
         raise ValueError(f"지원하지 않는 provider: {settings.llm_provider!r}. 'anthropic' 또는 'openai'를 사용하세요.")
 

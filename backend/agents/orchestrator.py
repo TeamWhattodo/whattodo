@@ -27,6 +27,7 @@ class WhatToDoState(TypedDict):
     user_input: str
     intent: str               # briefing | report | action | search | chat
     work_items: list[dict]
+    fetch_results: Annotated[dict, merge_results]    # fetch → report 전달 계약
     results: Annotated[dict, merge_results]
     error: str | None
     retry_count: int          # output_validator 재시도 횟수 (max 2)
@@ -227,3 +228,39 @@ def route_by_intent(state: WhatToDoState):
     if len(intents) > 1:
         return [Send(i, state) for i in intents]
     return intents[0]
+
+
+# ── Supervisor 패턴 ────────────────────────────────────────────────────────────
+
+_SUPERVISOR_SYSTEM = """\
+당신은 업무 관리 AI 어시스턴트입니다. 사용자의 요청을 분석하여 적합한 SubAgent 도구를 순서에 맞게 호출합니다.
+
+사용 가능한 도구:
+- fetch_agent  : Slack/Jira/Notion에서 업무 데이터 수집. 복귀 브리핑·최근 활동 파악에 사용
+- report_agent : 데이터 분석·보고서 작성. fetch_agent 결과를 context 파라미터로 전달하면 더 정확한 보고서 생성
+- search_agent : 사내 규정 조회·과거 업무 검색·Slack/Jira/Notion 내용 검색
+- action_agent : 답장 초안·업무 완료·Slack 발송·Jira 업데이트 등 액션 처리 (실행 전 사용자 확인)
+
+호출 규칙:
+1. 복귀 브리핑·업무 정리 → fetch_agent 먼저 → report_agent(request=요청, context=fetch 결과)
+2. 단순 검색·규정 조회 → search_agent
+3. 액션 처리 → 맥락 부족 시 fetch_agent 선행 → action_agent
+4. 일반 대화·인사 → 도구 없이 직접 응답
+
+대화 이력을 참고해 follow-up 요청을 맥락에 맞게 처리하세요.
+항상 한국어로 응답하세요.\
+"""
+
+
+def build_supervisor():
+    """Supervisor 패턴 그래프를 빌드해 반환한다."""
+    from langgraph.prebuilt import create_react_agent
+    from langgraph.checkpoint.memory import MemorySaver
+    from backend.agents.subagents.agent_tools import SUPERVISOR_TOOLS
+
+    return create_react_agent(
+        model=get_llm("smart", temperature=0),
+        tools=SUPERVISOR_TOOLS,
+        prompt=_SUPERVISOR_SYSTEM,
+        checkpointer=MemorySaver(),
+    )

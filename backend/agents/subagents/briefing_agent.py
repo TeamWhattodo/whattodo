@@ -104,3 +104,9 @@ def briefing_agent_node(state: WhatToDoState) -> dict:
         "results": {"briefing": {"text": text}},
         "has_write_output": has_write,
     }
+
+
+async def run(user_input: str) -> tuple[str, dict]:
+    """supervisor agent_tools에서 호출하는 공개 인터페이스."""
+    text, _ = await _run_async(user_input)
+    return text, {}

@@ -68,3 +68,8 @@ def search_agent_node(state: WhatToDoState) -> dict:
         "results": {"search": {"text": text}},
         "has_write_output": has_write,
     }
+
+
+async def run(query: str) -> tuple[str, bool]:
+    """supervisor agent_tools에서 호출하는 공개 인터페이스."""
+    return await _run_async(query)

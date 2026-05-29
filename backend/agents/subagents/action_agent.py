@@ -72,3 +72,8 @@ def action_agent_node(state: WhatToDoState) -> dict:
         "results": {"action": {"text": text}},
         "has_write_output": has_write,
     }
+
+
+async def run(request: str) -> tuple[str, bool]:
+    """supervisor agent_tools에서 호출하는 공개 인터페이스."""
+    return await _run_async(request)

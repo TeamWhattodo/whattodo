@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from backend.agents.graph import run_graph
+from backend.agents.graph import run_graph, resume_graph
 from backend.agents.sessions import (
     save_session, load_session, list_sessions, delete_session, rename_session,
 )
@@ -102,7 +102,17 @@ st.caption("업무 보조 에이전트")
 
 
 def _extract_response(state: dict) -> str:
-    """state.results에서 최종 응답 텍스트를 추출한다."""
+    """state에서 최종 응답 텍스트를 추출한다. supervisor(messages) 및 legacy(results) 형식 모두 지원."""
+    # Supervisor 형식: messages 리스트의 마지막 AI 메시지
+    messages = state.get("messages", [])
+    if messages:
+        last = messages[-1]
+        content = getattr(last, "content", None)
+        # tool_calls가 있으면 중간 단계이므로 건너뜀
+        if content and isinstance(content, str) and not getattr(last, "tool_calls", None):
+            return content
+
+    # Legacy 형식: results dict
     results = state.get("results", {})
     for key in ("briefing", "report", "action", "search", "chat"):
         r = results.get(key)
@@ -111,6 +121,7 @@ def _extract_response(state: dict) -> str:
         if isinstance(r, dict):
             return r.get("text", json.dumps(r, ensure_ascii=False, default=str))
         return str(r)
+
     return state.get("error") or "처리가 완료되었습니다."
 
 
@@ -157,6 +168,45 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
         if msg.get("reports"):
             _show_download_buttons(msg["reports"])
+
+# ── HitL: 액션 실행 확인 UI ───────────────────────────────────────────────
+if "pending_interrupt" in st.session_state:
+    interrupt_info = st.session_state.pending_interrupt
+    st.warning("⚡ **액션 실행 확인**")
+    st.markdown(interrupt_info.get("message", "액션을 실행하시겠습니까?"))
+    col_yes, col_no = st.columns(2)
+    with col_yes:
+        if st.button("✅ 확인", use_container_width=True, type="primary"):
+            thread_id = st.session_state.session_id
+            del st.session_state.pending_interrupt
+            with st.chat_message("assistant"):
+                with st.spinner("실행 중..."):
+                    state = resume_graph(thread_id, "yes")
+            response_text = _extract_response(state)
+            report_data   = _extract_reports(state)
+            st.markdown(response_text)
+            if report_data:
+                _show_download_buttons(report_data)
+            st.session_state.messages.append({
+                "role":    "assistant",
+                "content": response_text,
+                "reports": report_data,
+            })
+            save_session(st.session_state.session_id, st.session_state.messages, [])
+            st.rerun()
+    with col_no:
+        if st.button("❌ 취소", use_container_width=True):
+            thread_id = st.session_state.session_id
+            del st.session_state.pending_interrupt
+            with st.chat_message("assistant"):
+                with st.spinner("취소 처리 중..."):
+                    state = resume_graph(thread_id, "no")
+            response_text = _extract_response(state)
+            st.markdown(response_text)
+            st.session_state.messages.append({"role": "assistant", "content": response_text, "reports": []})
+            save_session(st.session_state.session_id, st.session_state.messages, [])
+            st.rerun()
+    st.stop()
 
 if st.button("📋 브리핑 시작", use_container_width=True):
     st.session_state.pending_query = "긴급한 업무 정리해줘"
@@ -222,6 +272,15 @@ if query:
     with st.chat_message("assistant"):
         with st.spinner("에이전트 실행 중..."):
             state = run_graph(agent_query, thread_id=st.session_state.session_id)
+
+        # HitL: interrupt 발생 시 확인 대기 상태로 전환
+        interrupts = state.get("__interrupt__", [])
+        if interrupts:
+            interrupt_val = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+            st.session_state.pending_interrupt = interrupt_val
+            st.info("액션 실행 전 확인이 필요합니다. 위의 확인 버튼을 눌러주세요.")
+            st.rerun()
+
         response_text = _extract_response(state)
         report_data   = _extract_reports(state)
         st.markdown(response_text)

@@ -76,3 +76,9 @@ def report_agent_node(state: WhatToDoState) -> dict:
         "results": {"report": {"text": text, "reports": reports}},
         "has_write_output": has_write,
     }
+
+
+async def run(context: str) -> tuple[str, list[dict]]:
+    """supervisor agent_tools에서 호출하는 공개 인터페이스."""
+    text, _, reports = await _run_async(context)
+    return text, reports
