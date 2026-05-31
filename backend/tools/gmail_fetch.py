@@ -56,6 +56,7 @@ def _parse_message(msg: dict) -> WorkItem | None:
         action_type="reply",
         from_person=sender,
         created_at=created_at,
+        source_id=msg.get("threadId"),
     )
 
 

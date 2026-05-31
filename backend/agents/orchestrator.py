@@ -39,10 +39,10 @@ class WhatToDoState(TypedDict):
 _VALID_INTENTS: set[str] = {"briefing", "report", "action", "search", "chat"}
 
 _INTENT_KEYWORDS: dict[str, list[str]] = {
-    "briefing": ["정리", "브리핑", "쌓인", "복귀", "출근"],
+    "briefing": ["정리", "브리핑", "쌓인", "복귀", "출근", "가져와", "수집", "Slack", "slack"],
     "report":   ["리포트", "정산", "결산", "KPI", "작성"],
     "action":   ["초안", "답장", "완료", "처리", "잡아", "삭제", "생성", "캘린더"],
-    "search":   ["규정", "한도", "찾아", "검색", "얼마", "일정"],
+    "search":   ["규정", "한도", "찾아", "검색", "얼마", "일정", "스레드", "항목", "내용"],
 }
 
 
@@ -80,10 +80,10 @@ _ORCHESTRATOR_SYSTEM = """\
 당신은 업무 요청을 분류해 적합한 SubAgent에 라우팅합니다.
 
 분류 기준:
-- briefing : 부재 기간 정리, 복귀 브리핑, 긴급 항목 파악
+- briefing : 부재 기간 정리, 복귀 브리핑, 긴급 항목 파악, Gmail·Slack·Jira·Notion 메시지/이슈 수집 및 정리
 - report   : 정산 리포트, 일간 결산, 주간 KPI, 파일 분석
-- action   : 답장 초안 작성, 항목 완료·스누즈, 캘린더 블록 생성
-- search   : 사내 규정 조회, 과거 항목 검색, 영수증 검증
+- action   : 답장 초안 작성, 항목 완료·스누즈, 캘린더 블록 생성·삭제
+- search   : 사내 규정 조회, 특정 항목 ID 조회, 캘린더 일정 검색, 영수증 검증
 - chat     : 위에 해당하지 않는 일반 질문
 
 복합 의도(예: 영수증 검증 + 규정 조회)는 쉼표로 구분해 반환하세요.

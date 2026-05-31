@@ -13,6 +13,7 @@ class WorkItem(BaseModel):
     action_type: str                # reply / approve / review / fyi / none
     from_person: str | None = None
     due_at: datetime | None = None
+    source_id: str | None = None   # Gmail: threadId, Slack: channel_id:thread_ts, Jira: issue_key
     status: Literal["pending", "done", "snoozed"] = "pending"
     created_at: datetime
     completed_at: datetime | None = None

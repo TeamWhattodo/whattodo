@@ -7,7 +7,11 @@ from backend.agents.orchestrator import WhatToDoState
 from backend.agents.llm_client import get_llm
 from backend.agents.tools_registry import load_all_tools, _run
 
-BRIEFING_AGENT_LOCAL_TOOLS: list[str] = []
+BRIEFING_AGENT_LOCAL_TOOLS: list[str] = [
+    "fetch_gmail",
+    "fetch_calendar",
+    "fetch_slack_as_items",
+]
 
 BRIEFING_AGENT_MCP_TOOLS: list[str] = [
     "slack_list_channels",
@@ -20,24 +24,27 @@ BRIEFING_AGENT_MCP_TOOLS: list[str] = [
 BRIEFING_AGENT_SYSTEM = """\
 당신은 브리핑 전담 에이전트입니다.
 
-사용 가능한 tool: slack_list_channels, slack_get_channel_history, jira_search, API-post-search, API-get-block-children
+사용 가능한 tool: fetch_gmail, fetch_calendar, fetch_slack_as_items, slack_list_channels, jira_search, API-post-search, API-get-block-children
 
 ━━ 수집 소스 결정 ━━
 
 먼저 사용자 요청에서 수집할 소스를 판단한다.
-- "Slack" 언급 또는 메시지·채널·DM 관련 요청 → Slack 수집
+- "Gmail" 또는 "이메일" 언급 → fetch_gmail 호출
+- "캘린더" 또는 "일정" 언급 → fetch_calendar 호출
+- "Slack" 언급 또는 메시지·채널·DM 관련 요청 → slack_list_channels로 채널 확인 후 fetch_slack_as_items(channel_id) 호출 (WorkItem으로 저장됨)
 - "Jira" 언급 또는 이슈·티켓·스프린트 관련 요청 → Jira 수집
 - "Notion" 언급 또는 문서·페이지·노션 관련 요청 → Notion 수집
-- 특정 소스를 언급하지 않은 전체 브리핑 요청 → 세 소스 모두 수집
+- 특정 소스를 언급하지 않은 전체 브리핑 요청 → 가능한 모든 소스 수집
 
 ━━ 소스별 수집 방법 ━━
 
 [Slack]
 ① slack_list_channels(limit=100) 호출
 ② 응답에서 is_member=true 인 채널만 추린다
-③ 추린 채널 각각에 slack_get_channel_history(channel_id=<id>, limit=50) 호출
+③ 추린 채널 각각에 fetch_slack_as_items(channel_id=<id>) 호출 (WorkItem 변환 + TinyDB 저장)
    ※ channel_id 는 반드시 C로 시작하는 id 값 사용 (채널 이름 절대 금지)
    ※ ③은 생략 불가 — 채널 description은 메시지가 아님
+   ※ slack_get_channel_history 사용 금지 — TinyDB에 저장되지 않음
 
 [Jira]
 jira_search(jql="statusCategory not in (Done) ORDER BY updated DESC", limit=20)
@@ -48,13 +55,21 @@ jira_search(jql="statusCategory not in (Done) ORDER BY updated DESC", limit=20)
 ③ 선택된 페이지 각각에 API-get-block-children(block_id=<page_id>) 호출해 내용 확인
    ※ ③은 생략 불가 — 페이지 제목만으로는 내용을 알 수 없음
 
-━━ 정리 출력 ━━
+━━ 출력 규칙 ━━
 
-수집 완료 후 추가 툴 호출 없이 수집한 소스에 대해서만 한국어 마크다운으로 출력:
+**중요: 툴이 반환한 실제 데이터만 출력하세요. 예시·가상 데이터·추측을 절대 사용하지 마세요.**
+- 툴 결과가 빈 배열 `[]` 이면 "수집된 항목이 없습니다"로 출력
+- 결과가 있으면 반환된 JSON의 필드값을 그대로 사용
+
+수집 완료 후 수집한 소스에 대해서만 한국어 마크다운으로 출력:
+
+## Gmail (수집한 경우만)
+- 형식: `발신자 · 제목 · 날짜`
+- 항목이 없으면 "미읽음 메일 없음"
 
 ## Slack (수집한 경우만)
-- 채널별 실제 메시지 나열 (발신자 · 내용 · 시각)
-- 업무 관련 메시지만, 채널 description · 시스템 메시지 제외
+- 형식: `발신자 · 메시지 내용 · 시각`
+- 업무 관련 메시지만, 시스템 메시지 제외
 - 메시지 없는 채널은 제외
 
 ## Jira (수집한 경우만)

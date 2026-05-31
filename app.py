@@ -36,6 +36,10 @@ with st.sidebar:
     st.header("🔗 Google 연동")
     if is_authenticated():
         st.success("Gmail · Calendar 연결됨")
+        if st.button("Google 로그아웃 (초기화)", use_container_width=True):
+            if os.path.exists("data/google_token.json"):
+                os.remove("data/google_token.json")
+            st.rerun()
     else:
         st.warning("Google 미연결")
         auth_url = get_auth_url()
@@ -102,15 +106,27 @@ st.caption("업무 보조 에이전트")
 
 
 def _extract_response(state: dict) -> str:
-    """state.results에서 최종 응답 텍스트를 추출한다."""
+    """state.results에서 최종 응답 텍스트를 추출한다. 현재 intent 결과를 우선 반환."""
     results = state.get("results", {})
-    for key in ("briefing", "report", "action", "search", "chat"):
-        r = results.get(key)
-        if not r:
-            continue
+    intent = state.get("intent", "")
+
+    def _pick(r):
         if isinstance(r, dict):
             return r.get("text", json.dumps(r, ensure_ascii=False, default=str))
         return str(r)
+
+    # 현재 turn의 intent 결과 우선
+    for key in [k.strip() for k in intent.split(",") if k.strip()]:
+        r = results.get(key)
+        if r:
+            return _pick(r)
+
+    # fallback: 가장 최근에 추가된 결과
+    for key in ("action", "search", "report", "briefing", "chat"):
+        r = results.get(key)
+        if r:
+            return _pick(r)
+
     return state.get("error") or "처리가 완료되었습니다."
 
 

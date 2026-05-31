@@ -22,7 +22,7 @@ from backend.tools.receipt import parse_receipt as _parse_receipt
 from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar, search_calendar_events as _search_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
-from backend.tools.slack_fetch import SLACK_TOOLS
+from backend.tools.slack_fetch import SLACK_TOOLS, fetch_slack_as_items
 
 # ── @tool 래퍼 ────────────────────────────────────────────────────────────────
 
@@ -140,8 +140,12 @@ def compute_kpi(period: str = "weekly") -> str:
 
 @tool
 def fetch_gmail(max_results: int = 20) -> str:
-    """Gmail 미읽음 메일을 가져와 WorkItem 목록으로 반환합니다. Google 인증이 필요합니다."""
-    return json.dumps(_fetch_gmail(max_results), ensure_ascii=False, default=str)
+    """Gmail 미읽음 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다. Google 인증이 필요합니다."""
+    from backend.tools.storage import save_items
+    items = _fetch_gmail(max_results)
+    items_dict = [i.model_dump(mode="json") if hasattr(i, "model_dump") else i for i in items]
+    save_items(items_dict)
+    return json.dumps(items_dict, ensure_ascii=False, default=str)
 
 
 @tool

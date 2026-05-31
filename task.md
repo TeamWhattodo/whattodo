@@ -7,7 +7,7 @@ search_agent/report_agent가 조회·분석 역할이라면, action_agent는 실
 
 - 답장 초안 작성
 - WorkItem 상태 변경 (done / snoozed / pending)
-- Slack 스레드 조회 및 메시지 발송
+- Slack 스레드 조회 및 메시지 발송 (원본 채널 스레드 답글)
 - Jira 이슈 상태 업데이트
 - Notion 페이지 수정
 - Google Calendar 일정 생성·삭제·조회
@@ -19,7 +19,7 @@ search_agent/report_agent가 조회·분석 역할이라면, action_agent는 실
 ### 로컬 툴 (ACTION_AGENT_LOCAL_TOOLS)
 
 - [o] `search_past_items` — TinyDB에서 WorkItem을 키워드/상태/출처로 검색
-- [o] `get_item_thread` — 특정 item의 스레드 전체 조회 (@tool 등록 완료, 실데이터 연결은 3단계)
+- [o] `get_item_thread` — 특정 item의 스레드 전체 조회 (Gmail/Slack 실연결 완료)
 - [o] `write_draft` — item_id로 항목 조회 후 LLM(smart 티어)으로 답장 초안 생성
 - [o] `update_item_status` — WorkItem 상태를 done/snoozed/pending으로 변경
 - [o] `create_calendar_block` — Google Calendar 일정 생성 (실 API 연결 완료)
@@ -29,7 +29,7 @@ search_agent/report_agent가 조회·분석 역할이라면, action_agent는 실
 ### MCP / 외부 툴 (ACTION_AGENT_MCP_TOOLS)
 
 - [o] `slack_get_thread_replies` — Slack 스레드 답글 조회 (slack_sdk 직접 연결)
-- [o] `slack_post_message` — Slack 채널에 메시지 전송 (사용자 확인 필요)
+- [o] `slack_post_message` — Slack 채널에 메시지 전송 (thread_ts 지원, 원본 채널 스레드 답글)
 - [x] `jira_update_issue` — Jira 이슈 상태 변경 (MCP mcp-atlassian, .env 토큰 미설정 시 비활성)
 - [x] `API-patch-page` — Notion 페이지 수정 (MCP @notionhq/notion-mcp-server, .env 토큰 미설정 시 비활성)
 
@@ -48,21 +48,32 @@ search_agent/report_agent가 조회·분석 역할이라면, action_agent는 실
 
 ### 2. create_calendar_block 실구현 ✅
 
-- [o] Google OAuth 스코프에 `calendar.events` 추가 (기존 `calendar.readonly`만 있어 생성 불가)
-- [o] Google Calendar API 연결 (`calendar_fetch.py`의 `get_credentials()` 재사용)
-- [o] 이벤트 생성 API 호출 (`events().insert()`)
-- [o] 중복 일정 체크 로직 (같은 시간대 동일 제목 이벤트 확인)
+- [o] Google OAuth 스코프에 `calendar.events` 추가
+- [o] Google Calendar API 연결 및 이벤트 생성 (`events().insert()`)
+- [o] 중복 일정 체크 로직
 - [o] `delete_calendar_block` 추가 (Google Calendar 이벤트 삭제)
 - [o] `search_calendar_events` 추가 (제목 키워드로 event_id 포함 검색)
 - [o] search_agent에 `search_calendar_events`, `fetch_calendar` 추가
-- [o] orchestrator 키워드에 "일정", "삭제", "생성", "캘린더" 추가 (라우팅 개선)
-- [o] 확인 루프 방지 — 긍정 응답 시 즉시 실행하도록 시스템 프롬프트 수정
+- [o] orchestrator 키워드 보강 ("일정", "삭제", "생성", "캘린더")
+- [o] 확인 루프 방지 — 긍정 응답 시 즉시 실행
 
-### 3. get_item_thread 실데이터 연결
+### 3. get_item_thread 실데이터 연결 ✅
 
-- [x] Gmail 스레드 조회 연결 (Gmail API `users.messages.list` threadId 필터)
-- [x] Slack 스레드 조회 연결 (slack_get_thread_replies 위임 또는 직접 호출)
-- [x] Jira 이슈 댓글 조회 연결 (MCP 또는 REST API)
+- [o] WorkItem 모델에 `source_id` 필드 추가
+- [o] `gmail_fetch.py` — threadId를 source_id에 저장
+- [o] Gmail 스레드 조회 연결 (Gmail API `threads().get()`)
+- [o] `fetch_slack_as_items` 신규 구현 (Slack → WorkItem + source_id → TinyDB)
+- [o] Slack 스레드 조회 연결 (source_id channel_id:ts → conversations_replies)
+- [o] `slack_post_message` thread_ts 파라미터 추가 (원본 채널 스레드 답글)
+- [o] briefing_agent에 `fetch_gmail`, `fetch_calendar`, `fetch_slack_as_items` 연결
+- [o] orchestrator 라우팅 키워드 보강 ("가져와", "수집", "Slack", "항목", "스레드")
+- [o] `_extract_response` intent 기반으로 수정 (MemorySaver 누적 결과 오버라이드 방지)
+- [o] action_agent hallucination 방지 및 Slack 발송 플로우 명시
+- [x] Jira 이슈 댓글 조회 연결 (MCP 미연결, 추후 구현)
+
+### 6. write_draft 맥락 확보 흐름 완성 ✅
+
+- [o] `get_item_thread` → `write_draft` → `slack_post_message` 전체 플로우 검증 완료
 
 ### 4. jira_update_issue MCP 연결 검증
 
@@ -76,15 +87,11 @@ search_agent/report_agent가 조회·분석 역할이라면, action_agent는 실
 - [x] `npx @notionhq/notion-mcp-server` 설치 확인
 - [x] MCP 툴 이름 `API-patch-page` 실제 노출 이름과 일치 여부 확인
 
-### 6. write_draft 맥락 확보 흐름 완성
-
-- [x] `get_item_thread` 완성 후 write_draft 앞에서 맥락 주입 흐름 검증
-- [x] tone 파라미터(formal/casual) 프롬프트 반영 테스트
-
 ### 7. 사용자 확인(Human-in-the-loop) 처리
 
-- [x] `slack_post_message` 실행 전 확인 인터럽트 구현
+- [o] `slack_post_message` 실행 전 확인 흐름 동작 (LLM 레벨)
 - [x] `jira_update_issue` 실행 전 확인 인터럽트 구현
 - [x] `API-patch-page` 실행 전 확인 인터럽트 구현
-- [o] `create_calendar_block` 실행 전 확인 흐름 동작 (LLM 레벨, LangGraph interrupt는 추후)
-- [o] `delete_calendar_block` 실행 전 확인 흐름 동작 (LLM 레벨, LangGraph interrupt는 추후)
+- [o] `create_calendar_block` 실행 전 확인 흐름 동작 (LLM 레벨)
+- [o] `delete_calendar_block` 실행 전 확인 흐름 동작 (LLM 레벨)
+- [x] LangGraph interrupt() 기반 Human-in-the-loop 구현 (추후)
