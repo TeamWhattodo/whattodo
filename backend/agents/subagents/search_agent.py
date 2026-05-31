@@ -11,6 +11,8 @@ SEARCH_AGENT_LOCAL_TOOLS: list[str] = [
     "search_past_items",
     "search_company_docs",
     "get_item_thread",
+    "search_calendar_events",
+    "fetch_calendar",
 ]
 
 SEARCH_AGENT_MCP_TOOLS: list[str] = [
@@ -22,13 +24,11 @@ SEARCH_AGENT_MCP_TOOLS: list[str] = [
 
 SEARCH_AGENT_SYSTEM = """\
 당신은 조회 전담 에이전트입니다.
-사용 가능한 tool: search_past_items, search_company_docs, get_item_thread,
-                  slack_search_messages, jira_search,
-                  API-post-search, API-get-block-children
 
 제약:
 - 사내 규정 질문은 search_company_docs 우선 사용
-- 과거 항목 질문은 search_past_items 우선 사용
+- 과거 업무 항목 질문은 search_past_items 우선 사용
+- 캘린더·일정 관련 질문은 search_calendar_events 또는 fetch_calendar 사용
 - 두 결과가 모두 필요하면 병렬 호출 가능
 
 이 외 순서와 tool 선택은 상황에 맞게 판단하세요.\

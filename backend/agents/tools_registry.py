@@ -13,14 +13,14 @@ from backend.tools.scoring import score_urgency as _score_urgency
 from backend.tools.classify import classify_items as _classify, filter_items as _filter
 from backend.tools.write_report import write_report as _write_report
 from backend.tools.write_draft import write_draft as _write_draft
-from backend.tools.update_status import update_item_status as _update_status, create_calendar_block as _create_calendar_block
+from backend.tools.update_status import update_item_status as _update_status, create_calendar_block as _create_calendar_block, delete_calendar_block as _delete_calendar_block
 from backend.tools.search_items import search_past_items as _search, get_item_thread as _get_item_thread
 from backend.tools.policy_search import search_company_docs as _search_docs
 from backend.tools.parse_billing import parse_billing_data as _parse_billing
 from backend.tools.compute_stats import compute_daily_stats as _compute_daily, compute_kpi as _compute_kpi
 from backend.tools.receipt import parse_receipt as _parse_receipt
 from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
-from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar
+from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar, search_calendar_events as _search_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
 from backend.tools.slack_fetch import SLACK_TOOLS
 
@@ -85,6 +85,18 @@ def get_item_thread(item_id: str, source: str) -> str:
 def create_calendar_block(title: str, start: str, end: str) -> str:
     """캘린더 일정을 생성합니다. title: 일정 제목. start/end: ISO 8601 (예: 2026-06-01T14:00:00). 에이전트가 자연어 시간을 직접 변환해 호출."""
     return json.dumps(_create_calendar_block(title, start, end), ensure_ascii=False, default=str)
+
+
+@tool
+def delete_calendar_block(event_id: str) -> str:
+    """캘린더 일정을 삭제합니다. event_id: Google Calendar 이벤트 ID. 반드시 사용자 확인 후 실행."""
+    return json.dumps(_delete_calendar_block(event_id), ensure_ascii=False, default=str)
+
+
+@tool
+def search_calendar_events(query: str = "", days: int = 30) -> str:
+    """Google Calendar에서 일정을 검색합니다. query: 제목 키워드. days: 오늘부터 몇 일 이내 검색(기본 30일). event_id 포함 반환."""
+    return json.dumps(_search_calendar(query=query, days=days), ensure_ascii=False, default=str)
 
 
 @tool
@@ -169,6 +181,8 @@ LOCAL_TOOLS = [
     search_past_items,
     get_item_thread,
     create_calendar_block,
+    delete_calendar_block,
+    search_calendar_events,
     search_company_docs,
     fetch_uploaded_file,
     parse_billing_data,

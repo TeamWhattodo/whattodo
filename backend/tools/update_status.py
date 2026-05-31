@@ -60,6 +60,26 @@ def create_calendar_block(title: str, start: str, end: str) -> dict:
     }
 
 
+def delete_calendar_block(event_id: str) -> dict:
+    """Google Calendar 이벤트를 삭제한다. Google 미인증 시 에러 반환."""
+    from backend.google_auth import get_credentials
+    from googleapiclient.discovery import build
+
+    creds = get_credentials()
+    if not creds or not creds.valid:
+        return {
+            "success": False,
+            "error": "Google 계정이 연결되지 않았습니다. 사이드바에서 Google 계정을 연결해주세요.",
+        }
+
+    service = build("calendar", "v3", credentials=creds)
+    try:
+        service.events().delete(calendarId="primary", eventId=event_id).execute()
+        return {"success": True, "event_id": event_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def update_jira_issue(issue_key: str, status: str) -> dict:
     """Jira 이슈 상태를 변경한다. (Phase 2: Jira API 연결)"""
     # TODO (#2): Jira API 연결

@@ -37,6 +37,43 @@ def fetch_calendar(days: int = 7) -> list[WorkItem]:
     return items
 
 
+def search_calendar_events(query: str = "", days: int = 30) -> list[dict]:
+    """제목 키워드로 Google Calendar 이벤트를 검색해 event_id 포함 목록 반환."""
+    creds = get_credentials()
+    if not creds or not creds.valid:
+        return []
+
+    service = build("calendar", "v3", credentials=creds)
+    now = datetime.now(timezone.utc)
+    time_max = now + timedelta(days=days)
+
+    events = (
+        service.events()
+        .list(
+            calendarId="primary",
+            timeMin=now.isoformat(),
+            timeMax=time_max.isoformat(),
+            q=query,
+            maxResults=10,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+        .get("items", [])
+    )
+
+    return [
+        {
+            "event_id": e["id"],
+            "title": e.get("summary", "(제목 없음)"),
+            "start": e.get("start", {}).get("dateTime") or e.get("start", {}).get("date"),
+            "end": e.get("end", {}).get("dateTime") or e.get("end", {}).get("date"),
+            "html_link": e.get("htmlLink"),
+        }
+        for e in events
+    ]
+
+
 def _parse_event(event: dict) -> WorkItem | None:
     title = event.get("summary", "(제목 없음)")
     organizer = event.get("organizer", {}).get("email", "")

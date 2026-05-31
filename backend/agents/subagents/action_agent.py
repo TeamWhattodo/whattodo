@@ -14,6 +14,8 @@ ACTION_AGENT_LOCAL_TOOLS: list[str] = [
     "write_draft",
     "update_item_status",
     "create_calendar_block",
+    "delete_calendar_block",
+    "search_calendar_events",
 ]
 
 ACTION_AGENT_MCP_TOOLS: list[str] = [
@@ -36,11 +38,12 @@ def _build_system_prompt() -> str:
 
 ## 툴 사용 순서
 - write_draft는 get_item_thread 또는 slack_get_thread_replies로 맥락 확보 후 실행
-- 발송·수정 액션(slack_post_message, jira_update_issue, API-patch-page)은 툴 호출 전 실행 내용을 사용자에게 보여주고 승인 요청
-- create_calendar_block은 툴 호출 전 생성될 일정 정보(제목·시작·종료)를 사용자에게 보여주고 승인 요청
+- 발송·수정·삭제 액션(slack_post_message, jira_update_issue, API-patch-page, create_calendar_block, delete_calendar_block)은 **처음 시도 시에만** 실행 내용을 사용자에게 보여주고 승인 요청
+- 사용자가 "응", "맞아", "해줘", "확인", "예", "네", "ㅇㅇ" 등 긍정 응답을 하면 **즉시 툴을 호출**하고 결과를 반환. 다시 확인을 요청하지 말 것
 
 ## 사용 가능한 툴
-search_past_items, get_item_thread, write_draft, update_item_status, create_calendar_block,
+search_past_items, get_item_thread, write_draft, update_item_status,
+create_calendar_block, delete_calendar_block,
 slack_get_thread_replies, slack_post_message, jira_update_issue, API-patch-page\
 """
 

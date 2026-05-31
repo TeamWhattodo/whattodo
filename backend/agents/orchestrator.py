@@ -41,8 +41,8 @@ _VALID_INTENTS: set[str] = {"briefing", "report", "action", "search", "chat"}
 _INTENT_KEYWORDS: dict[str, list[str]] = {
     "briefing": ["정리", "브리핑", "쌓인", "복귀", "출근"],
     "report":   ["리포트", "정산", "결산", "KPI", "작성"],
-    "action":   ["초안", "답장", "완료", "처리", "잡아"],
-    "search":   ["규정", "한도", "찾아", "검색", "얼마"],
+    "action":   ["초안", "답장", "완료", "처리", "잡아", "삭제", "생성", "캘린더"],
+    "search":   ["규정", "한도", "찾아", "검색", "얼마", "일정"],
 }
 
 
