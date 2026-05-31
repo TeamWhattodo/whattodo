@@ -19,10 +19,11 @@ from backend.tools.policy_search import search_company_docs as _search_docs
 from backend.tools.parse_billing import parse_billing_data as _parse_billing
 from backend.tools.compute_stats import compute_daily_stats as _compute_daily, compute_kpi as _compute_kpi
 from backend.tools.receipt import parse_receipt as _parse_receipt
-from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
+from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail, send_gmail as _send_gmail, trash_gmail as _trash_gmail
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar, search_calendar_events as _search_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
 from backend.tools.slack_fetch import SLACK_TOOLS, fetch_slack_as_items
+from backend.tools.notion_fetch import list_notion_pages
 
 # ── @tool 래퍼 ────────────────────────────────────────────────────────────────
 
@@ -139,6 +140,18 @@ def compute_kpi(period: str = "weekly") -> str:
 
 
 @tool
+def send_gmail(to: str, subject: str, body: str, thread_id: str = "") -> str:
+    """Gmail로 이메일을 발송합니다. to: 수신자 이메일. subject: 제목. body: 본문. thread_id: 답장 시 원본 threadId. 반드시 사용자 확인 후 실행."""
+    return json.dumps(_send_gmail(to=to, subject=subject, body=body, thread_id=thread_id), ensure_ascii=False, default=str)
+
+
+@tool
+def trash_gmail(message_id: str) -> str:
+    """Gmail 메시지를 휴지통으로 이동합니다. message_id: Gmail 메시지 ID. 반드시 사용자 확인 후 실행."""
+    return json.dumps(_trash_gmail(message_id=message_id), ensure_ascii=False, default=str)
+
+
+@tool
 def fetch_gmail(max_results: int = 20) -> str:
     """Gmail 미읽음 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다. Google 인증이 필요합니다."""
     from backend.tools.storage import save_items
@@ -184,6 +197,8 @@ LOCAL_TOOLS = [
     update_item_status,
     search_past_items,
     get_item_thread,
+    send_gmail,
+    trash_gmail,
     create_calendar_block,
     delete_calendar_block,
     search_calendar_events,
@@ -197,6 +212,7 @@ LOCAL_TOOLS = [
     fetch_calendar,
     process_expense_report,
     spell_check,
+    list_notion_pages,
     *SLACK_TOOLS,
 ]
 

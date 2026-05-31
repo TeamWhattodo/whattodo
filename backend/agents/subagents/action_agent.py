@@ -16,13 +16,28 @@ ACTION_AGENT_LOCAL_TOOLS: list[str] = [
     "create_calendar_block",
     "delete_calendar_block",
     "search_calendar_events",
+    "send_gmail",
+    "trash_gmail",
 ]
 
 ACTION_AGENT_MCP_TOOLS: list[str] = [
     "slack_get_thread_replies",
     "slack_post_message",
+    "slack_delete_message",
+    "jira_get_all_projects",
+    "jira_get_issue",
+    "jira_get_transitions",
+    "jira_create_issue",
     "jira_update_issue",
+    "jira_transition_issue",
+    "jira_delete_issue",
+    "jira_add_comment",
+    "list_notion_pages",
+    "API-post-search",
     "API-patch-page",
+    "API-post-page",
+    "API-delete-a-block",
+    "API-retrieve-a-page",
 ]
 
 def _build_system_prompt() -> str:
@@ -46,6 +61,27 @@ def _build_system_prompt() -> str:
 4. 초안을 사용자에게 보여주고 발송 여부 확인
 ※ 항목을 찾은 뒤 중간에 멈추지 말고 write_draft까지 연속 실행할 것
 
+### Gmail 발송 (send_gmail)
+1. search_past_items로 원본 메일 조회 → from_person(수신자), source_id(threadId) 확보
+2. write_draft로 초안 생성 후 사용자에게 보여주고 발송 확인
+3. 사용자 승인 시 send_gmail(to=수신자이메일, subject=제목, body=초안내용, thread_id=threadId) 호출
+4. 툴 결과 success=true일 때만 "발송됐습니다"라고 알릴 것
+
+### Gmail 삭제 (trash_gmail)
+1. search_past_items로 항목 조회 → source_id(threadId) 확보
+2. get_item_thread로 스레드 내 message_id 확인
+3. 삭제할 메일 내용을 사용자에게 보여주고 확인 요청
+4. 사용자 승인 시 trash_gmail(message_id) 호출
+
+### Slack 메시지 삭제 (slack_delete_message)
+1. "방금 보낸 메시지" 삭제 요청 시 → search_past_items(query="발송됨")으로 from_person="me" 항목 검색
+2. 그 외 특정 메시지 삭제 요청 시 → search_past_items로 해당 내용 검색
+3. 찾은 항목의 source_id에서 channel_id:ts 분리
+4. 삭제할 메시지 내용을 사용자에게 보여주고 확인 요청
+5. 사용자 승인 시 slack_delete_message(channel_id, ts) 호출
+6. 툴 결과의 ok 필드가 true일 때만 "삭제됐습니다"라고 알릴 것
+※ 절대로 원본 채널 메시지(받은 메시지)를 삭제하지 말 것 — 반드시 "[발송됨]"이 붙은 항목만 삭제
+
 ### Slack 메시지 발송 (slack_post_message)
 1. search_past_items로 항목 조회 → source_id 확보 (형식: "C채널ID:thread_ts")
 2. source_id를 콜론으로 분리 → channel_id(앞부분), thread_ts(뒷부분)
@@ -58,10 +94,36 @@ def _build_system_prompt() -> str:
 - jira_update_issue, API-patch-page, create_calendar_block, delete_calendar_block은 **처음 시도 시에만** 실행 내용을 사용자에게 보여주고 승인 요청
 - 사용자가 "응", "맞아", "해줘", "확인", "예", "네", "ㅇㅇ" 등 긍정 응답을 하면 **즉시 툴을 호출**하고 결과를 반환. 다시 확인을 요청하지 말 것
 
+### Jira 이슈 관리
+- 생성: jira_get_all_projects로 프로젝트 목록 먼저 조회 → 사용자에게 프로젝트 선택 요청 → jira_create_issue(project_key, summary, issue_type="Task") 호출
+  ※ 프로젝트 키를 사용자에게 직접 묻지 말 것. 항상 jira_get_all_projects로 먼저 조회할 것
+- 조회: jira_get_issue(issue_key)
+- 상태 변경: jira_get_transitions(issue_key)로 전환 목록 확인 → jira_transition_issue(issue_key, transition_id)
+- 업데이트: jira_update_issue(issue_key, ...) — 사용자 확인 후 실행
+- 삭제: jira_delete_issue(issue_key) — 사용자 확인 후 실행
+- 댓글: jira_add_comment(issue_key, comment)
+
+### Notion 페이지 관리
+- 생성 절차:
+  1. list_notion_pages()로 전체 페이지를 계층 구조로 조회
+  2. 계층 구조(들여쓰기로 부모-자식 표현)를 사용자에게 보여줌:
+     예) 📁 What To Do
+          ├ 📄 문서1
+          └ 📄 문서2
+  4. **사용자가 직접 위치를 선택할 때까지 기다릴 것. 자동으로 선택해서 생성 금지**
+  5. 사용자가 위치를 선택하면 API-post-page 호출:
+     parent={{"type":"page_id","page_id":"<사용자가_선택한_페이지_id>"}}
+     properties={{"title":[{{"text":{{"content":"<페이지_제목>"}}}}]}}
+- 수정: API-retrieve-a-page(page_id)로 현재 속성 확인 → API-patch-page(page_id, properties) 호출
+- 블록 삭제: API-delete-a-block(block_id) — 사용자 확인 후 실행
+
 ## 사용 가능한 툴
 search_past_items, get_item_thread, write_draft, update_item_status,
-create_calendar_block, delete_calendar_block,
-slack_get_thread_replies, slack_post_message, jira_update_issue, API-patch-page\
+send_gmail, trash_gmail,
+create_calendar_block, delete_calendar_block, search_calendar_events,
+slack_get_thread_replies, slack_post_message, slack_delete_message,
+jira_get_issue, jira_create_issue, jira_update_issue, jira_transition_issue, jira_delete_issue, jira_add_comment,
+API-patch-page, API-post-page, API-delete-a-block\
 """
 
 

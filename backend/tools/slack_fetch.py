@@ -44,16 +44,49 @@ def slack_get_thread_replies(channel_id: str, thread_ts: str, limit: int = 50) -
 @tool
 def slack_post_message(channel_id: str, text: str, thread_ts: str = "") -> str:
     """Slack 채널에 메시지를 전송합니다. thread_ts 제공 시 해당 메시지의 스레드 답글로 전송. 반드시 사용자 확인 후 실행."""
+    import hashlib
+    from datetime import datetime
+    from backend.models import WorkItem
+    from backend.tools.storage import save_items
+
     kwargs = {"channel": channel_id, "text": text}
     if thread_ts:
         kwargs["thread_ts"] = thread_ts
-    return _safe(lambda: _client().chat_postMessage(**kwargs))
+
+    try:
+        result = _client().chat_postMessage(**kwargs)
+        data = result.data
+        sent_ts = data.get("ts", "")
+        # 발송한 메시지를 TinyDB에 저장 (나중에 삭제 시 참조 가능)
+        if data.get("ok") and sent_ts:
+            source_id = f"{channel_id}:{sent_ts}"
+            item = WorkItem(
+                id=hashlib.md5(source_id.encode()).hexdigest(),
+                source="slack",
+                raw_content=text[:1000],
+                summary=f"[발송됨] {text[:80]}{'...' if len(text) > 80 else ''}",
+                urgency_level=1,
+                action_type="none",
+                from_person="me",
+                source_id=source_id,
+                created_at=datetime.utcnow(),
+            )
+            save_items([item.model_dump(mode="json")])
+        return json.dumps(data, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
 
 
 @tool
 def slack_search_messages(query: str, count: int = 20) -> str:
     """Slack 전체 메시지를 키워드로 검색합니다."""
     return _safe(lambda: _client().search_messages(query=query, count=count))
+
+
+@tool
+def slack_delete_message(channel_id: str, ts: str) -> str:
+    """Slack 메시지를 삭제합니다. channel_id: C로 시작하는 채널 ID. ts: 메시지 타임스탬프. 반드시 사용자 확인 후 실행."""
+    return _safe(lambda: _client().chat_delete(channel=channel_id, ts=ts))
 
 
 @tool
@@ -105,6 +138,7 @@ SLACK_TOOLS = [
     slack_get_channel_history,
     slack_get_thread_replies,
     slack_post_message,
+    slack_delete_message,
     slack_search_messages,
     fetch_slack_as_items,
 ]

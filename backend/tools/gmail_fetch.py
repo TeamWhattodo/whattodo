@@ -1,7 +1,8 @@
-"""Gmail 메일 → WorkItem 목록 변환"""
+"""Gmail 메일 → WorkItem 목록 변환 + 발송·삭제"""
 import base64
 import hashlib
 from datetime import datetime, timezone
+from email.mime.text import MIMEText
 from email.utils import parsedate_to_datetime
 from googleapiclient.discovery import build
 from backend.google_auth import get_credentials
@@ -58,6 +59,43 @@ def _parse_message(msg: dict) -> WorkItem | None:
         created_at=created_at,
         source_id=msg.get("threadId"),
     )
+
+
+def send_gmail(to: str, subject: str, body: str, thread_id: str = "") -> dict:
+    """Gmail로 이메일을 발송한다. thread_id 제공 시 해당 스레드의 답장으로 전송."""
+    creds = get_credentials()
+    if not creds or not creds.valid:
+        return {"success": False, "error": "Google 계정이 연결되지 않았습니다."}
+
+    service = build("gmail", "v1", credentials=creds)
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["To"] = to
+    msg["Subject"] = subject
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    body_dict: dict = {"raw": raw}
+    if thread_id:
+        body_dict["threadId"] = thread_id
+
+    try:
+        result = service.users().messages().send(userId="me", body=body_dict).execute()
+        return {"success": True, "message_id": result.get("id"), "thread_id": result.get("threadId")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def trash_gmail(message_id: str) -> dict:
+    """Gmail 메시지를 휴지통으로 이동한다. message_id: Gmail 메시지 ID."""
+    creds = get_credentials()
+    if not creds or not creds.valid:
+        return {"success": False, "error": "Google 계정이 연결되지 않았습니다."}
+
+    service = build("gmail", "v1", credentials=creds)
+    try:
+        service.users().messages().trash(userId="me", id=message_id).execute()
+        return {"success": True, "message_id": message_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def _extract_body(payload: dict) -> str:
