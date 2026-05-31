@@ -19,6 +19,33 @@ if sys.platform == "win32":
 else:
     _NPX_CMD, _NPX_PREFIX = "npx", []
 
+def _find_uvx() -> str:
+    """uvx 실행 파일 경로를 반환한다. PATH에 없으면 일반적인 설치 위치를 탐색한다."""
+    import shutil
+    if shutil.which("uvx"):
+        return "uvx"
+    candidates = [
+        os.path.expanduser("~/.local/bin/uvx"),
+        os.path.expanduser("~/.cargo/bin/uvx"),
+    ]
+    if sys.platform == "win32":
+        import glob
+        patterns = [
+            os.path.expanduser("~/AppData/Local/Python/*/Scripts/uvx.exe"),
+            os.path.expanduser("~/AppData/Roaming/Python/*/Scripts/uvx.exe"),
+            "C:/Users/*/AppData/Local/Python/*/Scripts/uvx.exe",
+        ]
+        for p in patterns:
+            found = glob.glob(p)
+            if found:
+                return found[0]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return "uvx"  # 최후 시도
+
+_UVX_CMD = _find_uvx()
+
 
 def _build_config() -> dict:
     config: dict = {}
@@ -39,7 +66,7 @@ def _build_config() -> dict:
 
     if settings.jira_api_token and settings.jira_email and settings.jira_base_url:
         config["jira"] = {
-            "command": "uvx",
+            "command": _UVX_CMD,
             "args": ["mcp-atlassian"],
             "transport": "stdio",
             "env": {

@@ -75,17 +75,17 @@ search_agent/report_agent가 조회·분석 역할이라면, action_agent는 실
 
 - [o] `get_item_thread` → `write_draft` → `slack_post_message` 전체 플로우 검증 완료
 
-### 4. jira_update_issue MCP 연결 검증
+### 4. jira_update_issue MCP 연결 검증 ✅
 
-- [x] `.env`에 `JIRA_API_TOKEN`, `JIRA_EMAIL`, `JIRA_BASE_URL` 설정
-- [x] `uvx mcp-atlassian` 설치 확인
-- [x] MCP 툴 이름 `jira_update_issue` 실제 노출 이름과 일치 여부 확인
+- [o] `.env`에 `JIRA_API_TOKEN`, `JIRA_EMAIL`, `JIRA_BASE_URL` 설정 확인
+- [o] `uvx mcp-atlassian` — uvx PATH 미등록 문제 해결 (`_find_uvx()` 자동 탐색 로직 추가)
+- [o] MCP 툴 이름 `jira_update_issue` 실제 노출 이름 일치 확인 (71개 Jira 툴 연결)
 
-### 5. API-patch-page (Notion) MCP 연결 검증
+### 5. API-patch-page (Notion) MCP 연결 검증 ✅
 
-- [x] `.env`에 `NOTION_API_TOKEN` 설정
-- [x] `npx @notionhq/notion-mcp-server` 설치 확인
-- [x] MCP 툴 이름 `API-patch-page` 실제 노출 이름과 일치 여부 확인
+- [o] `.env`에 `NOTION_API_TOKEN` 설정 확인
+- [o] `npx @notionhq/notion-mcp-server` 연결 성공
+- [o] MCP 툴 이름 `API-patch-page` 실제 노출 이름 일치 확인 (22개 Notion 툴 연결)
 
 ### 7. 사용자 확인(Human-in-the-loop) 처리
 
