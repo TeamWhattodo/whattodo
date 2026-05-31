@@ -136,7 +136,6 @@ def process_expense_report(image_paths: list[str]) -> str:
         "total_amount": report["total_amount"],
         "items":        report["items"],
         "xlsx_path":    report["xlsx_path"],
-        "pdf_path":     report["pdf_path"],
     }, ensure_ascii=False, default=str)
 
 
