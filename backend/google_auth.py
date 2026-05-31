@@ -15,6 +15,7 @@ _PKCE_PATH = Path("data/.oauth_state.json")
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 
 _TOKEN_PATH = Path("data/google_token.json")

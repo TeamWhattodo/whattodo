@@ -13,8 +13,8 @@ from backend.tools.scoring import score_urgency as _score_urgency
 from backend.tools.classify import classify_items as _classify, filter_items as _filter
 from backend.tools.write_report import write_report as _write_report
 from backend.tools.write_draft import write_draft as _write_draft
-from backend.tools.update_status import update_item_status as _update_status
-from backend.tools.search_items import search_past_items as _search
+from backend.tools.update_status import update_item_status as _update_status, create_calendar_block as _create_calendar_block
+from backend.tools.search_items import search_past_items as _search, get_item_thread as _get_item_thread
 from backend.tools.policy_search import search_company_docs as _search_docs
 from backend.tools.parse_billing import parse_billing_data as _parse_billing
 from backend.tools.compute_stats import compute_daily_stats as _compute_daily, compute_kpi as _compute_kpi
@@ -73,6 +73,18 @@ def search_past_items(query: str = "", status: str = "", source: str = "") -> st
         _search(query=query, status=status or None, source=source or None),
         ensure_ascii=False, default=str,
     )
+
+
+@tool
+def get_item_thread(item_id: str, source: str) -> str:
+    """특정 항목의 스레드 전체를 조회합니다. write_draft 실행 전 맥락 확보용. source: gmail|slack|jira."""
+    return json.dumps(_get_item_thread(item_id, source), ensure_ascii=False, default=str)
+
+
+@tool
+def create_calendar_block(title: str, start: str, end: str) -> str:
+    """캘린더 일정을 생성합니다. title: 일정 제목. start/end: ISO 8601 (예: 2026-06-01T14:00:00). 에이전트가 자연어 시간을 직접 변환해 호출."""
+    return json.dumps(_create_calendar_block(title, start, end), ensure_ascii=False, default=str)
 
 
 @tool
@@ -155,6 +167,8 @@ LOCAL_TOOLS = [
     write_draft,
     update_item_status,
     search_past_items,
+    get_item_thread,
+    create_calendar_block,
     search_company_docs,
     fetch_uploaded_file,
     parse_billing_data,
