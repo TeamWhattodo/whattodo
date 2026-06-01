@@ -183,9 +183,37 @@ for idx, msg in enumerate(messages):
         st.markdown(msg["content"])
         is_last = (idx == len(messages) - 1)
         if msg.get("reports") and is_last:
-            _show_download_buttons(msg["reports"], key_prefix=f"hist_{idx}")   
-       
-       
+            _show_download_buttons(msg["reports"], key_prefix=f"hist_{idx}")
+
+
+# ── HitL 대기 중: interrupt() 재개 처리 ───────────────────────────────
+if st.session_state.get("hitl_pending"):
+    interrupt_data = st.session_state.hitl_data
+    st.warning(interrupt_data.get("message", "액션을 실행하시겠습니까?"))
+    col1, col2 = st.columns(2)
+    if col1.button("✅ 확인", key="hitl_confirm", use_container_width=True):
+        with st.spinner("실행 중..."):
+            state = resume_graph(st.session_state.session_id, "yes")
+        st.session_state.hitl_pending = False
+        response_text = _extract_response(state)
+        report_data   = _extract_reports(state)
+        st.session_state.messages.append({
+            "role": "assistant", "content": response_text, "reports": report_data,
+        })
+        save_session(st.session_state.session_id, st.session_state.messages, [])
+        st.rerun()
+    if col2.button("❌ 취소", key="hitl_cancel", use_container_width=True):
+        with st.spinner("취소 중..."):
+            state = resume_graph(st.session_state.session_id, "no")
+        st.session_state.hitl_pending = False
+        response_text = _extract_response(state)
+        st.session_state.messages.append({"role": "assistant", "content": response_text})
+        save_session(st.session_state.session_id, st.session_state.messages, [])
+        st.rerun()
+    st.stop()
+# ─────────────────────────────────────────────────────────────────────
+
+
 if st.button("📋 브리핑 시작", use_container_width=True):
     st.session_state.pending_query = "Gmail, Slack, Jira, Notion 업무 전체 정리해줘"
 
@@ -207,7 +235,7 @@ if query:
     extracted_texts = []
     for uf in uploaded_files:
         suffix = os.path.splitext(uf.name)[-1].lower() or ".jpg"
-        
+
         if suffix == ".pdf":
             try:
                 from pypdf import PdfReader
@@ -258,23 +286,14 @@ if query:
         with st.spinner("에이전트 실행 중..."):
             state = run_graph(agent_query, thread_id=st.session_state.session_id)
 
-        # ── HitL: interrupt() 감지 ──────────────────────────────────────
         interrupts = state.get("__interrupt__", [])
         if interrupts:
+            # interrupt 상태를 session_state에 저장 후 rerun → hitl_pending 블록에서 처리
             interrupt_data = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
-            st.warning(interrupt_data.get("message", "액션을 실행하시겠습니까?"))
-            col1, col2 = st.columns(2)
-            confirmed = col1.button("✅ 확인", key="hitl_confirm", use_container_width=True)
-            canceled  = col2.button("❌ 취소", key="hitl_cancel",  use_container_width=True)
-            if confirmed:
-                with st.spinner("실행 중..."):
-                    state = resume_graph(st.session_state.session_id, "yes")
-            elif canceled:
-                with st.spinner("취소 중..."):
-                    state = resume_graph(st.session_state.session_id, "no")
-            else:
-                st.stop()
-        # ────────────────────────────────────────────────────────────────
+            st.session_state.hitl_pending = True
+            st.session_state.hitl_data    = interrupt_data
+            save_session(st.session_state.session_id, st.session_state.messages, [])
+            st.rerun()
 
         response_text = _extract_response(state)
         report_data   = _extract_reports(state)
