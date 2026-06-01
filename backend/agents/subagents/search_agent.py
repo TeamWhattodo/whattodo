@@ -22,8 +22,38 @@ SEARCH_AGENT_SYSTEM = """\
 - Jira 이슈 검색은 jira_search_issues(jql=...) 사용
 - Notion 페이지 내용 조회는 notion_search 후 notion_get_page_content 순서로 실행
 - 두 결과가 모두 필요하면 병렬 호출 가능
+SEARCH_AGENT_LOCAL_TOOLS: list[str] = [
+    "search_past_items",
+    "search_company_docs",
+    "get_item_thread",
+    "fetch_gmail",
+    "fetch_calendar",
+]
 
-이 외 순서와 tool 선택은 상황에 맞게 판단하세요.\
+SEARCH_AGENT_MCP_TOOLS: list[str] = [
+    "slack_search_messages",
+    "jira_search",
+    "API-post-search",
+    "API-get-block-children",
+]
+
+SEARCH_AGENT_SYSTEM = """\
+당신은 조회 전담 에이전트입니다.
+항상 한국어로만 답변하세요.
+
+━━ 툴 선택 기준 ━━
+
+- 메일·이메일 관련 질문 → fetch_gmail(max_results=20) 호출
+- 캘린더·일정 관련 질문 → fetch_calendar(days=7) 호출
+- 사내 규정·정책·한도 질문 → search_company_docs 우선 사용
+- 과거 처리한 업무 항목 → search_past_items 우선 사용
+- 특정 항목의 전체 스레드·맥락 조회 → get_item_thread(item_id, source)
+- Notion 내용 조회 → API-post-search 후 API-get-block-children
+- Slack 메시지 검색 → slack_search_messages
+- Jira 이슈 검색 → jira_search
+
+절대 툴 호출 없이 메일·일정 내용을 지어내지 마세요.
+두 결과가 모두 필요하면 병렬 호출 가능합니다.\
 """
 
 

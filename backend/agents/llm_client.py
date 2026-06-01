@@ -1,11 +1,11 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.language_models.chat_models import BaseChatModel
+import base64
 
 from backend.config import settings
 
 
 def get_llm(tier: str = "smart") -> BaseChatModel:
-    """설정된 provider에 맞는 LangChain 채팅 모델을 반환한다."""
     model = settings.smart_model if tier == "smart" else settings.fast_model
     if settings.llm_provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
@@ -18,11 +18,28 @@ def get_llm(tier: str = "smart") -> BaseChatModel:
 
 
 def complete(prompt: str, tier: str = "smart", system: str = "") -> str:
-    """단일 LLM 호출. tool_use 없음. classify/write 전용."""
     messages = []
     if system:
         messages.append(SystemMessage(content=system))
     messages.append(HumanMessage(content=prompt))
+    return get_llm(tier).invoke(messages).content
+
+
+def complete_with_image(prompt: str, image_path: str, tier: str = "smart", system: str = "") -> str:
+    """이미지 포함 LLM 호출 (Vision)."""
+    with open(image_path, "rb") as f:
+        image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+    
+    ext = image_path.split(".")[-1].lower()
+    media_type = "image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}"
+    
+    messages = []
+    if system:
+        messages.append(SystemMessage(content=system))
+    messages.append(HumanMessage(content=[
+        {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_data}"}},
+        {"type": "text", "text": prompt}
+    ]))
     return get_llm(tier).invoke(messages).content
 
 

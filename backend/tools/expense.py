@@ -56,24 +56,19 @@ CATEGORY_MAP = {
 
 
 def build_expense_report(items: list[dict], report_type: str = "출장비") -> dict:
-    """
-    ReceiptItem[] → 엑셀 + PDF 생성 후 ExpenseReport dict 반환
-    """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     report_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     total     = sum(i["amount"] for i in items)
 
     xlsx_path = _write_xlsx(items, total, report_type, report_id)
-    pdf_path  = _write_pdf(items, total, report_type, report_id)
 
     return {
         "id":           report_id,
         "created_at":   datetime.now().isoformat(),
-        "report_type":  report_type,
+        "report_type":  "billing",
         "items":        items,
         "total_amount": total,
         "xlsx_path":    xlsx_path,
-        "pdf_path":     pdf_path,
     }
 
 
@@ -98,7 +93,8 @@ def _write_xlsx(items, total, report_type, report_id) -> str:
         ws[f"C{row}"] = item["date"]
         ws[f"E{row}"] = CATEGORY_MAP.get(item["category"], "기타")
         ws[f"G{row}"] = item["amount"]
-        ws[f"I{row}"] = item.get("memo") or ""
+        memo = item.get("memo")
+    ws[f"I{row}"] = "" if not memo or memo == "null" else memo
 
     ws[f"D{total_row}"] = total
 
