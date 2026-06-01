@@ -8,7 +8,6 @@ from backend.agents.llm_client import get_llm
 from backend.agents.tools_registry import load_all_tools, _run
 
 REPORT_AGENT_LOCAL_TOOLS: list[str] = [
-    "fetch_uploaded_file",
     "parse_billing_data",
     "parse_receipt_from_text",
     "compute_daily_stats",
@@ -38,14 +37,17 @@ fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브�
 
 긴급도 기준: 마감 초과·[긴급] 태그·High 우선순위 → 🔴 / Medium·답변 필요 → 🟡 / 나머지 → 🟢
 
-## 모드 B — 파일 기반 리포트 (파일 경로·데이터 제공 시)
-사용 가능한 tool: fetch_uploaded_file, parse_billing_data, parse_receipt_from_text,
+## 모드 B — 첨부 텍스트 기반 리포트 (첨부 문서 내용 제공 시)
+첨부 파일 내용은 이미 추출되어 context에 텍스트로 포함됩니다. 파일 경로는 제공되지 않습니다.
+context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달하세요.
+
+사용 가능한 tool: parse_billing_data, parse_receipt_from_text,
                   compute_daily_stats, compute_kpi, write_report, process_expense_report
 
 제약:
-- parse_billing_data / parse_receipt_from_text는 영수증 텍스트가 확보된 후 실행
-- write_report는 compute 계열 tool 완료 후 실행
-- 파일이 없으면 fetch_uploaded_file 생략 가능\
+- 영수증 텍스트 → parse_receipt_from_text(text=<영수증 텍스트>) 또는 process_expense_report(receipt_text=<영수증 텍스트>)
+- 정산 데이터 텍스트 → parse_billing_data에 해당 텍스트 전달
+- write_report는 compute 계열 tool 완료 후 실행\
 """
 
 def _build_tools(all_tools: list) -> list:

@@ -106,18 +106,9 @@ def search_company_docs(query: str, top_k: int = 3) -> str:
 
 
 @tool
-def fetch_uploaded_file(file_path: str, file_type: str = "csv") -> str:
-    """업로드된 파일 경로와 타입을 반환합니다. file_type: csv | pdf | xlsx."""
-    import os
-    if not os.path.exists(file_path):
-        return json.dumps({"error": f"파일 없음: {file_path}"}, ensure_ascii=False)
-    return json.dumps({"file_path": file_path, "file_type": file_type}, ensure_ascii=False)
-
-
-@tool
-def parse_billing_data(file_path: str, month: str) -> str:
-    """정산 CSV/엑셀 파일을 파싱합니다. month: YYYY-MM 형식."""
-    return json.dumps(_parse_billing(file_path, month), ensure_ascii=False, default=str)
+def parse_billing_data(billing_text: str, month: str) -> str:
+    """추출된 정산 텍스트를 파싱합니다. month: YYYY-MM 형식."""
+    return json.dumps(_parse_billing(billing_text, month), ensure_ascii=False, default=str)
 
 
 @tool
@@ -201,7 +192,6 @@ LOCAL_TOOLS = [
     delete_calendar_block,
     search_calendar_events,
     search_company_docs,
-    fetch_uploaded_file,
     parse_billing_data,
     parse_receipt_from_text,
     compute_daily_stats,

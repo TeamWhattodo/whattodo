@@ -1,17 +1,16 @@
 from pathlib import Path
 
 
-def parse_billing_data(file_path: str, month: str) -> dict:
+def parse_billing_data(billing_text: str, month: str) -> dict:
     """
-    CSV/Excel 정산 데이터 파싱.
-    file_path: 파일 경로
+    추출된 정산 텍스트 파싱.
+    billing_text: 추출된 정산 데이터 텍스트
     month: "YYYY-MM"
     반환: {"month": ..., "revenue": ..., "items": [...]}
     """
-    # TODO (#6): CSV/Excel 파서 구현 (openpyxl / csv 모듈)
+    # TODO (#6): 텍스트 파서 구현
     return {
         "month": month,
-        "file_path": file_path,
         "revenue": None,
         "refunds": None,
         "net": None,
@@ -21,4 +20,4 @@ def parse_billing_data(file_path: str, month: str) -> dict:
 
 
 if __name__ == "__main__":
-    print(parse_billing_data("billing_may.csv", "2026-05"))
+    print(parse_billing_data("정산 텍스트 샘플", "2026-05"))

@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from openpyxl import load_workbook, Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -43,7 +44,7 @@ def _ensure_fonts() -> None:
 
 
 OUTPUT_DIR    = "outputs"
-TEMPLATE_PATH = "backend/db/data/Form/경비정산서 양식.xlsx"
+TEMPLATE_PATH = str(Path(__file__).resolve().parents[2] / "backend/db/data/Form/경비정산서 양식.xlsx")
 
 CATEGORY_MAP = {
     "식비":   "식비",
@@ -77,6 +78,8 @@ def _write_xlsx(items, total, report_type, report_id) -> str:
 
     wb = load_workbook(TEMPLATE_PATH)
     ws = wb.active
+    if ws is None:
+        raise ValueError(f"활성 시트 없음: {TEMPLATE_PATH}")
 
     # 데이터 시작 행("내역")과 총액 행("경비 총액") 동적 탐지
     data_start_row = None
@@ -88,13 +91,16 @@ def _write_xlsx(items, total, report_type, report_id) -> str:
             elif cell.value == "경비 총액":
                 total_row = cell.row
 
+    if data_start_row is None or total_row is None:
+        raise ValueError("템플릿에서 '내역' 또는 '경비 총액' 행을 찾지 못함")
+
     for i, item in enumerate(items):
         row = data_start_row + i
         ws[f"C{row}"] = item["date"]
         ws[f"E{row}"] = CATEGORY_MAP.get(item["category"], "기타")
         ws[f"G{row}"] = item["amount"]
         memo = item.get("memo")
-    ws[f"I{row}"] = "" if not memo or memo == "null" else memo
+        ws[f"I{row}"] = "" if not memo or memo == "null" else memo
 
     ws[f"D{total_row}"] = total
 

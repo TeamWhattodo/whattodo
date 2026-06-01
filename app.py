@@ -70,7 +70,7 @@ with st.sidebar:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("✅ 저장", key=f"save_{s['id']}", use_container_width=True):
-                    rename_session(s["id"], new_name)
+                    rename_session(s["id"], new_name or s["name"])
                     st.session_state.editing_session = None
                     st.rerun()
             with c2:
