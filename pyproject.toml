@@ -27,6 +27,9 @@ dependencies = [
     "google-auth-oauthlib>=1.4.0",
     "google-api-python-client>=2.196.0",
     "langgraph>=1.2.0",
+    "slack-sdk>=3.42.0",
+    "jira>=3.8.0",
+    "notion-client>=2.2.1",
 ]
 
 [build-system]

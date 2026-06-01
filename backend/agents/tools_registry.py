@@ -1,5 +1,5 @@
 """
-전체 @tool 래퍼 + MCP 툴 로딩을 담당한다.
+전체 @tool 래퍼를 담당한다.
 SubAgent와 orchestrator 양쪽에서 import해 사용한다.
 """
 import asyncio
@@ -7,8 +7,6 @@ import json
 import threading
 
 from langchain_core.tools import tool
-
-from backend.mcp_client import load_mcp_tools, MCP_SERVER_CONFIG
 from backend.tools.scoring import score_urgency as _score_urgency
 from backend.tools.classify import classify_items as _classify, filter_items as _filter
 from backend.tools.write_report import write_report as _write_report
@@ -22,6 +20,9 @@ from backend.tools.receipt import parse_receipt as _parse_receipt
 from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
+from backend.tools.slack_fetch import SLACK_TOOLS
+from backend.tools.jira_fetch import JIRA_TOOLS
+from backend.tools.notion_fetch import NOTION_TOOLS
 
 # ── @tool 래퍼 ────────────────────────────────────────────────────────────────
 
@@ -163,10 +164,13 @@ LOCAL_TOOLS = [
     fetch_calendar,
     process_expense_report,
     spell_check,
+    *SLACK_TOOLS,
+    *JIRA_TOOLS,
+    *NOTION_TOOLS,
 ]
 
 
-# ── MCP 툴 로딩 ───────────────────────────────────────────────────────────────
+# ── 비동기 실행 헬퍼 ──────────────────────────────────────────────────────────
 
 _bg_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
 threading.Thread(target=_bg_loop.run_forever, daemon=True).start()
@@ -176,20 +180,9 @@ def _run(coro):
     return asyncio.run_coroutine_threadsafe(coro, _bg_loop).result()
 
 
-def _load_mcp_tools_sync() -> list:
-    if not MCP_SERVER_CONFIG:
-        return []
-    try:
-        return _run(load_mcp_tools())
-    except Exception as e:
-        print(f"[MCP] 툴 로드 중 오류 발생, MCP 없이 시작합니다: {e}")
-        return []
-
-
-_MCP_TOOLS: list = _load_mcp_tools_sync()
-ALL_TOOLS: list = LOCAL_TOOLS + _MCP_TOOLS
+ALL_TOOLS: list = LOCAL_TOOLS
 
 
 def load_all_tools() -> list:
-    """로컬 @tool + MCP 툴 전체 목록을 반환한다."""
+    """로컬 @tool 전체 목록을 반환한다."""
     return ALL_TOOLS

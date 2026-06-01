@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@modelcontextprotocol/server-slack": "2025.4.25"
+    "@modelcontextprotocol/server-slack": "^2025.4.25"
   }
 }
