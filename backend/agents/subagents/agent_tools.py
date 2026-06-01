@@ -39,18 +39,28 @@ def search_agent(query: str) -> str:
     return text
 
 
+# 실제 외부 상태를 변경하는 액션 키워드 — 이 경우에만 HitL 확인 요청
+_DESTRUCTIVE_KEYWORDS = [
+    "발송", "보내", "전송", "삭제", "제거", "완료", "처리",
+    "생성", "추가", "만들어", "업데이트", "변경", "수정", "잡아",
+    "send", "delete", "create", "update",
+]
+
+
 @tool
 def action_agent(request: str) -> str:
     """Gmail 발송·삭제, Slack 메시지 발송·삭제, Jira 이슈 관리,
     Notion 페이지 관리, 캘린더 일정 생성·삭제, 답장 초안 작성을 실행합니다.
-    실행 전 사용자 확인이 필요합니다."""
-    answer = interrupt({
-        "type": "action_confirmation",
-        "message": f"다음 액션을 실행하시겠습니까?\n\n**요청**: {request}",
-        "request": request,
-    })
-    if str(answer).strip().lower() in ("n", "no", "아니오", "취소", ""):
-        return "사용자가 취소했습니다."
+    발송·삭제·생성 등 외부 변경이 발생하는 경우 실행 전 사용자 확인을 요청합니다."""
+    needs_confirm = any(k in request for k in _DESTRUCTIVE_KEYWORDS)
+    if needs_confirm:
+        answer = interrupt({
+            "type": "action_confirmation",
+            "message": f"다음 액션을 실행하시겠습니까?\n\n**요청**: {request}",
+            "request": request,
+        })
+        if str(answer).strip().lower() in ("n", "no", "아니오", "취소", ""):
+            return "사용자가 취소했습니다."
     from backend.agents.subagents.action_agent import run
     text, _ = _run(run(request))
     return text
