@@ -19,15 +19,33 @@ REPORT_AGENT_LOCAL_TOOLS: list[str] = [
 
 REPORT_AGENT_SYSTEM = """\
 당신은 리포트 작성 전담 에이전트입니다.
+
+## 모드 A — 수집 데이터 브리핑 (context 제공 시)
+fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브리핑으로 정리합니다.
+툴 호출 없이 바로 포맷팅하세요.
+
+출력 형식:
+## 📋 업무 브리핑
+
+### 🔴 긴급
+- 출처 · 내용 · 시각
+
+### 🟡 중요
+- 출처 · 내용 · 시각
+
+### 🟢 일반
+- 출처 · 내용 · 시각
+
+긴급도 기준: 마감 초과·[긴급] 태그·High 우선순위 → 🔴 / Medium·답변 필요 → 🟡 / 나머지 → 🟢
+
+## 모드 B — 파일 기반 리포트 (파일 경로·데이터 제공 시)
 사용 가능한 tool: fetch_uploaded_file, parse_billing_data, parse_receipt,
-                  compute_daily_stats, compute_kpi, write_report
+                  compute_daily_stats, compute_kpi, write_report, process_expense_report
 
 제약:
 - parse_billing_data / parse_receipt는 fetch_uploaded_file 완료 후 실행
 - write_report는 compute 계열 tool 완료 후 실행
-- 파일이 없으면 fetch_uploaded_file 생략 가능
-
-이 외 순서와 tool 선택은 상황에 맞게 판단하세요.\
+- 파일이 없으면 fetch_uploaded_file 생략 가능\
 """
 
 def _build_tools(all_tools: list) -> list:
@@ -52,11 +70,11 @@ def _get_agent():
 
 import json
 
-async def _run_async(user_input: str) -> tuple[str, bool, list[dict]]:
-    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=user_input)]})
+async def _run_async(context: str) -> tuple[str, bool, list[dict]]:
+    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=context)]})
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
-    
+
     reports = []
     has_write = False
     for m in messages:
@@ -66,8 +84,14 @@ async def _run_async(user_input: str) -> tuple[str, bool, list[dict]]:
                 reports.append(json.loads(m.content))
             except Exception:
                 pass
-                
+
     return output_text, has_write, reports
+
+
+async def run(context: str) -> tuple[str, list[dict]]:
+    """Supervisor report_agent tool 연결용 shim."""
+    text, _, reports = await _run_async(context)
+    return text, reports
 
 
 def report_agent_node(state: WhatToDoState) -> dict:

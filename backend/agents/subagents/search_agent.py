@@ -89,6 +89,11 @@ async def _run_async(user_input: str) -> tuple[str, bool]:
     return output_text, False
 
 
+async def run(query: str) -> tuple[str, bool]:
+    """Supervisor search_agent tool 연결용 shim."""
+    return await _run_async(query)
+
+
 def search_agent_node(state: WhatToDoState) -> dict:
     text, has_write = _run(_run_async(state["user_input"]))
     return {

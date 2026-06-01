@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from backend.agents.graph import run_graph
+from backend.agents.graph import run_graph, resume_graph
 from backend.agents.sessions import (
     save_session, load_session, list_sessions, delete_session, rename_session,
 )
@@ -106,52 +106,49 @@ st.caption("업무 보조 에이전트")
 
 
 def _extract_response(state: dict) -> str:
-    """state.results에서 최종 응답 텍스트를 추출한다. 현재 intent 결과를 우선 반환."""
+    """Supervisor 응답(messages) 또는 레거시 results dict에서 텍스트를 추출한다."""
+    # Supervisor: messages 마지막 AIMessage (tool_calls 없는 것)
+    for msg in reversed(state.get("messages", [])):
+        if msg.__class__.__name__ == "AIMessage" and not getattr(msg, "tool_calls", []):
+            return msg.content
+    # 레거시 fallback
     results = state.get("results", {})
-    intent = state.get("intent", "")
-
-    def _pick(r):
+    for key in ("action", "search", "report", "briefing", "chat"):
+        r = results.get(key)
+        if not r:
+            continue
         if isinstance(r, dict):
             return r.get("text", json.dumps(r, ensure_ascii=False, default=str))
         return str(r)
-
-    # 현재 turn의 intent 결과 우선
-    for key in [k.strip() for k in intent.split(",") if k.strip()]:
-        r = results.get(key)
-        if r:
-            return _pick(r)
-
-    # fallback: 가장 최근에 추가된 결과
-    for key in ("action", "search", "report", "briefing", "chat"):
-        r = results.get(key)
-        if r:
-            return _pick(r)
-
     return state.get("error") or "처리가 완료되었습니다."
 
 
 def _extract_reports(state: dict) -> list[dict]:
+    """Supervisor ToolMessage 또는 레거시 results에서 파일 경로를 수집한다."""
     reports = []
-    results = state.get("results", {})
-    for r in results.values():
-        if not isinstance(r, dict):
+    # Supervisor: ToolMessage 결과에서 JSON 파싱
+    for msg in state.get("messages", []):
+        if msg.__class__.__name__ != "ToolMessage":
             continue
-        # 직접 파일 경로가 있는 경우
-        if r.get("xlsx_path") or r.get("pdf_path"):
-            reports.append(r)
-        # reports 리스트가 있는 경우
-        if "reports" in r and isinstance(r["reports"], list):
-            reports.extend(r["reports"])
-        # report 키 안에 있는 경우
-        inner = r.get("report")
-        if isinstance(inner, dict):
-            if inner.get("xlsx_path") or inner.get("pdf_path"):
-                reports.append(inner)
-            if "reports" in inner and isinstance(inner["reports"], list):
-                for rep in inner["reports"]:
-                    if rep.get("xlsx_path") or rep.get("pdf_path"):
-                        reports.append(rep)
-    print(f"[DEBUG] reports: {reports}")
+        try:
+            data = json.loads(msg.content)
+            if isinstance(data, dict):
+                if data.get("xlsx_path") or data.get("pdf_path"):
+                    reports.append(data)
+                if "reports" in data and isinstance(data["reports"], list):
+                    reports.extend(data["reports"])
+        except Exception:
+            pass
+    # 레거시 fallback
+    if not reports:
+        results = state.get("results", {})
+        for r in results.values():
+            if not isinstance(r, dict):
+                continue
+            if r.get("xlsx_path") or r.get("pdf_path"):
+                reports.append(r)
+            if "reports" in r and isinstance(r["reports"], list):
+                reports.extend(r["reports"])
     return reports
 
 
@@ -260,6 +257,25 @@ if query:
     with st.chat_message("assistant"):
         with st.spinner("에이전트 실행 중..."):
             state = run_graph(agent_query, thread_id=st.session_state.session_id)
+
+        # ── HitL: interrupt() 감지 ──────────────────────────────────────
+        interrupts = state.get("__interrupt__", [])
+        if interrupts:
+            interrupt_data = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+            st.warning(interrupt_data.get("message", "액션을 실행하시겠습니까?"))
+            col1, col2 = st.columns(2)
+            confirmed = col1.button("✅ 확인", key="hitl_confirm", use_container_width=True)
+            canceled  = col2.button("❌ 취소", key="hitl_cancel",  use_container_width=True)
+            if confirmed:
+                with st.spinner("실행 중..."):
+                    state = resume_graph(st.session_state.session_id, "yes")
+            elif canceled:
+                with st.spinner("취소 중..."):
+                    state = resume_graph(st.session_state.session_id, "no")
+            else:
+                st.stop()
+        # ────────────────────────────────────────────────────────────────
+
         response_text = _extract_response(state)
         report_data   = _extract_reports(state)
         st.markdown(response_text)

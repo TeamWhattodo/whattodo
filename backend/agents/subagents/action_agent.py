@@ -153,6 +153,11 @@ async def _run_async(messages: list) -> tuple[str, bool]:
     return output_text, has_write
 
 
+async def run(request: str) -> tuple[str, bool]:
+    """Supervisor action_agent tool 연결용 shim."""
+    return await _run_async([HumanMessage(content=request)])
+
+
 def action_agent_node(state: WhatToDoState) -> dict:
     messages = state.get("messages") or [HumanMessage(content=state["user_input"])]
     text, has_write = _run(_run_async(messages))

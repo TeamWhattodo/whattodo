@@ -241,3 +241,56 @@ def route_by_intent(state: WhatToDoState):
     if len(intents) > 1:
         return [Send(i, state) for i in intents]
     return intents[0]
+
+
+# ── Supervisor ─────────────────────────────────────────────────────────────────
+
+_SUPERVISOR_SYSTEM = """\
+당신은 업무 관리 AI 어시스턴트입니다. 사용자의 요청을 분석하여 적합한 도구를 순서에 맞게 호출합니다.
+
+## 도구 호출 규칙
+
+1. 복귀 브리핑·업무 현황 정리
+   → fetch_agent(request) 먼저 호출
+   → report_agent(request=요청, context=fetch 결과) 로 브리핑 포맷
+
+2. 정산·KPI·영수증 등 파일 기반 리포트
+   → report_agent(request) 직접 호출
+
+3. 특정 항목 조회·규정 검색·스레드 확인
+   → search_agent(query)
+
+4. 답장 초안·발송·Jira·Notion·캘린더 조작
+   → action_agent(request)
+   (실행 전 사용자 확인이 자동으로 요청됩니다)
+
+5. 일반 대화·인사·단순 질문
+   → 도구 없이 직접 응답
+
+## 복합 요청 처리
+- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → report_agent(브리핑) → report_agent(KPI)
+- "메일 확인하고 답장 써줘" → fetch_agent → search_agent(항목 확인) → action_agent
+
+항상 한국어로 응답하세요.\
+"""
+
+
+def build_supervisor():
+    from langgraph.prebuilt import create_react_agent
+    from langgraph.checkpoint.memory import MemorySaver
+    from backend.agents.subagents.agent_tools import SUPERVISOR_TOOLS
+
+    def _trim_hook(state: dict) -> dict:
+        """LLM에 전달하는 메시지를 최근 20개로 제한한다. checkpointer 저장 내용은 유지."""
+        msgs = state.get("messages", [])
+        if len(msgs) > 20:
+            return {"messages": msgs[-20:]}
+        return {}
+
+    return create_react_agent(
+        model=get_llm("smart"),
+        tools=SUPERVISOR_TOOLS,
+        prompt=_SUPERVISOR_SYSTEM,
+        pre_model_hook=_trim_hook,
+        checkpointer=MemorySaver(),
+    )

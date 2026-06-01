@@ -13,60 +13,51 @@ _SLACK_TOOLS = {"slack_list_channels", "fetch_slack_as_items"}
 _JIRA_TOOLS = {"jira_search_issues"}
 _NOTION_TOOLS = {"notion_search", "notion_get_page_content"}
 
-BRIEFING_AGENT_SYSTEM = """\
-당신은 브리핑 전담 에이전트입니다.
-제공된 tool을 빠짐없이 모두 호출해 데이터를 수집하고 한국어 마크다운으로 출력하세요.
-tool이 여러 개 제공된 경우 모든 소스를 수집해야 합니다. 일부만 수집하면 안 됩니다.
-
-**중요: 툴이 반환한 실제 데이터만 출력하세요. 예시·가상 데이터·추측을 절대 사용하지 마세요.**
+FETCH_AGENT_SYSTEM = """\
+당신은 업무 데이터 수집 전담 에이전트입니다.
+제공된 tool을 모두 호출해 데이터를 수집하고, 수집한 내용을 **있는 그대로** 나열하세요.
+요약·분석·우선순위 판단은 하지 마세요. 후속 에이전트가 처리합니다.
+툴이 반환한 실제 데이터만 출력하세요. 예시·가상 데이터·추측을 절대 사용하지 마세요.
 
 ━━ 소스별 수집 방법 ━━
 
 [Gmail] — fetch_gmail 사용 시
-fetch_gmail(max_results=20) 호출 → 미읽음 메일 목록 수집
+fetch_gmail(max_results=20) 호출 → 결과 항목을 그대로 나열
 
 [Calendar] — fetch_calendar 사용 시
-fetch_calendar(days=14) 호출 → 향후 14일 일정 수집
+fetch_calendar(days=14) 호출 → 결과 항목을 그대로 나열
 
 [Slack] — slack_list_channels, fetch_slack_as_items 사용 시
 ① slack_list_channels(limit=100) 호출
-② 응답에서 is_member=true 인 채널만 추린다
-③ 추린 채널 각각에 fetch_slack_as_items(channel_id=<id>) 호출 (WorkItem 변환 + TinyDB 저장)
-   ※ channel_id 는 반드시 C로 시작하는 id 값 사용 (채널 이름 절대 금지)
-   ※ ③은 생략 불가 — 채널 description은 메시지가 아님
+② is_member=true 인 채널만 추린다
+③ 추린 채널 각각에 fetch_slack_as_items(channel_id=<id>) 호출
+   ※ channel_id 는 반드시 C로 시작하는 id 값 사용
 
 [Jira] — jira_search_issues 사용 시
 jira_search_issues(jql="statusCategory not in (Done) ORDER BY updated DESC", max_results=20)
 
 [Notion] — notion_search, notion_get_page_content 사용 시
-① notion_search(query="") → 페이지 목록 수집
-② 수집된 페이지 중 최근 수정일 기준 상위 5개를 선택
-③ 선택된 페이지 각각에 notion_get_page_content(page_id=<id>) 호출해 내용 확인
-   ※ ③은 생략 불가 — 페이지 제목만으로는 내용을 알 수 없음
+① notion_search(query="") → 최근 수정 상위 5개 선택
+② 각 페이지에 notion_get_page_content(page_id=<id>) 호출
 
-━━ 정리 출력 ━━
+━━ 출력 형식 ━━
 
-수집 완료 후 수집한 소스에 대해서만 한국어 마크다운으로 출력:
+소스별로 구분해 수집한 항목을 나열. 마크다운 헤더 없이 평문으로.
 
-## Gmail (수집한 경우만)
-- 발신자 · 제목 · 날짜 나열
-- 업무 관련 메일만, 광고·수신거부 메일 제외
-- 항목이 없으면 "미읽음 메일 없음"
+[Gmail]
+- 발신자: OOO | 제목: OOO | 날짜: OOO
 
-## Calendar (수집한 경우만)
-- 일정명 · 날짜/시간 · 주최자 나열
-- 업무 관련 일정만
+[Calendar]
+- 일정명: OOO | 시간: OOO | 주최자: OOO
 
-## Slack (수집한 경우만)
-- 채널별 실제 메시지 나열 (발신자 · 내용 · 시각)
-- 업무 관련 메시지만, 시스템 메시지 제외
-- 메시지 없는 채널은 제외
+[Slack]
+- 채널: OOO | 발신자: OOO | 내용: OOO
 
-## Jira (수집한 경우만)
-- 이슈 키 · 제목 · 상태 · 긴급도
+[Jira]
+- 키: OOO | 제목: OOO | 상태: OOO | 우선순위: OOO
 
-## Notion (수집한 경우만)
-- 페이지 제목 · 핵심 내용 요약 (내용이 없으면 제목만)
+[Notion]
+- 페이지: OOO | 내용: OOO
 
 소스 연결 실패 시 해당 소스를 명시하고 나머지로 계속 진행\
 """
@@ -107,25 +98,26 @@ def _get_agent(sources: list):
     return create_agent(
         model=get_llm("fast"),
         tools=_build_tools(load_all_tools(), sources),
-        system_prompt=BRIEFING_AGENT_SYSTEM,
+        system_prompt=FETCH_AGENT_SYSTEM,
     )
 
 
-async def _run_async(user_input: str) -> tuple[str, bool]:
+async def _run_async(user_input: str) -> str:
     sources = _detect_sources(user_input)
     result = await _get_agent(sources).ainvoke(
         {"messages": [HumanMessage(content=user_input)]},
         config={"recursion_limit": 50},
     )
     messages = result["messages"]
-    output_text = messages[-1].content if messages else ""
-    has_write = any(getattr(m, "name", "") == "write_report" for m in messages)
-    return output_text, has_write
+    return messages[-1].content if messages else ""
 
 
-def briefing_agent_node(state: WhatToDoState) -> dict:
-    text, has_write = _run(_run_async(state["user_input"]))
-    return {
-        "results": {"briefing": {"text": text}},
-        "has_write_output": has_write,
-    }
+async def run(user_input: str) -> tuple[str, dict]:
+    """Supervisor fetch_agent tool 연결용 shim."""
+    text = await _run_async(user_input)
+    return text, {}
+
+
+def fetch_agent_node(state: WhatToDoState) -> dict:
+    text = _run(_run_async(state["user_input"]))
+    return {"results": {"briefing": {"text": text}}}
