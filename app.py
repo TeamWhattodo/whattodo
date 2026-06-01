@@ -232,39 +232,39 @@ elif st.session_state.get("pending_query"):
     query = st.session_state.pop("pending_query")
 
 if query:
-    extracted_texts = []
-    for uf in uploaded_files:
-        suffix = os.path.splitext(uf.name)[-1].lower() or ".bin"
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(uf.read())
-                tmp_path = tmp.name
-            text = extract_text(tmp_path)
-            extracted_texts.append(f"--- {uf.name} 시작 ---\n{text}\n--- {uf.name} 끝 ---\n")
-        except Exception as e:
-            extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
-        finally:
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-
-    if extracted_texts:
-        display_query = f"{query} (파일 첨부 완료)"
-        texts_str = "\n".join(extracted_texts)
-        agent_query = query + f"\n\n첨부된 문서 내용:\n{texts_str}"
-    else:
-        display_query = query
-        agent_query   = query
-
+    # 입력 즉시 표시 (파일 추출·에이전트 실행 전에 렌더 → 지연 체감 제거)
+    display_query = f"{query} (파일 첨부 완료)" if uploaded_files else query
     with st.chat_message("user"):
         st.markdown(display_query)
     st.session_state.messages.append({"role": "user", "content": display_query})
 
     with st.chat_message("assistant"):
         with st.spinner("에이전트 실행 중..."):
+            extracted_texts = []
+            for uf in uploaded_files:
+                suffix = os.path.splitext(uf.name)[-1].lower() or ".bin"
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                        tmp.write(uf.read())
+                        tmp_path = tmp.name
+                    text = extract_text(tmp_path)
+                    extracted_texts.append(f"--- {uf.name} 시작 ---\n{text}\n--- {uf.name} 끝 ---\n")
+                except Exception as e:
+                    extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
+                finally:
+                    if tmp_path:
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+
+            if extracted_texts:
+                texts_str = "\n".join(extracted_texts)
+                agent_query = query + f"\n\n첨부된 문서 내용:\n{texts_str}"
+            else:
+                agent_query = query
+
             state = run_graph(agent_query, thread_id=st.session_state.session_id)
 
         interrupts = state.get("__interrupt__", [])
