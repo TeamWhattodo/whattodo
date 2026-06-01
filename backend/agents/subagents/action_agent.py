@@ -8,7 +8,7 @@ from backend.agents.orchestrator import WhatToDoState
 from backend.agents.llm_client import get_llm
 from backend.agents.tools_registry import load_all_tools, _run
 
-ACTION_AGENT_LOCAL_TOOLS: list[str] = [
+ACTION_AGENT_TOOLS: list[str] = [
     "search_past_items",
     "get_item_thread",
     "write_draft",
@@ -18,13 +18,10 @@ ACTION_AGENT_LOCAL_TOOLS: list[str] = [
     "search_calendar_events",
     "send_gmail",
     "trash_gmail",
-]
-
-ACTION_AGENT_MCP_TOOLS: list[str] = [
     "slack_get_thread_replies",
     "slack_post_message",
     "slack_delete_message",
-    "jira_get_all_projects",
+    "jira_list_projects",
     "jira_get_issue",
     "jira_get_transitions",
     "jira_create_issue",
@@ -33,11 +30,11 @@ ACTION_AGENT_MCP_TOOLS: list[str] = [
     "jira_delete_issue",
     "jira_add_comment",
     "list_notion_pages",
-    "API-post-search",
-    "API-patch-page",
-    "API-post-page",
-    "API-delete-a-block",
-    "API-retrieve-a-page",
+    "notion_search",
+    "notion_get_page",
+    "notion_create_page",
+    "notion_update_page",
+    "notion_delete_block",
 ]
 
 def _build_system_prompt() -> str:
@@ -95,8 +92,8 @@ def _build_system_prompt() -> str:
 - 사용자가 "응", "맞아", "해줘", "확인", "예", "네", "ㅇㅇ" 등 긍정 응답을 하면 **즉시 툴을 호출**하고 결과를 반환. 다시 확인을 요청하지 말 것
 
 ### Jira 이슈 관리
-- 생성: jira_get_all_projects로 프로젝트 목록 먼저 조회 → 사용자에게 프로젝트 선택 요청 → jira_create_issue(project_key, summary, issue_type="Task") 호출
-  ※ 프로젝트 키를 사용자에게 직접 묻지 말 것. 항상 jira_get_all_projects로 먼저 조회할 것
+- 생성: jira_list_projects로 프로젝트 목록 먼저 조회 → 사용자에게 프로젝트 선택 요청 → jira_create_issue(project_key, summary, issue_type="Task") 호출
+  ※ 프로젝트 키를 사용자에게 직접 묻지 말 것. 항상 jira_list_projects로 먼저 조회할 것
 - 조회: jira_get_issue(issue_key)
 - 상태 변경: jira_get_transitions(issue_key)로 전환 목록 확인 → jira_transition_issue(issue_key, transition_id)
 - 업데이트: jira_update_issue(issue_key, ...) — 사용자 확인 후 실행
@@ -110,26 +107,24 @@ def _build_system_prompt() -> str:
      예) 📁 What To Do
           ├ 📄 문서1
           └ 📄 문서2
-  4. **사용자가 직접 위치를 선택할 때까지 기다릴 것. 자동으로 선택해서 생성 금지**
-  5. 사용자가 위치를 선택하면 API-post-page 호출:
-     parent={{"type":"page_id","page_id":"<사용자가_선택한_페이지_id>"}}
-     properties={{"title":[{{"text":{{"content":"<페이지_제목>"}}}}]}}
-- 수정: API-retrieve-a-page(page_id)로 현재 속성 확인 → API-patch-page(page_id, properties) 호출
-- 블록 삭제: API-delete-a-block(block_id) — 사용자 확인 후 실행
+  3. **사용자가 직접 위치를 선택할 때까지 기다릴 것. 자동으로 선택해서 생성 금지**
+  4. 사용자가 위치를 선택하면 notion_create_page(parent_id=<선택한_id>, title=<제목>) 호출
+- 조회: notion_search(query)로 검색 → notion_get_page(page_id)로 상세 확인
+- 수정: notion_update_page(page_id, title) — 사용자 확인 후 실행
+- 블록 삭제: notion_delete_block(block_id) — 사용자 확인 후 실행
 
 ## 사용 가능한 툴
 search_past_items, get_item_thread, write_draft, update_item_status,
 send_gmail, trash_gmail,
 create_calendar_block, delete_calendar_block, search_calendar_events,
 slack_get_thread_replies, slack_post_message, slack_delete_message,
-jira_get_issue, jira_create_issue, jira_update_issue, jira_transition_issue, jira_delete_issue, jira_add_comment,
-API-patch-page, API-post-page, API-delete-a-block\
+jira_list_projects, jira_get_issue, jira_get_transitions, jira_create_issue, jira_update_issue, jira_transition_issue, jira_delete_issue, jira_add_comment,
+list_notion_pages, notion_search, notion_get_page, notion_create_page, notion_update_page, notion_delete_block\
 """
 
 
 def _build_tools(all_tools: list) -> list:
-    """로컬 툴(이름 매칭) + MCP 툴(이름 매칭) 반환."""
-    allowed = set(ACTION_AGENT_LOCAL_TOOLS) | set(ACTION_AGENT_MCP_TOOLS)
+    allowed = set(ACTION_AGENT_TOOLS)
     return [t for t in all_tools if t.name in allowed]
 
 

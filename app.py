@@ -131,20 +131,31 @@ def _extract_response(state: dict) -> str:
 
 
 def _extract_reports(state: dict) -> list[dict]:
-    """다운로드 가능한 보고서 데이터 목록을 반환한다."""
     reports = []
     results = state.get("results", {})
     for r in results.values():
-        if isinstance(r, dict):
-            if "reports" in r and isinstance(r["reports"], list):
-                reports.extend(r["reports"])
-            # 하위 호환성 (단일 리포트인 경우)
-            elif r.get("xlsx_path") or r.get("pdf_path"):
-                reports.append(r)
+        if not isinstance(r, dict):
+            continue
+        # 직접 파일 경로가 있는 경우
+        if r.get("xlsx_path") or r.get("pdf_path"):
+            reports.append(r)
+        # reports 리스트가 있는 경우
+        if "reports" in r and isinstance(r["reports"], list):
+            reports.extend(r["reports"])
+        # report 키 안에 있는 경우
+        inner = r.get("report")
+        if isinstance(inner, dict):
+            if inner.get("xlsx_path") or inner.get("pdf_path"):
+                reports.append(inner)
+            if "reports" in inner and isinstance(inner["reports"], list):
+                for rep in inner["reports"]:
+                    if rep.get("xlsx_path") or rep.get("pdf_path"):
+                        reports.append(rep)
+    print(f"[DEBUG] reports: {reports}")
     return reports
 
 
-def _show_download_buttons(reports: list[dict]):
+def _show_download_buttons(reports: list[dict], key_prefix: str = ""):
     report_type_map = {
         "briefing": "긴급 보고서",
         "daily_summary": "일일 보고서",
@@ -157,25 +168,29 @@ def _show_download_buttons(reports: list[dict]):
         col1, col2 = st.columns(2)
         raw_type = report.get("report_type", f"문서_{i}")
         file_prefix = report_type_map.get(raw_type, raw_type)
+        unique = f"{key_prefix}_{i}_{report.get('pdf_path', '')}_{report.get('xlsx_path', '')}"
         
         with col1:
             if os.path.exists(report.get("xlsx_path", "")):
                 with open(report["xlsx_path"], "rb") as f:
-                    st.download_button(f"📥 {file_prefix} (엑셀)", f, file_name=f"{file_prefix}.xlsx", key=f"xlsx_{i}_{report.get('xlsx_path', '')}", use_container_width=True)
+                    st.download_button(f"📥 {file_prefix} (엑셀)", f, file_name=f"{file_prefix}.xlsx", key=f"xlsx_{unique}", use_container_width=True)
         with col2:
             if os.path.exists(report.get("pdf_path", "")):
-                with open(report["pdf_path"], "rb") as f:
-                    st.download_button(f"📥 {file_prefix} (PDF)", f, file_name=f"{file_prefix}.pdf", key=f"pdf_{i}_{report.get('pdf_path', '')}", use_container_width=True)
+                with open(report.get("pdf_path", ""), "rb") as f:
+                    st.download_button(f"📥 {file_prefix} (PDF)", f, file_name=f"{file_prefix}.pdf", key=f"pdf_{unique}", use_container_width=True)
 
 
-for msg in st.session_state.messages:
+messages = st.session_state.messages
+for idx, msg in enumerate(messages):
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        if msg.get("reports"):
-            _show_download_buttons(msg["reports"])
-
+        is_last = (idx == len(messages) - 1)
+        if msg.get("reports") and is_last:
+            _show_download_buttons(msg["reports"], key_prefix=f"hist_{idx}")   
+       
+       
 if st.button("📋 브리핑 시작", use_container_width=True):
-    st.session_state.pending_query = "긴급한 업무 정리해줘"
+    st.session_state.pending_query = "Gmail, Slack, Jira, Notion 업무 전체 정리해줘"
 
 chat_input = st.chat_input("업무 명령을 입력하세요",
                             accept_file="multiple",
@@ -217,6 +232,13 @@ if query:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(uf.read())
                 tmp_paths.append(tmp.name)
+        if suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            from backend.agents.llm_client import complete_with_image
+            img_text = complete_with_image(
+                "이 이미지에서 텍스트와 내용을 모두 추출해줘. 영수증이면 항목, 금액, 날짜 등을 정리해줘.",
+                tmp.name
+            )
+            extracted_texts.append(f"--- {uf.name} 이미지 내용 ---\n{img_text}\n---\n")
 
     if tmp_paths or extracted_texts:
         display_query = f"{query} (파일 첨부 완료)"
@@ -242,7 +264,7 @@ if query:
         report_data   = _extract_reports(state)
         st.markdown(response_text)
         if report_data:
-            _show_download_buttons(report_data)
+            _show_download_buttons(report_data, key_prefix="new")
 
     for p in tmp_paths:
         try:

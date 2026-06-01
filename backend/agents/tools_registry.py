@@ -1,5 +1,5 @@
 """
-전체 @tool 래퍼 + MCP 툴 로딩을 담당한다.
+전체 @tool 래퍼를 담당한다.
 SubAgent와 orchestrator 양쪽에서 import해 사용한다.
 """
 import asyncio
@@ -7,8 +7,6 @@ import json
 import threading
 
 from langchain_core.tools import tool
-
-from backend.mcp_client import load_mcp_tools, MCP_SERVER_CONFIG
 from backend.tools.scoring import score_urgency as _score_urgency
 from backend.tools.classify import classify_items as _classify, filter_items as _filter
 from backend.tools.write_report import write_report as _write_report
@@ -23,7 +21,8 @@ from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail, send_gmail as
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar, search_calendar_events as _search_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
 from backend.tools.slack_fetch import SLACK_TOOLS, fetch_slack_as_items
-from backend.tools.notion_fetch import list_notion_pages
+from backend.tools.jira_fetch import JIRA_TOOLS
+from backend.tools.notion_fetch import NOTION_TOOLS, list_notion_pages
 
 # ── @tool 래퍼 ────────────────────────────────────────────────────────────────
 
@@ -178,7 +177,6 @@ def process_expense_report(image_paths: list[str]) -> str:
         "total_amount": report["total_amount"],
         "items":        report["items"],
         "xlsx_path":    report["xlsx_path"],
-        "pdf_path":     report["pdf_path"],
     }, ensure_ascii=False, default=str)
 
 
@@ -214,10 +212,12 @@ LOCAL_TOOLS = [
     spell_check,
     list_notion_pages,
     *SLACK_TOOLS,
+    *JIRA_TOOLS,
+    *NOTION_TOOLS,
 ]
 
 
-# ── MCP 툴 로딩 ───────────────────────────────────────────────────────────────
+# ── 비동기 실행 헬퍼 ──────────────────────────────────────────────────────────
 
 _bg_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
 threading.Thread(target=_bg_loop.run_forever, daemon=True).start()
@@ -227,30 +227,9 @@ def _run(coro):
     return asyncio.run_coroutine_threadsafe(coro, _bg_loop).result()
 
 
-def _load_mcp_tools_sync() -> list:
-    if not MCP_SERVER_CONFIG:
-        return []
-    try:
-        return _run(load_mcp_tools())
-    except Exception as e:
-        print(f"[MCP] 툴 로드 중 오류 발생, MCP 없이 시작합니다: {e}")
-        return []
-
-
-_MCP_TOOLS: list = _load_mcp_tools_sync()
-ALL_TOOLS: list = LOCAL_TOOLS + _MCP_TOOLS
+ALL_TOOLS: list = LOCAL_TOOLS
 
 
 def load_all_tools() -> list:
-    """로컬 @tool + MCP 툴 전체 목록을 반환한다."""
-    return ALL_TOOLS
-
-
-def reload_mcp_tools() -> list:
-    """MCP 툴을 다시 연결해 반환한다. 연결이 끊겼을 때 호출."""
-    global _MCP_TOOLS, ALL_TOOLS
-    from backend.mcp_client import _alive_clients
-    _alive_clients.clear()
-    _MCP_TOOLS = _load_mcp_tools_sync()
-    ALL_TOOLS = LOCAL_TOOLS + _MCP_TOOLS
+    """로컬 @tool 전체 목록을 반환한다."""
     return ALL_TOOLS

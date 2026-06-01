@@ -14,6 +14,7 @@ REPORT_AGENT_LOCAL_TOOLS: list[str] = [
     "compute_daily_stats",
     "compute_kpi",
     "write_report",
+    "process_expense_report",
 ]
 
 REPORT_AGENT_SYSTEM = """\
@@ -28,7 +29,6 @@ REPORT_AGENT_SYSTEM = """\
 
 이 외 순서와 tool 선택은 상황에 맞게 판단하세요.\
 """
-
 
 def _build_tools(all_tools: list) -> list:
     """로컬 툴(이름 매칭) 반환. MCP 없음."""
