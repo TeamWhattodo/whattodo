@@ -10,7 +10,7 @@ from backend.agents.tools_registry import load_all_tools, _run
 REPORT_AGENT_LOCAL_TOOLS: list[str] = [
     "fetch_uploaded_file",
     "parse_billing_data",
-    "parse_receipt",
+    "parse_receipt_from_text",
     "compute_daily_stats",
     "compute_kpi",
     "write_report",
@@ -39,11 +39,11 @@ fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브�
 긴급도 기준: 마감 초과·[긴급] 태그·High 우선순위 → 🔴 / Medium·답변 필요 → 🟡 / 나머지 → 🟢
 
 ## 모드 B — 파일 기반 리포트 (파일 경로·데이터 제공 시)
-사용 가능한 tool: fetch_uploaded_file, parse_billing_data, parse_receipt,
+사용 가능한 tool: fetch_uploaded_file, parse_billing_data, parse_receipt_from_text,
                   compute_daily_stats, compute_kpi, write_report, process_expense_report
 
 제약:
-- parse_billing_data / parse_receipt는 fetch_uploaded_file 완료 후 실행
+- parse_billing_data / parse_receipt_from_text는 영수증 텍스트가 확보된 후 실행
 - write_report는 compute 계열 tool 완료 후 실행
 - 파일이 없으면 fetch_uploaded_file 생략 가능\
 """

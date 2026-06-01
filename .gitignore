@@ -20,6 +20,8 @@ node_modules/
 
 # 런타임 데이터 (토큰, 세션, DB)
 data/
+backend/db/data/work_items.json
+backend/db/data/expense_reports.json
 
 # VectorDB 바이너리
 backend/db/data/policy_store/

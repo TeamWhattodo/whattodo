@@ -25,12 +25,12 @@ def run_briefing_pipeline(use_mock: bool = True) -> list[dict]:
     return classified
 
 
-def run_expense_pipeline(image_path: str) -> dict:
+def run_expense_pipeline(receipt_text: str) -> dict:
     """정산서 파이프라인."""
-    from backend.tools.receipt import parse_receipt
+    from backend.tools.receipt import parse_receipt_from_text
     from backend.tools.expense import build_expense_report
 
-    receipt_items = parse_receipt(image_path)
+    receipt_items = parse_receipt_from_text(receipt_text)
     report = build_expense_report(items=receipt_items, report_type="출장비")
     return report
 
