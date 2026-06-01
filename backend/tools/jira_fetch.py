@@ -92,6 +92,49 @@ def jira_create_issue(project_key: str, summary: str, description: str = "", iss
 
 
 @tool
+def jira_get_transitions(issue_key: str) -> str:
+    """Jira 이슈에 적용 가능한 상태 전환 목록을 조회합니다. jira_transition_issue 실행 전 호출."""
+    def _fn():
+        transitions = _client().transitions(issue_key)
+        return {"ok": True, "transitions": [{"id": t["id"], "name": t["name"]} for t in transitions]}
+    return _safe(_fn)
+
+
+@tool
+def jira_update_issue(issue_key: str, summary: str = "", description: str = "", priority: str = "") -> str:
+    """Jira 이슈 필드를 수정합니다. 반드시 사용자 확인 후 실행."""
+    def _fn():
+        fields: dict = {}
+        if summary:
+            fields["summary"] = summary
+        if description:
+            fields["description"] = description
+        if priority:
+            fields["priority"] = {"name": priority}
+        _client().issue(issue_key).update(fields=fields)
+        return {"ok": True, "key": issue_key}
+    return _safe(_fn)
+
+
+@tool
+def jira_transition_issue(issue_key: str, transition_id: str) -> str:
+    """Jira 이슈 상태를 전환합니다. transition_id는 jira_get_transitions로 먼저 조회. 반드시 사용자 확인 후 실행."""
+    def _fn():
+        _client().transition_issue(issue_key, transition_id)
+        return {"ok": True, "key": issue_key, "transition_id": transition_id}
+    return _safe(_fn)
+
+
+@tool
+def jira_delete_issue(issue_key: str) -> str:
+    """Jira 이슈를 삭제합니다. 반드시 사용자 확인 후 실행."""
+    def _fn():
+        _client().issue(issue_key).delete()
+        return {"ok": True, "key": issue_key}
+    return _safe(_fn)
+
+
+@tool
 def jira_add_comment(issue_key: str, comment: str) -> str:
     """Jira 이슈에 댓글을 추가합니다. 반드시 사용자 확인 후 실행."""
     def _fn():
@@ -104,6 +147,10 @@ JIRA_TOOLS = [
     jira_list_projects,
     jira_search_issues,
     jira_get_issue,
+    jira_get_transitions,
     jira_create_issue,
+    jira_update_issue,
+    jira_transition_issue,
+    jira_delete_issue,
     jira_add_comment,
 ]
