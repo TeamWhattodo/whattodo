@@ -103,6 +103,11 @@ def _build_system_prompt() -> str:
   4. 사용자가 위치를 선택하면 notion_create_page(parent_id=<선택한_id>, title=<제목>) 호출
 - 조회: notion_search(query)로 검색 → notion_get_page(page_id)로 상세 확인
 - 수정: notion_update_page(page_id, title) — 사용자 확인 후 실행
+- 페이지 삭제 절차:
+  1. notion_search(query=<페이지명>)로 해당 이름의 페이지 전체 검색
+  2. 같은 이름이 여러 개면 결과 목록(id, last_edited_time, url 포함)을 확인 후 하나를 선택
+  3. notion_delete_block(block_id=<선택한_page_id>)로 삭제 실행
+  ※ 반드시 실제 툴 호출 결과(ok=true)를 확인한 후에만 완료 메시지를 반환할 것
 - 블록 삭제: notion_delete_block(block_id) — 사용자 확인 후 실행
 
 ## 사용 가능한 툴
