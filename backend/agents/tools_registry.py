@@ -16,7 +16,7 @@ from backend.tools.search_items import search_past_items as _search, get_item_th
 from backend.tools.policy_search import search_company_docs as _search_docs
 from backend.tools.parse_billing import parse_billing_data as _parse_billing
 from backend.tools.compute_stats import compute_daily_stats as _compute_daily, compute_kpi as _compute_kpi
-from backend.tools.receipt import parse_receipt as _parse_receipt
+from backend.tools.receipt import parse_receipt_from_text as _parse_receipt_from_text
 from backend.tools.gmail_fetch import fetch_gmail as _fetch_gmail, send_gmail as _send_gmail, trash_gmail as _trash_gmail
 from backend.tools.calendar_fetch import fetch_calendar as _fetch_calendar, search_calendar_events as _search_calendar
 from backend.tools.spellcheck import check_spelling as _check_spelling
@@ -106,24 +106,15 @@ def search_company_docs(query: str, top_k: int = 3) -> str:
 
 
 @tool
-def fetch_uploaded_file(file_path: str, file_type: str = "csv") -> str:
-    """업로드된 파일 경로와 타입을 반환합니다. file_type: csv | pdf | xlsx."""
-    import os
-    if not os.path.exists(file_path):
-        return json.dumps({"error": f"파일 없음: {file_path}"}, ensure_ascii=False)
-    return json.dumps({"file_path": file_path, "file_type": file_type}, ensure_ascii=False)
+def parse_billing_data(billing_text: str, month: str) -> str:
+    """추출된 정산 텍스트를 파싱합니다. month: YYYY-MM 형식."""
+    return json.dumps(_parse_billing(billing_text, month), ensure_ascii=False, default=str)
 
 
 @tool
-def parse_billing_data(file_path: str, month: str) -> str:
-    """정산 CSV/엑셀 파일을 파싱합니다. month: YYYY-MM 형식."""
-    return json.dumps(_parse_billing(file_path, month), ensure_ascii=False, default=str)
-
-
-@tool
-def parse_receipt(image_path: str) -> str:
-    """영수증 이미지를 분석해 항목(날짜·가맹점·금액·카테고리)을 추출합니다."""
-    return json.dumps(_parse_receipt(image_path), ensure_ascii=False, default=str)
+def parse_receipt_from_text(text: str) -> str:
+    """영수증 텍스트를 구조화해 항목(날짜·가맹점·금액·카테고리)을 추출합니다."""
+    return json.dumps(_parse_receipt_from_text(text), ensure_ascii=False, default=str)
 
 
 @tool
@@ -167,11 +158,11 @@ def fetch_calendar(days: int = 7) -> str:
 
 
 @tool
-def process_expense_report(image_paths: list[str]) -> str:
-    """업로드된 영수증 이미지를 분석해 경비정산서(엑셀·PDF)를 작성합니다. image_paths: 이미지 파일 경로 목록."""
-    from backend.tools.receipt import parse_receipt
+def process_expense_report(receipt_text: str) -> str:
+    """영수증 텍스트를 분석해 경비정산서(엑셀·PDF)를 작성합니다. receipt_text: 추출된 영수증 텍스트."""
+    from backend.tools.receipt import parse_receipt_from_text
     from backend.tools.expense import build_expense_report
-    items = parse_receipt(image_paths)
+    items = parse_receipt_from_text(receipt_text)
     report = build_expense_report(items)
     return json.dumps({
         "total_amount": report["total_amount"],
@@ -201,9 +192,8 @@ LOCAL_TOOLS = [
     delete_calendar_block,
     search_calendar_events,
     search_company_docs,
-    fetch_uploaded_file,
     parse_billing_data,
-    parse_receipt,
+    parse_receipt_from_text,
     compute_daily_stats,
     compute_kpi,
     fetch_gmail,

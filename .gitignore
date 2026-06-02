@@ -20,6 +20,8 @@ node_modules/
 
 # 런타임 데이터 (토큰, 세션, DB)
 data/
+backend/db/data/work_items.json
+backend/db/data/expense_reports.json
 
 # 평가 결과 및 차트 (로컬 전용)
 eval/results/

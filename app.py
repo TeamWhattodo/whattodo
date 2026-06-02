@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend.agents.graph import stream_graph_events, get_graph_state, resume_graph
+from backend.tools.extract_text import extract_text
 from backend.agents.sessions import (
     save_session, load_session, list_sessions, delete_session, rename_session,
 )
@@ -82,7 +83,7 @@ with st.sidebar:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("✅ 저장", key=f"save_{s['id']}", use_container_width=True):
-                    rename_session(s["id"], new_name)
+                    rename_session(s["id"], new_name or s["name"])
                     st.session_state.editing_session = None
                     st.rerun()
             with c2:
@@ -293,53 +294,8 @@ elif st.session_state.get("pending_query"):
     query = st.session_state.pop("pending_query")
 
 if query:
-    tmp_paths = []
-    extracted_texts = []
-    for uf in uploaded_files:
-        suffix = os.path.splitext(uf.name)[-1].lower() or ".jpg"
-
-        if suffix == ".pdf":
-            try:
-                from pypdf import PdfReader
-                reader = PdfReader(uf)
-                text = f"--- {uf.name} 시작 ---\n"
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
-                text += f"--- {uf.name} 끝 ---\n"
-                extracted_texts.append(text)
-            except Exception as e:
-                extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
-        elif suffix in [".txt", ".md", ".csv"]:
-            try:
-                text = uf.read().decode("utf-8")
-                extracted_texts.append(f"--- {uf.name} 시작 ---\n{text}\n--- {uf.name} 끝 ---\n")
-            except Exception as e:
-                extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
-        else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(uf.read())
-                tmp_paths.append(tmp.name)
-        if suffix.lower() in [".jpg", ".jpeg", ".png"]:
-            from backend.agents.llm_client import complete_with_image
-            img_text = complete_with_image(
-                "이 이미지에서 텍스트와 내용을 모두 추출해줘. 영수증이면 항목, 금액, 날짜 등을 정리해줘.",
-                tmp.name
-            )
-            extracted_texts.append(f"--- {uf.name} 이미지 내용 ---\n{img_text}\n---\n")
-
-    if tmp_paths or extracted_texts:
-        display_query = f"{query} (파일 첨부 완료)"
-        agent_query = query
-        if extracted_texts:
-            texts_str = "\n".join(extracted_texts)
-            agent_query += f"\n\n첨부된 문서 내용:\n{texts_str}"
-        if tmp_paths:
-            paths_str = "\n".join(f"- {p}" for p in tmp_paths)
-            agent_query += f"\n\n첨부된 파일 경로:\n{paths_str}"
-    else:
-        display_query = query
-        agent_query   = query
-
+    # 입력 즉시 표시 (파일 추출·에이전트 실행 전에 렌더 → 지연 체감 제거)
+    display_query = f"{query} (파일 첨부 완료)" if uploaded_files else query
     with st.chat_message("user"):
         st.markdown(display_query)
     st.session_state.messages.append({"role": "user", "content": display_query})
@@ -348,6 +304,31 @@ if query:
         text_box   = st.empty()
         status_box = st.empty()
         loaded_history = st.session_state.pop("loaded_history", None)
+
+        extracted_texts = []
+        for uf in uploaded_files:
+            suffix = os.path.splitext(uf.name)[-1].lower() or ".bin"
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    tmp.write(uf.read())
+                    tmp_path = tmp.name
+                text = extract_text(tmp_path)
+                extracted_texts.append(f"--- {uf.name} 시작 ---\n{text}\n--- {uf.name} 끝 ---\n")
+            except Exception as e:
+                extracted_texts.append(f"[{uf.name} 읽기 실패: {e}]")
+            finally:
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+
+        if extracted_texts:
+            texts_str = "\n".join(extracted_texts)
+            agent_query = query + f"\n\n첨부된 문서 내용:\n{texts_str}"
+        else:
+            agent_query = query
 
         full_text = _stream_and_render(
             agent_query, st.session_state.session_id, loaded_history,
@@ -376,12 +357,6 @@ if query:
         report_data = _extract_reports(snapshot.values)
         if report_data:
             _show_download_buttons(report_data, key_prefix="new")
-
-    for p in tmp_paths:
-        try:
-            os.unlink(p)
-        except OSError:
-            pass
 
     st.session_state.messages.append({
         "role":    "assistant",
