@@ -1,0 +1,38 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: whattodo-db
+    environment:
+      POSTGRES_USER: whattodo
+      POSTGRES_PASSWORD: whattodo
+      POSTGRES_DB: whattodo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whattodo -d whattodo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: whattodo-app
+    ports:
+      - "8501:8501"
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://whattodo:whattodo@db:5432/whattodo
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./outputs:/app/outputs
+      - ./backend/db/data:/app/backend/db/data
+
+volumes:
+  postgres_data:
