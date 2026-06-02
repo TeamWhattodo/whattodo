@@ -1,16 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./index.css";
-import { useAuth } from "./context/AuthContext";
+import LoginModal from "./LoginModal";
 
 const API = "http://localhost:8000/api";
 
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: null },
-  { id: "briefing",  icon: "📋", label: "브리핑",      query: "긴급한 업무 정리해줘" },
-  { id: "schedule",  icon: "📅", label: "일정",         query: "오늘 일정 정리해줘" },
-  { id: "summary",   icon: "📄", label: "문서 요약",    query: "최근 문서 요약해줘" },
-  { id: "expense",   icon: "🧾", label: "정산 리포트",  query: "정산 현황 알려줘" },
 ];
 
 function urgencyDot(level) {
@@ -37,7 +33,8 @@ function parseTaskCards(text) {
 }
 
 export default function App() {
-  const { user, logout } = useAuth();
+  // UI 전용 로그인 상태 — 실제 인증 없이 모달에서 입력한 아이디를 보관한다.
+  const [authUser, setAuthUser] = useState(null);
   const [sessionId] = useState(() => {
     const key = "wt_session_id";
     let id = sessionStorage.getItem(key);
@@ -51,8 +48,10 @@ export default function App() {
   const [loading, setLoading]             = useState(false);
   const [toolLogs, setToolLogs]           = useState([]);
   const [integrations, setIntegrations]   = useState({ slack: false, jira: false });
-  const [briefingBadge, setBriefingBadge] = useState(3);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [attachedFile, setAttachedFile]   = useState(null);
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -113,7 +112,16 @@ export default function App() {
     setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
     setToolLogs([]);
     setLoading(false);
-    if (activeMenu === "briefing") setBriefingBadge(0);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setAttachedFile(file);
+  };
+
+  const clearAttachment = () => {
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleKeyDown = (e) => {
@@ -127,10 +135,6 @@ export default function App() {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, padding: 8 }}>
-        <span>{user?.username}</span>
-        <button onClick={logout}>로그아웃</button>
-      </div>
       <div className="sidebar">
         <div className="sidebar-logo">☑ WhatToDo</div>
         {MENUS.map(menu => (
@@ -141,9 +145,6 @@ export default function App() {
           >
             <span>{menu.icon}</span>
             <span>{menu.label}</span>
-            {menu.id === "briefing" && briefingBadge > 0 && (
-              <span className="badge">{briefingBadge}</span>
-            )}
           </button>
         ))}
 
@@ -167,13 +168,25 @@ export default function App() {
             {integrations.jira ? "연결됨" : "미연결"}
           </span>
         </div>
+
+        {!authUser && (
+          <button className="sidebar-login-btn" onClick={() => setShowLoginModal(true)}>
+            <span>🔑</span>
+            <span>로그인</span>
+          </button>
+        )}
       </div>
 
       <div className="main">
         <div className="main-header">
           <span className="main-header-icon">{currentMenu?.icon}</span>
           <span className="main-header-title">{currentMenu?.label}</span>
-          <span className="main-header-pill">✅ 준비 완료</span>
+          {authUser && (
+            <div className="main-header-user">
+              <span className="main-header-username">{authUser}</span>
+              <button className="main-header-logout" onClick={() => setAuthUser(null)}>로그아웃</button>
+            </div>
+          )}
         </div>
 
         <div className="chat-area">
@@ -213,7 +226,28 @@ export default function App() {
         </div>
 
         <div className="input-area">
+          {attachedFile && (
+            <div className="attach-chip">
+              <span className="attach-chip-name">📎 {attachedFile.name}</span>
+              <button className="attach-chip-remove" onClick={clearAttachment} aria-label="첨부 제거">×</button>
+            </div>
+          )}
           <div className="input-row">
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
+            <button
+              className="btn-attach"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="파일 첨부"
+              aria-label="파일 첨부"
+            >
+              📎
+            </button>
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -227,6 +261,16 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {showLoginModal && (
+        <LoginModal
+          onClose={() => setShowLoginModal(false)}
+          onLogin={(username) => {
+            setAuthUser(username?.trim() || "사용자");
+            setShowLoginModal(false);
+          }}
+        />
+      )}
     </>
   );
 }
