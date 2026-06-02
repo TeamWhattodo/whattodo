@@ -1,9 +1,33 @@
-from pathlib import Path
-from tinydb import TinyDB, Query
+from contextlib import contextmanager
 
-DB_DIR = Path(__file__).parent / "data"
-DB_DIR.mkdir(parents=True, exist_ok=True)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-work_items_db = TinyDB(DB_DIR / "work_items.json")
-expense_reports_db = TinyDB(DB_DIR / "expense_reports.json")
-ItemQuery = Query()
+from backend.config import settings
+from backend.db.orm_models import Base
+
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+)
+
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+@contextmanager
+def get_session():
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
