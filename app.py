@@ -142,8 +142,17 @@ def _extract_response(state: dict) -> str:
 def _extract_reports(state: dict) -> list[dict]:
     """Supervisor ToolMessage 또는 레거시 results에서 파일 경로를 수집한다."""
     reports = []
+    # MemorySaver thread는 이전 턴 메시지까지 누적되므로, 마지막 사용자 입력
+    # (HumanMessage) 이후 메시지만 스캔해 이번 턴 결과만 수집한다.
+    # (대화 기억엔 영향 없음 — 스캔 범위만 좁히는 로컬 처리)
+    messages = state.get("messages", [])
+    last_human = max(
+        (i for i, m in enumerate(messages)
+         if m.__class__.__name__ == "HumanMessage"),
+        default=0,
+    )
     # Supervisor: ToolMessage 결과에서 JSON 파싱
-    for msg in state.get("messages", []):
+    for msg in messages[last_human:]:
         if msg.__class__.__name__ != "ToolMessage":
             continue
         try:
@@ -198,10 +207,12 @@ def _show_download_buttons(reports: list[dict], key_prefix: str = ""):
 
 
 _TOOL_DISPLAY: dict[str, str] = {
-    "fetch_agent":  "📥 데이터 수집 중",
-    "report_agent": "📝 브리핑/리포트 작성 중",
-    "search_agent": "🔍 문서 검색 중",
-    "action_agent": "⚡ 액션 실행 중",
+    "extract_text":   "📄 첨부파일 분석 중",
+    "fetch_agent":    "📥 데이터 수집 중",
+    "briefing_agent": "📋 브리핑 작성 중",
+    "report_agent":   "📝 리포트 작성 중",
+    "search_agent":   "🔍 문서 검색 중",
+    "action_agent":   "⚡ 액션 실행 중",
 }
 
 
@@ -307,6 +318,7 @@ if query:
 
         extracted_texts = []
         for uf in uploaded_files:
+            status_box.info(f"🔄 {_TOOL_DISPLAY['extract_text']}: {uf.name}")
             suffix = os.path.splitext(uf.name)[-1].lower() or ".bin"
             tmp_path = None
             try:

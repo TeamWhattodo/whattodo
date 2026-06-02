@@ -165,6 +165,7 @@ def process_expense_report(receipt_text: str) -> str:
     items = parse_receipt_from_text(receipt_text)
     report = build_expense_report(items)
     return json.dumps({
+        "report_type":  report["report_type"],
         "total_amount": report["total_amount"],
         "items":        report["items"],
         "xlsx_path":    report["xlsx_path"],

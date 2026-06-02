@@ -29,16 +29,26 @@ def fetch_agent(request: str) -> str:
 
 
 @tool
-def report_agent(request: str, context: str = "") -> str:
-    """업무 데이터를 분석해 브리핑 또는 보고서를 작성합니다.
-    fetch_agent 결과의 content를 context에 전달하면 마크다운 브리핑을 생성합니다.
-    파일(정산·KPI·영수증) 기반 리포트도 처리합니다."""
-    from backend.agents.subagents.report_agent import run
+def briefing_agent(request: str, context: str = "") -> str:
+    """fetch_agent가 수집한 업무 데이터를 마크다운 브리핑으로 정리합니다.
+    복귀 브리핑·업무 현황 정리 시 fetch_agent 결과의 content를 context에 전달하세요."""
+    from backend.agents.subagents.briefing_agent import run
     full_input = f"[수집 데이터]\n{context}\n\n[요청]\n{request}" if context else request
     try:
         text, reports = _run(run(full_input))
-        report_type = "briefing" if context else "report"
-        return _wrap("report", "success", text, report_type=report_type, files=reports)
+        return _wrap("report", "success", text, report_type="briefing", files=reports)
+    except Exception as e:
+        return _wrap("report", "error", f"브리핑 생성 실패: {e}", files=[])
+
+
+@tool
+def report_agent(request: str) -> str:
+    """정산·KPI·영수증 등 파일 기반 데이터를 분석해 보고서를 작성합니다.
+    추출된 첨부 문서 내용은 request에 텍스트로 포함해 전달하세요."""
+    from backend.agents.subagents.report_agent import run
+    try:
+        text, reports = _run(run(request))
+        return _wrap("report", "success", text, report_type="report", files=reports)
     except Exception as e:
         return _wrap("report", "error", f"리포트 생성 실패: {e}", files=[])
 
@@ -110,4 +120,4 @@ def action_agent(request: str) -> str:
                      action_type=_detect_action_type(request))
 
 
-SUPERVISOR_TOOLS = [fetch_agent, report_agent, search_agent, action_agent]
+SUPERVISOR_TOOLS = [fetch_agent, briefing_agent, report_agent, search_agent, action_agent]
