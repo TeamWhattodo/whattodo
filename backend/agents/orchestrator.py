@@ -252,7 +252,7 @@ _SUPERVISOR_SYSTEM = """\
 
 1. 복귀 브리핑·업무 현황 정리
    → fetch_agent(request) 먼저 호출
-   → report_agent(request=요청, context=fetch 결과) 로 브리핑 포맷
+   → briefing_agent(request=요청, context=fetch 결과) 로 브리핑 포맷
 
 2. 정산·KPI·영수증 등 파일 기반 리포트
    → report_agent(request) 직접 호출
@@ -268,7 +268,7 @@ _SUPERVISOR_SYSTEM = """\
    → 도구 없이 직접 응답
 
 ## 복합 요청 처리
-- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → report_agent(브리핑) → report_agent(KPI)
+- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → briefing_agent(브리핑) → report_agent(KPI)
 - "메일 확인하고 답장 써줘" → fetch_agent → search_agent(항목 확인) → action_agent
 
 ## 도구 응답 형식

@@ -30,7 +30,8 @@ def parse_receipt_from_text(text: str | list[str]) -> list[dict]:
     client = openai.OpenAI(api_key=settings.openai_api_key)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        max_tokens=1000,
+        max_tokens=4096,
+        temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
 
