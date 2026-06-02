@@ -32,6 +32,7 @@ dependencies = [
     "jira>=3.8.0",
     "notion-client>=2.2.1",
     "matplotlib>=3.10.9",
+    "fastapi>=0.136.3",
 ]
 
 [build-system]
