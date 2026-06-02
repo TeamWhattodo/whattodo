@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://localhost/whattodo"
     jwt_secret: str = ""
     jwt_expire_days: int = 7
+    cookie_secure: bool = False
 
     class Config:
         env_file = ".env"

@@ -3,11 +3,22 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
-SESSION_DIR = Path("data/sessions")
+SESSION_ROOT = Path("data/sessions")
 
 
-def save_session(session_id: str, display_messages: list[dict], langchain_history: list[BaseMessage]) -> None:
-    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+def _user_dir(user_id: str) -> Path:
+    return SESSION_ROOT / str(user_id)
+
+
+def _safe_session_id(session_id: str) -> str:
+    if "/" in session_id or "\\" in session_id or ".." in session_id:
+        raise ValueError(f"invalid session_id: {session_id!r}")
+    return session_id
+
+
+def save_session(user_id: str, session_id: str,
+                 display_messages: list[dict],
+                 langchain_history: list[BaseMessage]) -> None:
     simple_history = []
     for msg in langchain_history:
         if isinstance(msg, HumanMessage):
@@ -16,7 +27,8 @@ def save_session(session_id: str, display_messages: list[dict], langchain_histor
         elif isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content.strip():
             simple_history.append({"type": "ai", "content": msg.content})
 
-    path = SESSION_DIR / f"{session_id}.json"
+    path = _user_dir(user_id) / f"{_safe_session_id(session_id)}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     existing_name = None
     if path.exists():
         try:
@@ -32,8 +44,8 @@ def save_session(session_id: str, display_messages: list[dict], langchain_histor
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def rename_session(session_id: str, name: str) -> None:
-    path = SESSION_DIR / f"{session_id}.json"
+def rename_session(user_id: str, session_id: str, name: str) -> None:
+    path = _user_dir(user_id) / f"{_safe_session_id(session_id)}.json"
     if not path.exists():
         return
     with open(path, "r", encoding="utf-8") as f:
@@ -43,8 +55,8 @@ def rename_session(session_id: str, name: str) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def load_session(session_id: str) -> tuple[list[dict], list[BaseMessage]]:
-    path = SESSION_DIR / f"{session_id}.json"
+def load_session(user_id: str, session_id: str) -> tuple[list[dict], list[BaseMessage]]:
+    path = _user_dir(user_id) / f"{_safe_session_id(session_id)}.json"
     if not path.exists():
         return [], []
     with open(path, "r", encoding="utf-8") as f:
@@ -58,11 +70,12 @@ def load_session(session_id: str) -> tuple[list[dict], list[BaseMessage]]:
     return data.get("display", []), history
 
 
-def list_sessions() -> list[dict]:
-    if not SESSION_DIR.exists():
+def list_sessions(user_id: str) -> list[dict]:
+    base = _user_dir(user_id)
+    if not base.exists():
         return []
     sessions = []
-    for path in sorted(SESSION_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for path in sorted(base.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -79,7 +92,7 @@ def list_sessions() -> list[dict]:
     return sessions
 
 
-def delete_session(session_id: str) -> None:
-    path = SESSION_DIR / f"{session_id}.json"
+def delete_session(user_id: str, session_id: str) -> None:
+    path = _user_dir(user_id) / f"{_safe_session_id(session_id)}.json"
     if path.exists():
         path.unlink()
