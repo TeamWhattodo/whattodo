@@ -150,7 +150,10 @@ def fetch_gmail(max_results: int = 20, query: str = "is:unread") -> str:
       - ""           : 읽은 + 읽지 않은 전체
     사용자가 읽은 메일을 요청하면 query="is:read", 전체 메일이면 query="" 로 호출하세요."""
     from backend.tools.storage import save_items
-    items = _fetch_gmail(max_results, query=query)
+    try:
+        items = _fetch_gmail(max_results, query=query)
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
     items_dict = [i.model_dump(mode="json") if hasattr(i, "model_dump") else i for i in items]
     save_items(items_dict)
     return json.dumps(items_dict, ensure_ascii=False, default=str)

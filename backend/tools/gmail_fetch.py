@@ -20,7 +20,7 @@ def fetch_gmail(max_results: int = 20, query: str = "is:unread") -> list[WorkIte
     """
     creds = get_credentials()
     if not creds:
-        return []
+        raise RuntimeError("Gmail 인증이 필요합니다. Google 계정을 먼저 연결해주세요.")
 
     service = build("gmail", "v1", credentials=creds)
     msgs = (

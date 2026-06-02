@@ -25,7 +25,12 @@ FETCH_AGENT_SYSTEM = """\
 ━━ 소스별 수집 방법 ━━
 
 [Gmail] — fetch_gmail 사용 시
-fetch_gmail(max_results=20) 호출 → 결과 항목을 그대로 나열
+사용자 요청에 따라 query 파라미터를 결정하여 호출:
+- 읽지 않은 메일만: fetch_gmail(max_results=N, query="is:unread")
+- 읽은 메일만:      fetch_gmail(max_results=N, query="is:read")
+- 전체 메일:        fetch_gmail(max_results=N, query="")
+- 기본(미지정):     fetch_gmail(max_results=N, query="is:unread")
+결과 항목을 그대로 나열
 
 [Calendar] — fetch_calendar 사용 시
 fetch_calendar(days=14) 호출 → 결과 항목을 그대로 나열
