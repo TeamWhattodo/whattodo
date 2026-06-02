@@ -24,40 +24,28 @@
 
 **복귀 브리핑** — 부재 기간 동안 쌓인 항목을 긴급도 순으로 정리해 카드로 보여줍니다.
 
-**체크리스트 위젯** — 처리하면 체크, 완료 항목은 아래로 내려갑니다. 할 일 목록이 눈에 보이게 줄어드는 걸 확인할 수 있습니다.
-
 **스마트 우선순위** — "마감이 얼마나 남았는지", "누가 보냈는지", "같은 사람이 몇 번 연락했는지"를 조합해 긴급도를 계산합니다. AI의 주관적 판단이 아닌 정량 지표 기반입니다.
 
-**일간 결산** *(Phase 2)* — 퇴근 전 "오늘 7건 완료, 3건 내일로 이월" 요약을 자동으로 만들어줍니다.
+**답장 초안 작성** — 메일·슬랙 항목을 선택하면 AI가 맥락에 맞는 초안을 생성합니다.
 
-**주간 KPI** *(Phase 3)* — 완료율, 평균 응답 시간, 채널별 업무 부하를 주간 단위로 리포트합니다.
+**일정 관리** — Google Calendar 이벤트 조회 및 생성.
+
+**경비 정산** — 영수증 이미지를 업로드하면 정산서(엑셀·PDF)를 자동 생성합니다.
+
+**사내 규정 검색** — 규정집을 RAG로 검색해 즉시 답변합니다.
 
 ---
 
-## 화면 미리보기
+## 기술 스택
 
-```
-┌─────────────────────────────────────┐
-│ WhatToDo  5월 13일 복귀 브리핑      │
-│ 4일 부재 · 268건 수신 · 예상 85분   │
-│ ──────────────────────────────────  │
-│ 🔴 지금 당장  3건                   │
-│                                     │
-│ ☐ [✉] 김대표 → 계약서 서명 요청    │
-│      CEO · 마감 초과 · ~10분        │
-│      [초안 작성]  [열기]            │
-│                                     │
-│ ☐ [J] PROJ-402 배포 승인 대기      │
-│      마감 5/12 초과 · ~5분          │
-│                                     │
-│ ☐ [S] 박팀장 DM 3건 — 예산 승인    │
-│      30분 전 · ~10분                │
-│                                     │
-│ ─── 오늘 안에  4건 ───────── ▼ ───  │
-│ ─── 이번 주    9건 ───────── ▼ ───  │
-│ ─── FYI      180건 ───────── ▼ ───  │
-└─────────────────────────────────────┘
-```
+| 레이어 | 기술 |
+|---|---|
+| 프론트엔드 | React 19 + Vite |
+| 백엔드 | FastAPI + SSE 스트리밍 |
+| AI 에이전트 | LangGraph Supervisor 패턴 |
+| 외부 소스 | Gmail · Google Calendar · Slack · Jira · Notion |
+| 벡터 검색 | ChromaDB |
+| 세션 저장 | 파일 기반 JSON (`data/sessions/`) |
 
 ---
 
@@ -69,56 +57,60 @@
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
 - Node.js 18+
 
-### 백엔드
+### 1. 환경 변수 설정
+
+```bash
+cp .env.example .env
+```
+
+`.env`를 열어 사용할 서비스의 API 키를 입력합니다.
+
+```bash
+# 필수
+OPENAI_API_KEY=          # 또는 ANTHROPIC_API_KEY=
+
+# Gmail · Google Calendar 사용 시
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+
+# Slack 사용 시
+SLACK_BOT_TOKEN=
+SLACK_TEAM_ID=
+SLACK_BOT_USER_ID=
+
+# Jira 사용 시
+JIRA_API_TOKEN=
+JIRA_EMAIL=
+JIRA_BASE_URL=           # 예: https://yourorg.atlassian.net
+
+# Notion 사용 시
+NOTION_API_TOKEN=
+```
+
+전체 환경 변수 목록은 `.env.example`을 참고하세요.
+
+### 2. 백엔드 실행
 
 ```bash
 uv sync
-npm install            # Slack MCP 서버 설치
-cp .env.example .env   # API 키와 OAuth 정보 입력
 uv run uvicorn backend.main:app --reload
 ```
 
-`http://localhost:8000/health` 에서 응답이 오면 준비 완료.
+`http://localhost:8000/docs` 에서 API 문서를 확인할 수 있습니다.
 
-### 프론트엔드 (Streamlit)
+### 3. 프론트엔드 실행
 
-```bash
-uv run streamlit run app.py
-```
-
-`http://localhost:8501` 에서 위젯을 확인할 수 있습니다.
-
-### 최소 필요 환경 변수
+새 터미널을 열고:
 
 ```bash
-ANTHROPIC_API_KEY=    # Anthropic 콘솔에서 발급
-GMAIL_CLIENT_ID=      # Google Cloud Console
-GMAIL_CLIENT_SECRET=
-SLACK_BOT_TOKEN=      # Slack App 설정
-SECRET_KEY=           # 임의 랜덤 문자열
+cd frontend
+npm install
+npm run dev
 ```
 
-전체 환경 변수 목록은 [docs/SPEC.md](docs/SPEC.md#8-환경-변수)를 참고하세요.
+`http://localhost:5173` 에서 앱을 확인할 수 있습니다.
 
----
-
-## 팀 협업
-
-6명이 1인 1담당으로 병렬 개발합니다.
-
-| # | 담당 | 브랜치 |
-|---|---|---|
-| 1 | Briefing Agent (tool_use 루프) | `feat/briefing-agent` |
-| 2 | Gmail Fetch Tool | `feat/gmail-tool` |
-| 3 | Slack + Calendar Fetch Tool | `feat/slack-calendar-tool` |
-| 4 | Scoring Tool (긴급도 계산) | `feat/scoring-tool` |
-| 5 | Classify + Storage Tool | `feat/classify-tool` |
-| 6 | Streamlit UI | `feat/streamlit-ui` |
-
-**PR은 `dev` 브랜치로만** 올립니다. `main` 병합은 금요일 주 1회.
-
-> **Week 1에 꼭 해야 할 것**: 담당 #1이 주도해 `WorkCard` · `BriefingResult` Pydantic 모델을 전원 합의 후 확정합니다.  
-> 모델이 확정되어야 담당 #6이 `mock_data.py`로 Streamlit UI 개발을 독립적으로 시작할 수 있습니다.
+> 백엔드와 프론트엔드를 **동시에** 실행해야 합니다.
 
 ---
 
@@ -137,11 +129,8 @@ uv run python -m eval.run_eval S1 S3 S6
 uv run python -m eval.run_eval --model gpt-4o
 uv run python -m eval.run_eval --model gpt-4o-mini
 
-# 결과 비교 그래프 생성 (eval/results/ 전체 자동 비교)
+# 결과 비교 그래프 생성
 uv run python -m eval.visualize
-
-# 특정 파일만 비교
-uv run python -m eval.visualize eval/results/파일1.json eval/results/파일2.json
 ```
 
 결과는 `eval/results/eval_YYYYMMDD_HHMMSS.json`, 차트는 `eval/charts/`에 저장됩니다.
@@ -163,4 +152,3 @@ uv run python -m eval.visualize eval/results/파일1.json eval/results/파일2.j
 |---|---|
 | [docs/PLANNING.md](docs/PLANNING.md) | 서비스 기획, 기능 명세, 사용자 시나리오, 로드맵 |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | AI 에이전트 파이프라인 상세 흐름 |
-| [docs/SPEC.md](docs/SPEC.md) | 기술 스택, API 목록, 디렉토리 구조, 전체 환경 변수 |
