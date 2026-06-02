@@ -1,46 +1,119 @@
-from backend.db.store import work_items_db as _db, expense_reports_db as _expense_db, ItemQuery as Item
+from datetime import datetime
+
+from sqlalchemy import select, update, or_
+
+from backend.db.store import get_session
+from backend.db.orm_models import WorkItemORM, ExpenseReportORM
+
+
+def _row_to_dict(row: WorkItemORM) -> dict:
+    return {
+        "id":                row.id,
+        "source":            row.source,
+        "raw_content":       row.raw_content,
+        "summary":           row.summary,
+        "urgency_level":     row.urgency_level,
+        "urgency_breakdown": row.urgency_breakdown or {},
+        "action_type":       row.action_type,
+        "from_person":       row.from_person,
+        "due_at":            row.due_at.isoformat() if row.due_at else None,
+        "source_id":         row.source_id,
+        "status":            row.status,
+        "created_at":        row.created_at.isoformat() if row.created_at else None,
+        "completed_at":      row.completed_at.isoformat() if row.completed_at else None,
+        "actual_minutes":    row.actual_minutes,
+    }
+
+
+def _parse_dt(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except Exception:
+        return None
 
 
 def save_items(items: list[dict]) -> None:
-    for item in items:
-        if not _db.search(Item.id == item["id"]):
-            _db.insert(item)
+    with get_session() as db:
+        for item in items:
+            exists = db.execute(
+                select(WorkItemORM).where(WorkItemORM.id == item["id"])
+            ).scalar_one_or_none()
+            if not exists:
+                db.add(WorkItemORM(
+                    id                = item["id"],
+                    source            = item.get("source", ""),
+                    raw_content       = item.get("raw_content", ""),
+                    summary           = item.get("summary", ""),
+                    urgency_level     = item.get("urgency_level", 0),
+                    urgency_breakdown = item.get("urgency_breakdown", {}),
+                    action_type       = item.get("action_type", "none"),
+                    from_person       = item.get("from_person"),
+                    due_at            = _parse_dt(item.get("due_at")),
+                    source_id         = item.get("source_id"),
+                    status            = item.get("status", "pending"),
+                    created_at        = _parse_dt(item.get("created_at")) or datetime.now(),
+                    completed_at      = _parse_dt(item.get("completed_at")),
+                    actual_minutes    = item.get("actual_minutes"),
+                ))
 
 
 def get_pending_items() -> list[dict]:
-    return _db.search(Item.status == "pending")
+    with get_session() as db:
+        rows = db.execute(
+            select(WorkItemORM).where(WorkItemORM.status == "pending")
+        ).scalars().all()
+        return [_row_to_dict(r) for r in rows]
 
 
 def get_item_by_id(item_id: str) -> dict | None:
-    results = _db.search(Item.id == item_id)
-    return results[0] if results else None
+    with get_session() as db:
+        row = db.execute(
+            select(WorkItemORM).where(WorkItemORM.id == item_id)
+        ).scalar_one_or_none()
+        return _row_to_dict(row) if row else None
 
 
 def search_items(query: str = "", status: str = None, source: str = None) -> list[dict]:
-    results = _db.all()
-    if status:
-        results = [r for r in results if r.get("status") == status]
-    if source:
-        results = [r for r in results if r.get("source") == source]
-    if query:
-        q = query.lower()
-        results = [r for r in results if q in (r.get("summary", "") + r.get("raw_content", "")).lower()]
-    return results
+    with get_session() as db:
+        stmt = select(WorkItemORM)
+        if status:
+            stmt = stmt.where(WorkItemORM.status == status)
+        if source:
+            stmt = stmt.where(WorkItemORM.source == source)
+        if query:
+            q = f"%{query.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    WorkItemORM.summary.ilike(q),
+                    WorkItemORM.raw_content.ilike(q),
+                )
+            )
+        rows = db.execute(stmt).scalars().all()
+        return [_row_to_dict(r) for r in rows]
 
 
 def update_item_status(item_id: str, status: str) -> dict:
-    _db.update({"status": status}, Item.id == item_id)
+    with get_session() as db:
+        db.execute(
+            update(WorkItemORM)
+            .where(WorkItemORM.id == item_id)
+            .values(status=status)
+        )
     return {"success": True, "item_id": item_id, "status": status}
 
 
 def save_expense_report(report: dict) -> None:
-    _expense_db.insert(report)
-
-
-if __name__ == "__main__":
-    test = [{"id": "test_001", "source": "gmail", "status": "pending",
-             "summary": "테스트", "urgency_level": 3}]
-    save_items(test)
-    print("저장:", get_pending_items())
-    update_item_status("test_001", "done")
-    print("업데이트:", get_pending_items())
+    with get_session() as db:
+        db.add(ExpenseReportORM(
+            id           = report["id"],
+            created_at   = _parse_dt(report.get("created_at")) or datetime.now(),
+            report_type  = report.get("report_type", ""),
+            items        = report.get("items", []),
+            total_amount = report.get("total_amount", 0),
+            xlsx_path    = report.get("xlsx_path"),
+            pdf_path     = report.get("pdf_path"),
+        ))
