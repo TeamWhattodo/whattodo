@@ -142,10 +142,15 @@ def trash_gmail(message_id: str) -> str:
 
 
 @tool
-def fetch_gmail(max_results: int = 20) -> str:
-    """Gmail 미읽음 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다. Google 인증이 필요합니다."""
+def fetch_gmail(max_results: int = 20, query: str = "is:unread") -> str:
+    """Gmail 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다.
+    query 파라미터로 조회 조건을 지정하세요:
+      - "is:unread"  : 읽지 않은 메일만 (기본값)
+      - "is:read"    : 읽은 메일만
+      - ""           : 읽은 + 읽지 않은 전체
+    사용자가 읽은 메일을 요청하면 query="is:read", 전체 메일이면 query="" 로 호출하세요."""
     from backend.tools.storage import save_items
-    items = _fetch_gmail(max_results)
+    items = _fetch_gmail(max_results, query=query)
     items_dict = [i.model_dump(mode="json") if hasattr(i, "model_dump") else i for i in items]
     save_items(items_dict)
     return json.dumps(items_dict, ensure_ascii=False, default=str)

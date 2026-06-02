@@ -19,6 +19,7 @@ function urgencyDot(level) {
 }
 
 function parseTaskCards(text) {
+  if (!text) return [];
   const lines = text.split("\n").filter(l => l.trim());
   const tasks = [];
   for (const line of lines) {
@@ -82,40 +83,47 @@ export default function App() {
         body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
       });
 
-      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`API 오류: ${res.status}`);
+      }
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
-      let responseText = "";
+      let responseText = "처리 중 오류가 발생했습니다.";
+      let newHistory   = chatHistory;
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // 마지막 불완전한 줄은 버퍼에 남겨둠
+
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
             if (event.type === "tool_call") {
               setToolLogs(prev => [...prev, `🔧 ${event.tool} 호출 중...`]);
             } else if (event.type === "tool_result") {
               setToolLogs(prev => [...prev, `✅ ${event.tool} 완료`]);
-            } else if (event.type === "error") {
-              responseText = `오류가 발생했습니다: ${event.text}`;
             } else if (event.type === "done") {
               responseText = event.text;
+              newHistory   = event.history;
             }
-          } catch {}
+          } catch (e) {
+            console.error("SSE JSON 파싱 오류:", e, "Line:", line);
+          }
         }
       }
 
+      setChatHistory(newHistory);
       setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
       if (activeMenu === "briefing") setBriefingBadge(0);
-    } catch (err) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `연결 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(${err.message})`,
-      }]);
+    } catch (error) {
+      console.error("채팅 요청 실패:", error);
+      setMessages(prev => [...prev, { role: "assistant", content: "네트워크 오류 또는 서버 오류가 발생했습니다." }]);
     } finally {
       setToolLogs([]);
       setLoading(false);
@@ -153,7 +161,9 @@ export default function App() {
         <div className="sidebar-integration">
           <span>✉️</span>
           <span>Gmail</span>
-          <span className="int-status disconnected">미연결</span>
+          <span className={`int-status ${integrations.gmail ? "" : "disconnected"}`}>
+            {integrations.gmail ? "연결됨" : "미연결"}
+          </span>
         </div>
         <div className="sidebar-integration">
           <span>#</span>

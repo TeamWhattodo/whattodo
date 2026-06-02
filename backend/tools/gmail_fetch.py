@@ -10,7 +10,14 @@ from backend.google_auth import get_credentials
 from backend.models import WorkItem
 
 
-def fetch_gmail(max_results: int = 20) -> list[WorkItem]:
+def fetch_gmail(max_results: int = 20, query: str = "is:unread") -> list[WorkItem]:
+    """
+    query 예시:
+      "is:unread"        → 읽지 않은 메일만
+      "is:read"          → 읽은 메일만
+      ""                 → 읽은 + 읽지 않은 전체
+      "is:unread from:boss@company.com" → 특정 발신자의 읽지 않은 메일
+    """
     creds = get_credentials()
     if not creds:
         return []
@@ -19,7 +26,7 @@ def fetch_gmail(max_results: int = 20) -> list[WorkItem]:
     msgs = (
         service.users()
         .messages()
-        .list(userId="me", maxResults=max_results, q="is:unread")
+        .list(userId="me", maxResults=max_results, q=query)
         .execute()
         .get("messages", [])
     )
