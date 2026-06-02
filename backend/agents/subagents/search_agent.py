@@ -7,15 +7,10 @@ from backend.agents.orchestrator import WhatToDoState
 from backend.agents.llm_client import get_llm
 from backend.agents.tools_registry import load_all_tools, _run
 
-_GENERAL_TOOLS = {"search_past_items", "search_company_docs", "get_item_thread"}
-_GMAIL_TOOLS = {"fetch_gmail"}
-_CALENDAR_TOOLS = {"fetch_calendar", "search_calendar_events"}
-_SLACK_TOOLS = {"slack_search_messages"}
-_JIRA_TOOLS = {"jira_search_issues"}
-_NOTION_TOOLS = {"notion_search", "notion_get_page_content"}
+_SEARCH_TOOLS = {"search_past_items", "search_company_docs", "get_item_thread"}
 
 SEARCH_AGENT_SYSTEM = """\
-당신은 조회 전담 에이전트입니다.
+당신은 사내 문서·업무 이력 조회 전담 에이전트입니다.
 툴이 반환한 실제 데이터만 출력하세요. 데이터를 만들어내거나 예시를 사용하지 마세요.
 
 ## 툴 선택 기준
@@ -23,11 +18,6 @@ SEARCH_AGENT_SYSTEM = """\
 - 특정 메일·메시지 내용 조회 → search_past_items로 항목 찾은 뒤 get_item_thread로 상세 내용 반환
 - 사내 규정·정책·한도 질문 → search_company_docs 우선 사용
 - 과거 업무 항목 검색 → search_past_items 사용
-- 메일·이메일 관련 질문 → fetch_gmail(max_results=20) 호출
-- 캘린더·일정 관련 질문 → search_calendar_events 또는 fetch_calendar 사용
-- Slack 메시지 검색 → slack_search_messages
-- Jira 이슈 검색 → jira_search_issues(jql=...)
-- Notion 내용 조회 → notion_search 후 notion_get_page_content 순서로 실행
 
 ## 검색 방법
 - search_past_items의 query에는 사용자 문장 전체가 아닌 **핵심 키워드만** 입력
@@ -42,48 +32,20 @@ SEARCH_AGENT_SYSTEM = """\
 """
 
 
-def _detect_sources(text: str) -> list[str]:
-    t = text.lower()
-    sources = list(_GENERAL_TOOLS)  # 항상 포함
-    if any(w in t for w in ["gmail", "메일", "이메일", "mail"]):
-        sources.append("gmail")
-    if any(w in t for w in ["calendar", "캘린더", "일정", "스케줄"]):
-        sources.append("calendar")
-    if any(w in t for w in ["slack", "슬랙", "슬렉"]):
-        sources.append("slack")
-    if any(w in t for w in ["jira", "지라", "이슈", "티켓", "스프린트"]):
-        sources.append("jira")
-    if any(w in t for w in ["notion", "노션", "문서", "페이지"]):
-        sources.append("notion")
-    return sources
+def _build_tools(all_tools: list) -> list:
+    return [t for t in all_tools if t.name in _SEARCH_TOOLS]
 
 
-def _build_tools(all_tools: list, sources: list) -> list:
-    allowed = set(_GENERAL_TOOLS)
-    if "gmail" in sources:
-        allowed |= _GMAIL_TOOLS
-    if "calendar" in sources:
-        allowed |= _CALENDAR_TOOLS
-    if "slack" in sources:
-        allowed |= _SLACK_TOOLS
-    if "jira" in sources:
-        allowed |= _JIRA_TOOLS
-    if "notion" in sources:
-        allowed |= _NOTION_TOOLS
-    return [t for t in all_tools if t.name in allowed]
-
-
-def _get_agent(sources: list):
+def _get_agent():
     return create_agent(
         model=get_llm("fast"),
-        tools=_build_tools(load_all_tools(), sources),
+        tools=_build_tools(load_all_tools()),
         system_prompt=SEARCH_AGENT_SYSTEM,
     )
 
 
 async def _run_async(user_input: str) -> tuple[str, bool]:
-    sources = _detect_sources(user_input)
-    result = await _get_agent(sources).ainvoke({"messages": [HumanMessage(content=user_input)]})
+    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=user_input)]})
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
     return output_text, False

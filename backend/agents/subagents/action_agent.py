@@ -129,7 +129,7 @@ def _get_agent():
     today = date.today().strftime("%Y-%m-%d")
     if _agent is None or _agent_date != today:
         _agent = create_agent(
-            model=get_llm("fast"),
+            model=get_llm("smart"),
             tools=_build_tools(load_all_tools()),
             system_prompt=_build_system_prompt(),
         )

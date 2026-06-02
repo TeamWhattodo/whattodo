@@ -7,13 +7,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from backend.agents.graph import run_graph, resume_graph
+from backend.agents.graph import stream_graph_events, get_graph_state, resume_graph
 from backend.agents.sessions import (
     save_session, load_session, list_sessions, delete_session, rename_session,
 )
 from backend.google_auth import get_auth_url, handle_callback, is_authenticated
 
 st.set_page_config(page_title="WhatToDo", layout="centered")
+
+
+def _build_history(display_messages: list[dict]) -> list:
+    """display 메시지에서 MemorySaver 주입용 BaseMessage 이력을 생성한다."""
+    from langchain_core.messages import HumanMessage, AIMessage
+    history = []
+    for m in display_messages:
+        if m["role"] == "user":
+            history.append(HumanMessage(content=m["content"]))
+        elif m["role"] == "assistant" and m.get("content"):
+            history.append(AIMessage(content=m["content"]))
+    return history
 
 # ── Google OAuth 콜백 처리 (URL에 ?code= 파라미터가 있을 때) ─────────
 _params = st.query_params
@@ -49,7 +61,8 @@ with st.sidebar:
     st.header("💬 대화 목록")
 
     if st.button("➕ 새 대화", use_container_width=True):
-        save_session(st.session_state.session_id, st.session_state.messages, [])
+        save_session(st.session_state.session_id, st.session_state.messages,
+                     _build_history(st.session_state.messages))
         new_id = datetime.now().strftime("session_%Y%m%d_%H%M%S")
         st.session_state.session_id = new_id
         st.session_state.messages = []
@@ -83,10 +96,12 @@ with st.sidebar:
                 if st.button(label, key=f"sess_{s['id']}", use_container_width=True):
                     if s["id"] != st.session_state.session_id:
                         save_session(st.session_state.session_id,
-                                     st.session_state.messages, [])
-                        display, _ = load_session(s["id"])
+                                     st.session_state.messages,
+                                     _build_history(st.session_state.messages))
+                        display, history = load_session(s["id"])
                         st.session_state.session_id = s["id"]
                         st.session_state.messages = display
+                        st.session_state.loaded_history = history
                         st.rerun()
             with col2:
                 if st.button("✏️", key=f"edit_{s['id']}"):
@@ -132,11 +147,15 @@ def _extract_reports(state: dict) -> list[dict]:
             continue
         try:
             data = json.loads(msg.content)
-            if isinstance(data, dict):
-                if data.get("xlsx_path") or data.get("pdf_path"):
-                    reports.append(data)
-                if "reports" in data and isinstance(data["reports"], list):
-                    reports.extend(data["reports"])
+            if not isinstance(data, dict):
+                continue
+            # 새 형식: files 리스트
+            for f in data.get("files", []):
+                if isinstance(f, dict) and (f.get("xlsx_path") or f.get("pdf_path")):
+                    reports.append(f)
+            # 레거시: 직접 경로 필드
+            if data.get("xlsx_path") or data.get("pdf_path"):
+                reports.append(data)
         except Exception:
             pass
     # 레거시 fallback
@@ -177,6 +196,47 @@ def _show_download_buttons(reports: list[dict], key_prefix: str = ""):
                     st.download_button(f"📥 {file_prefix} (PDF)", f, file_name=f"{file_prefix}.pdf", key=f"pdf_{unique}", use_container_width=True)
 
 
+_TOOL_DISPLAY: dict[str, str] = {
+    "fetch_agent":  "📥 데이터 수집 중",
+    "report_agent": "📝 브리핑/리포트 작성 중",
+    "search_agent": "🔍 문서 검색 중",
+    "action_agent": "⚡ 액션 실행 중",
+}
+
+
+def _stream_and_render(
+    agent_query: str,
+    thread_id: str,
+    history,
+    text_placeholder,
+    status_placeholder,
+) -> str:
+    """stream_graph_events를 소비하며 UI를 실시간 업데이트하고 최종 텍스트를 반환한다."""
+    full_text = ""
+    for event in stream_graph_events(agent_query, thread_id, history):
+        kind = event["event"]
+        name = event.get("name", "")
+        meta = event.get("metadata", {})
+
+        if kind == "on_tool_start" and name in _TOOL_DISPLAY:
+            status_placeholder.info(f"🔄 {_TOOL_DISPLAY[name]}")
+
+        elif kind == "on_tool_end" and name in _TOOL_DISPLAY:
+            status_placeholder.success(f"✅ {name.replace('_agent', '')} 완료")
+
+        elif kind == "on_chat_model_stream" and meta.get("langgraph_node") == "agent":
+            chunk = event["data"].get("chunk")
+            if chunk:
+                token = chunk.content if isinstance(chunk.content, str) else ""
+                if token:
+                    full_text += token
+                    text_placeholder.markdown(full_text + "▌")
+
+    if full_text:
+        text_placeholder.markdown(full_text)
+    return full_text
+
+
 messages = st.session_state.messages
 for idx, msg in enumerate(messages):
     with st.chat_message(msg["role"]):
@@ -200,7 +260,8 @@ if st.session_state.get("hitl_pending"):
         st.session_state.messages.append({
             "role": "assistant", "content": response_text, "reports": report_data,
         })
-        save_session(st.session_state.session_id, st.session_state.messages, [])
+        save_session(st.session_state.session_id, st.session_state.messages,
+                     _build_history(st.session_state.messages))
         st.rerun()
     if col2.button("❌ 취소", key="hitl_cancel", use_container_width=True):
         with st.spinner("취소 중..."):
@@ -208,7 +269,8 @@ if st.session_state.get("hitl_pending"):
         st.session_state.hitl_pending = False
         response_text = _extract_response(state)
         st.session_state.messages.append({"role": "assistant", "content": response_text})
-        save_session(st.session_state.session_id, st.session_state.messages, [])
+        save_session(st.session_state.session_id, st.session_state.messages,
+                     _build_history(st.session_state.messages))
         st.rerun()
     st.stop()
 # ─────────────────────────────────────────────────────────────────────
@@ -283,21 +345,35 @@ if query:
     st.session_state.messages.append({"role": "user", "content": display_query})
 
     with st.chat_message("assistant"):
-        with st.spinner("에이전트 실행 중..."):
-            state = run_graph(agent_query, thread_id=st.session_state.session_id)
+        text_box   = st.empty()
+        status_box = st.empty()
+        loaded_history = st.session_state.pop("loaded_history", None)
 
-        interrupts = state.get("__interrupt__", [])
-        if interrupts:
-            # interrupt 상태를 session_state에 저장 후 rerun → hitl_pending 블록에서 처리
-            interrupt_data = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+        full_text = _stream_and_render(
+            agent_query, st.session_state.session_id, loaded_history,
+            text_box, status_box,
+        )
+        status_box.empty()
+
+        # interrupt 확인 (action_agent HitL)
+        snapshot = get_graph_state(st.session_state.session_id)
+        all_interrupts = [
+            i for task in snapshot.tasks for i in getattr(task, "interrupts", ())
+        ]
+        if all_interrupts:
+            idata = all_interrupts[0].value if hasattr(all_interrupts[0], "value") else all_interrupts[0]
             st.session_state.hitl_pending = True
-            st.session_state.hitl_data    = interrupt_data
-            save_session(st.session_state.session_id, st.session_state.messages, [])
+            st.session_state.hitl_data    = idata
+            save_session(st.session_state.session_id, st.session_state.messages,
+                         _build_history(st.session_state.messages))
             st.rerun()
 
-        response_text = _extract_response(state)
-        report_data   = _extract_reports(state)
-        st.markdown(response_text)
+        # 스트리밍 텍스트가 없는 경우 state에서 추출 (fallback)
+        if not full_text:
+            full_text = _extract_response(snapshot.values)
+            text_box.markdown(full_text)
+
+        report_data = _extract_reports(snapshot.values)
         if report_data:
             _show_download_buttons(report_data, key_prefix="new")
 
@@ -309,8 +385,9 @@ if query:
 
     st.session_state.messages.append({
         "role":    "assistant",
-        "content": response_text,
+        "content": full_text,
         "reports": report_data,
     })
-    save_session(st.session_state.session_id, st.session_state.messages, [])
+    save_session(st.session_state.session_id, st.session_state.messages,
+                     _build_history(st.session_state.messages))
     st.rerun()

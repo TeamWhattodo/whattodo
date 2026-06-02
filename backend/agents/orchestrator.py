@@ -271,6 +271,16 @@ _SUPERVISOR_SYSTEM = """\
 - "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → report_agent(브리핑) → report_agent(KPI)
 - "메일 확인하고 답장 써줘" → fetch_agent → search_agent(항목 확인) → action_agent
 
+## 도구 응답 형식
+모든 도구는 JSON을 반환합니다:
+- status: "success" | "partial" | "error" | "cancelled" | "not_found"
+- agent: 도구 이름
+- content: 사용자에게 전달할 실제 내용
+- (report_agent만) files: 다운로드 파일 목록
+
+도구 응답에서 반드시 content 필드를 사용해 사용자에게 답하세요.
+status가 "error"이면 실패 사실을 간결하게 알리고, 재시도를 자동으로 하지 마세요.
+
 항상 한국어로 응답하세요.\
 """
 
@@ -288,7 +298,7 @@ def build_supervisor():
         return {}
 
     return create_react_agent(
-        model=get_llm("smart"),
+        model=get_llm("fast"),
         tools=SUPERVISOR_TOOLS,
         prompt=_SUPERVISOR_SYSTEM,
         pre_model_hook=_trim_hook,
