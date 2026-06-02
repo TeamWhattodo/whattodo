@@ -40,16 +40,16 @@
 
 ## Phase 2. 스키마 및 ORM 모델 생성
 
-- [ ] **2-1.** `backend/db/migrations/001_init.sql` 작성
+- [o] **2-1.** `backend/db/migrations/001_init.sql` 작성
   - `work_items` 테이블 + 인덱스 (status, source, created_at)
   - `expense_reports` 테이블
   - `policy_embeddings` 테이블 (pgvector, embedding vector(1536))
   - IVFFlat 인덱스
 
-- [ ] **2-2.** `backend/db/orm_models.py` 작성
+- [o] **2-2.** `backend/db/orm_models.py` 작성
   - `Base`, `WorkItemORM`, `ExpenseReportORM` SQLAlchemy 클래스
 
-- [ ] **2-3.** 로컬 DB에 스키마 적용 (개발 확인용)
+- [o] **2-3.** 로컬 DB에 스키마 적용 (개발 확인용)
   ```bash
   psql -U postgres -d whattodo -f backend/db/migrations/001_init.sql
   ```
@@ -58,10 +58,10 @@
 
 ## Phase 3. RDB 마이그레이션 (TinyDB → PostgreSQL)
 
-- [ ] **3-1.** `backend/db/store.py` 교체
+- [o] **3-1.** `backend/db/store.py` 교체
   - TinyDB 제거 → SQLAlchemy `create_engine()`, `sessionmaker()`, `get_session()`
 
-- [ ] **3-2.** `backend/tools/storage.py` 함수 교체
+- [o] **3-2.** `backend/tools/storage.py` 함수 교체
 
   | 함수 | 변경 내용 |
   |---|---|
@@ -72,7 +72,7 @@
   | `update_item_status(id, status)` | `UPDATE SET status WHERE id` |
   | `save_expense_report(report)` | `INSERT INTO expense_reports` |
 
-- [ ] **3-3.** 동작 확인
+- [o] **3-3.** 동작 확인 (import OK 확인)
 
 ---
 
