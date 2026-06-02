@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
+
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 
 from backend.agents.orchestrator import WhatToDoState
 from backend.agents.llm_client import get_llm
@@ -63,6 +66,90 @@ jira_search_issues(jql="statusCategory not in (Done) ORDER BY updated DESC", max
 """
 
 
+def _jira_to_workitem(issue: dict) -> dict | None:
+    key = issue.get("key") or issue.get("id", "")
+    if not key:
+        return None
+    fields = issue.get("fields", issue)
+    summary = fields.get("summary", key)
+    status_data = fields.get("status", {})
+    assignee_data = fields.get("assignee") or {}
+    assignee = assignee_data.get("displayName", "") if isinstance(assignee_data, dict) else ""
+    return {
+        "id": f"jira_{key}",
+        "source": "jira",
+        "source_id": key,
+        "raw_content": json.dumps(issue, ensure_ascii=False, default=str),
+        "summary": summary,
+        "urgency_level": 0,
+        "urgency_breakdown": {},
+        "action_type": "review",
+        "from_person": assignee or None,
+        "due_at": fields.get("duedate"),
+        "status": "pending",
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+def _notion_to_workitem(page: dict) -> dict | None:
+    page_id = page.get("id", "")
+    if not page_id:
+        return None
+    title = ""
+    for prop in page.get("properties", {}).values():
+        if isinstance(prop, dict) and prop.get("type") == "title":
+            items = prop.get("title", [])
+            if items:
+                title = items[0].get("plain_text", "")
+                break
+    if not title:
+        title = page.get("url", page_id)
+    return {
+        "id": f"notion_{page_id}",
+        "source": "notion",
+        "source_id": page_id,
+        "raw_content": json.dumps(page, ensure_ascii=False, default=str),
+        "summary": title,
+        "urgency_level": 0,
+        "urgency_breakdown": {},
+        "action_type": "review",
+        "from_person": None,
+        "due_at": None,
+        "status": "pending",
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+def _save_mcp_results(messages: list) -> None:
+    from backend.tools.storage import save_items
+    items: list[dict] = []
+    for msg in messages:
+        if not isinstance(msg, ToolMessage):
+            continue
+        tool_name = getattr(msg, "name", "") or ""
+        content = msg.content if isinstance(msg.content, str) else ""
+        if not content:
+            continue
+        try:
+            data = json.loads(content)
+        except Exception:
+            continue
+        if "jira" in tool_name.lower():
+            issues = data if isinstance(data, list) else data.get("issues", [])
+            for issue in (issues or []):
+                item = _jira_to_workitem(issue)
+                if item:
+                    items.append(item)
+        elif "notion" in tool_name.lower() and "search" in tool_name.lower():
+            pages = data.get("results", []) if isinstance(data, dict) else []
+            for page in (pages or []):
+                item = _notion_to_workitem(page)
+                if item:
+                    items.append(item)
+    if items:
+        save_items(items)
+
+
 def _detect_sources(text: str) -> list[str]:
     t = text.lower()
     sources = []
@@ -109,6 +196,7 @@ async def _run_async(user_input: str) -> str:
         config={"recursion_limit": 50},
     )
     messages = result["messages"]
+    _save_mcp_results(messages)
     return messages[-1].content if messages else ""
 
 

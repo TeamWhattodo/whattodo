@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./index.css";
 
-const API = "http://localhost:8000/api";
+const API = "http://127.0.0.1:8000/api";
 
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: null },
@@ -75,42 +75,51 @@ export default function App() {
     setMessages(prev => [...prev, { role: "user", content: query }]);
     setInput("");
 
-    const res = await fetch(`${API}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
-    });
+    try {
+      const res = await fetch(`${API}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
+      });
 
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder();
-    let responseText = "";
-    let newHistory   = chatHistory;
+      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      for (const line of chunk.split("\n")) {
-        if (!line.startsWith("data: ")) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-          if (event.type === "tool_call") {
-            setToolLogs(prev => [...prev, `🔧 ${event.tool} 호출 중...`]);
-          } else if (event.type === "tool_result") {
-            setToolLogs(prev => [...prev, `✅ ${event.tool} 완료`]);
-          } else if (event.type === "done") {
-            responseText = event.text;
-            newHistory   = event.history;
-          }
-        } catch {}
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let responseText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        for (const line of chunk.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "tool_call") {
+              setToolLogs(prev => [...prev, `🔧 ${event.tool} 호출 중...`]);
+            } else if (event.type === "tool_result") {
+              setToolLogs(prev => [...prev, `✅ ${event.tool} 완료`]);
+            } else if (event.type === "error") {
+              responseText = `오류가 발생했습니다: ${event.text}`;
+            } else if (event.type === "done") {
+              responseText = event.text;
+            }
+          } catch {}
+        }
       }
-    }
 
-    setChatHistory(newHistory);
-    setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
-    setToolLogs([]);
-    setLoading(false);
-    if (activeMenu === "briefing") setBriefingBadge(0);
+      setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
+      if (activeMenu === "briefing") setBriefingBadge(0);
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `연결 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n(${err.message})`,
+      }]);
+    } finally {
+      setToolLogs([]);
+      setLoading(false);
+    }
   };
 
   const handleKeyDown = (e) => {

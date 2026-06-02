@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import select, update, or_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from backend.db.store import get_session
 from backend.db.orm_models import WorkItemORM, ExpenseReportORM
@@ -39,26 +40,27 @@ def _parse_dt(value) -> datetime | None:
 def save_items(items: list[dict]) -> None:
     with get_session() as db:
         for item in items:
-            exists = db.execute(
-                select(WorkItemORM).where(WorkItemORM.id == item["id"])
-            ).scalar_one_or_none()
-            if not exists:
-                db.add(WorkItemORM(
-                    id                = item["id"],
-                    source            = item.get("source", ""),
-                    raw_content       = item.get("raw_content", ""),
-                    summary           = item.get("summary", ""),
-                    urgency_level     = item.get("urgency_level", 0),
-                    urgency_breakdown = item.get("urgency_breakdown", {}),
-                    action_type       = item.get("action_type", "none"),
-                    from_person       = item.get("from_person"),
-                    due_at            = _parse_dt(item.get("due_at")),
-                    source_id         = item.get("source_id"),
-                    status            = item.get("status", "pending"),
-                    created_at        = _parse_dt(item.get("created_at")) or datetime.now(),
-                    completed_at      = _parse_dt(item.get("completed_at")),
-                    actual_minutes    = item.get("actual_minutes"),
-                ))
+            values = dict(
+                id                = item["id"],
+                source            = item.get("source", ""),
+                raw_content       = item.get("raw_content", ""),
+                summary           = item.get("summary", ""),
+                urgency_level     = item.get("urgency_level", 0),
+                urgency_breakdown = item.get("urgency_breakdown", {}),
+                action_type       = item.get("action_type", "none"),
+                from_person       = item.get("from_person"),
+                due_at            = _parse_dt(item.get("due_at")),
+                source_id         = item.get("source_id"),
+                status            = item.get("status", "pending"),
+                created_at        = _parse_dt(item.get("created_at")) or datetime.now(),
+                completed_at      = _parse_dt(item.get("completed_at")),
+                actual_minutes    = item.get("actual_minutes"),
+            )
+            stmt = pg_insert(WorkItemORM).values(**values).on_conflict_do_update(
+                index_elements=["id"],
+                set_={k: v for k, v in values.items() if k != "id"},
+            )
+            db.execute(stmt)
 
 
 def get_pending_items() -> list[dict]:

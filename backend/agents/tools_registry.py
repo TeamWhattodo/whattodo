@@ -154,7 +154,11 @@ def fetch_gmail(max_results: int = 20) -> str:
 @tool
 def fetch_calendar(days: int = 7) -> str:
     """Google Calendar 일정을 가져와 WorkItem 목록으로 반환합니다. days: 조회할 일수(기본 7일)."""
-    return json.dumps(_fetch_calendar(days), ensure_ascii=False, default=str)
+    from backend.tools.storage import save_items
+    items = _fetch_calendar(days)
+    items_dict = [i.model_dump(mode="json") if hasattr(i, "model_dump") else i for i in items]
+    save_items(items_dict)
+    return json.dumps(items_dict, ensure_ascii=False, default=str)
 
 
 @tool
