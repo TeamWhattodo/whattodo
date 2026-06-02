@@ -25,8 +25,8 @@ data/
 eval/results/
 eval/charts/
 
-# VectorDB 바이너리
-backend/db/data/policy_store/
+# VectorDB 바이너리 및 런타임 DB
+backend/db/data/
 
 # 생성된 파일
 outputs/

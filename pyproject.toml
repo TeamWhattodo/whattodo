@@ -30,6 +30,7 @@ dependencies = [
     "slack-sdk>=3.42.0",
     "jira>=3.8.0",
     "notion-client>=2.2.1",
+    "matplotlib>=3.10.9",
 ]
 
 [build-system]

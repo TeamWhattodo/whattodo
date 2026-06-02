@@ -17,6 +17,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# 실행 위치 검증 — pyproject.toml이 없으면 잘못된 디렉토리
+if not Path("pyproject.toml").exists():
+    print("❌ 오류: 프로젝트 루트(whattodo/)에서 실행해야 합니다.")
+    print("   cd c:\\intern_study\\test\\whattodo")
+    sys.exit(1)
+
 from backend.agents.graph import run_graph
 from eval.scenarios import SCENARIOS
 from eval.evaluator import (
