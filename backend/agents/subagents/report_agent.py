@@ -19,7 +19,7 @@ REPORT_AGENT_LOCAL_TOOLS: list[str] = [
 REPORT_AGENT_SYSTEM = """\
 당신은 리포트 작성 전담 에이전트입니다.
 
-## 모드 A — 수집 데이터 브리핑 (context 제공 시)
+## 모드 A — 수집 데이터 브리핑 (context가 'Gmail', 'Calendar', 'Slack', 'Jira', 'Notion' 관련 내용일 경우)
 fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브리핑으로 정리합니다.
 툴 호출 없이 바로 포맷팅하세요.
 
@@ -37,7 +37,7 @@ fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브�
 
 긴급도 기준: 마감 초과·[긴급] 태그·High 우선순위 → 🔴 / Medium·답변 필요 → 🟡 / 나머지 → 🟢
 
-## 모드 B — 첨부 텍스트 기반 리포트 (첨부 문서 내용 제공 시)
+## 모드 B — 리포트 작성 (context가 영수증 정보인 경우)
 첨부 파일 내용은 이미 추출되어 context에 텍스트로 포함됩니다. 파일 경로는 제공되지 않습니다.
 context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달하세요.
 
@@ -47,7 +47,7 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
 제약:
 - 영수증 텍스트 → parse_receipt_from_text(text=<영수증 텍스트>) 또는 process_expense_report(receipt_text=<영수증 텍스트>)
 - 정산 데이터 텍스트 → parse_billing_data에 해당 텍스트 전달
-- write_report는 compute 계열 tool 완료 후 실행\
+- write_report는 compute 계열 tool 완료 후 실행
 """
 
 def _build_tools(all_tools: list) -> list:

@@ -55,7 +55,32 @@ def _read_pdf(path: Path) -> str:
 
     reader = PdfReader(str(path))
     pages = [page.extract_text() or "" for page in reader.pages]
-    return "\n".join(pages)
+    text = "\n".join(pages)
+
+    # 텍스트 레이어 없음(스캔 PDF) → 페이지 렌더 후 Vision OCR
+    if len(text.strip()) < 10:
+        text = _ocr_pdf(path)
+    return text
+
+
+def _ocr_pdf(path: Path) -> str:
+    """스캔 PDF: 페이지를 이미지로 렌더 → Vision OCR."""
+    try:
+        import fitz  # PyMuPDF
+    except ImportError as e:
+        raise ImportError("PyMuPDF 필요: pip install pymupdf") from e
+
+    logger.info("스캔 PDF 감지 → Vision OCR 진행: %s", path.name)
+    doc = fitz.open(str(path))
+    parts: list[str] = []
+    try:
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(dpi=200)
+            png_bytes = pix.tobytes("png")
+            parts.append(_vision_extract(png_bytes, "image/png"))
+    finally:
+        doc.close()
+    return "\n".join(parts)
 
 
 def _read_xlsx(path: Path) -> str:
@@ -76,13 +101,6 @@ def _read_xlsx(path: Path) -> str:
 
 
 def _read_image(path: Path) -> str:
-    try:
-        import openai
-    except ImportError as e:
-        raise ImportError("openai 필요: pip install openai") from e
-
-    from backend.config import settings
-
     ext_map = {
         ".png": "image/png",
         ".jpg": "image/jpeg",
@@ -93,7 +111,21 @@ def _read_image(path: Path) -> str:
     media_type = ext_map.get(path.suffix.lower(), "image/jpeg")
 
     with path.open("rb") as f:
-        image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        image_bytes = f.read()
+
+    return _vision_extract(image_bytes, media_type)
+
+
+def _vision_extract(image_bytes: bytes, media_type: str = "image/png") -> str:
+    """이미지 bytes → OpenAI Vision OCR 텍스트."""
+    try:
+        import openai
+    except ImportError as e:
+        raise ImportError("openai 필요: pip install openai") from e
+
+    from backend.config import settings
+
+    image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
 
     client = openai.OpenAI(api_key=settings.openai_api_key)
     response = client.chat.completions.create(
