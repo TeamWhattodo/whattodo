@@ -61,7 +61,7 @@ def _get_agent():
     global _agent
     if _agent is None:
         _agent = create_agent(
-            model=get_llm("fast"),
+            model=get_llm("smart"),
             tools=_build_tools(load_all_tools()),
             system_prompt=REPORT_AGENT_SYSTEM,
         )
