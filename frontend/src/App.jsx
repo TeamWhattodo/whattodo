@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./index.css";
+import { useAuth } from "./context/AuthContext";
 
 const API = "http://localhost:8000/api";
 
@@ -36,6 +37,7 @@ function parseTaskCards(text) {
 }
 
 export default function App() {
+  const { user, logout } = useAuth();
   const [sessionId] = useState(() => {
     const key = "wt_session_id";
     let id = sessionStorage.getItem(key);
@@ -77,6 +79,7 @@ export default function App() {
 
     const res = await fetch(`${API}/chat`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
     });
@@ -124,6 +127,10 @@ export default function App() {
 
   return (
     <>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, padding: 8 }}>
+        <span>{user?.username}</span>
+        <button onClick={logout}>로그아웃</button>
+      </div>
       <div className="sidebar">
         <div className="sidebar-logo">☑ WhatToDo</div>
         {MENUS.map(menu => (
