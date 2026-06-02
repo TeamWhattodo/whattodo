@@ -35,7 +35,9 @@ def fetch_gmail(max_results: int = 20, query: str = "") -> list[WorkItem]:
         return []
 
     def _fetch_detail(msg_id: str) -> dict:
-        return service.users().messages().get(
+        # 스레드마다 독립적인 service 객체 생성 (SSL 공유 방지)
+        svc = build("gmail", "v1", credentials=creds)
+        return svc.users().messages().get(
             userId="me",
             id=msg_id,
             format="metadata",
