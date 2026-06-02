@@ -142,7 +142,7 @@ def trash_gmail(message_id: str) -> str:
 
 
 @tool
-def fetch_gmail(max_results: int = 20, query: str = "is:unread") -> str:
+def fetch_gmail(max_results: int = 20, query: str = "") -> str:
     """Gmail 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다.
     query 파라미터로 조회 조건을 지정하세요:
       - "is:unread"  : 읽지 않은 메일만 (기본값)

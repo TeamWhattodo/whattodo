@@ -10,7 +10,7 @@ from backend.google_auth import get_credentials
 from backend.models import WorkItem
 
 
-def fetch_gmail(max_results: int = 20, query: str = "is:unread") -> list[WorkItem]:
+def fetch_gmail(max_results: int = 20, query: str = "") -> list[WorkItem]:
     """
     query 예시:
       "is:unread"        → 읽지 않은 메일만

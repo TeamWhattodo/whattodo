@@ -26,10 +26,10 @@ FETCH_AGENT_SYSTEM = """\
 
 [Gmail] — fetch_gmail 사용 시
 사용자 요청에 따라 query 파라미터를 결정하여 호출:
-- 읽지 않은 메일만: fetch_gmail(max_results=N, query="is:unread")
-- 읽은 메일만:      fetch_gmail(max_results=N, query="is:read")
-- 전체 메일:        fetch_gmail(max_results=N, query="")
-- 기본(미지정):     fetch_gmail(max_results=N, query="is:unread")
+- 읽지 않은 메일만 명시: fetch_gmail(max_results=N, query="is:unread")
+- 읽은 메일만 명시:      fetch_gmail(max_results=N, query="is:read")
+- 그 외 모든 경우:       fetch_gmail(max_results=N, query="")  ← 기본값
+결과가 요청 개수보다 적으면 query=""로 재호출하세요.
 결과 항목을 그대로 나열
 
 [Calendar] — fetch_calendar 사용 시
