@@ -21,6 +21,10 @@ node_modules/
 # 런타임 데이터 (토큰, 세션, DB)
 data/
 
+# 평가 결과 및 차트 (로컬 전용)
+eval/results/
+eval/charts/
+
 # VectorDB 바이너리
 backend/db/data/policy_store/
 

@@ -122,6 +122,41 @@ SECRET_KEY=           # 임의 랜덤 문자열
 
 ---
 
+## 성능 평가
+
+TheAgentCompany 방법론 기반 에이전트 평가 스크립트입니다.
+
+```bash
+# 전체 시나리오 실행 (12개)
+uv run python -m eval.run_eval
+
+# 특정 시나리오만 실행
+uv run python -m eval.run_eval S1 S3 S6
+
+# 모델 지정 실행
+uv run python -m eval.run_eval --model gpt-4o
+uv run python -m eval.run_eval --model gpt-4o-mini
+
+# 결과 비교 그래프 생성 (eval/results/ 전체 자동 비교)
+uv run python -m eval.visualize
+
+# 특정 파일만 비교
+uv run python -m eval.visualize eval/results/파일1.json eval/results/파일2.json
+```
+
+결과는 `eval/results/eval_YYYYMMDD_HHMMSS.json`, 차트는 `eval/charts/`에 저장됩니다.
+
+| 지표 | 설명 |
+|---|---|
+| **Success Rate** | 모든 체크포인트 통과 비율 |
+| **Partial Score** | `0.5 × (획득점수/전체점수) + 0.5 × 완전완료여부` |
+| **Tool Call Accuracy** | 올바른 툴 호출 여부 |
+| **Hallucination Rate** | LLM-Judge 할루시네이션 판정 비율 |
+
+> `eval/results/`는 `.gitignore` 처리 — 결과 파일은 로컬에만 저장됩니다.
+
+---
+
 ## 문서
 
 | 문서 | 내용 |
