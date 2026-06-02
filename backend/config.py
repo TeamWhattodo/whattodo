@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     notion_api_token: str = ""
 
+    # ── 인증 ──
+    database_url: str = "postgresql+asyncpg://localhost/whattodo"
+    jwt_secret: str = ""
+    jwt_expire_days: int = 7
+
     class Config:
         env_file = ".env"
         extra = "ignore"
