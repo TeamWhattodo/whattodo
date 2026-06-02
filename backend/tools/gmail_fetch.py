@@ -36,19 +36,24 @@ def fetch_gmail(max_results: int = 20, query: str = "") -> list[WorkItem]:
 
     def _fetch_detail(msg_id: str) -> dict:
         return service.users().messages().get(
-            userId="me", id=msg_id, format="full"
+            userId="me",
+            id=msg_id,
+            format="metadata",
+            metadataHeaders=["Subject", "From", "Date", "Message-ID"],
         ).execute()
 
     items: list[WorkItem] = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(_fetch_detail, m["id"]): m for m in msgs}
         for future in as_completed(futures):
             try:
                 item = _parse_message(future.result())
                 if item:
                     items.append(item)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.warning(f"Gmail 메시지 파싱 실패: {e}")
+    items.sort(key=lambda x: x.created_at, reverse=True)
     return items
 
 
@@ -63,8 +68,8 @@ def _parse_message(msg: dict) -> WorkItem | None:
     except Exception:
         created_at = datetime.utcnow()
 
-    body = _extract_body(msg["payload"])
-    raw = f"From: {sender}\nSubject: {subject}\n\n{body[:500]}"
+    body = _extract_body(msg.get("payload", {}))
+    raw = f"From: {sender}\nSubject: {subject}\n\n{body[:500]}" if body else f"From: {sender}\nSubject: {subject}"
 
     return WorkItem(
         id=hashlib.md5(msg["id"].encode()).hexdigest(),
