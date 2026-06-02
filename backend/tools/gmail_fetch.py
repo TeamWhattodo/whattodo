@@ -1,6 +1,7 @@
 """Gmail 메일 → WorkItem 목록 변환 + 발송·삭제"""
 import base64
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from email.utils import parsedate_to_datetime
@@ -23,14 +24,24 @@ def fetch_gmail(max_results: int = 20) -> list[WorkItem]:
         .get("messages", [])
     )
 
-    items: list[WorkItem] = []
-    for m in msgs:
-        detail = service.users().messages().get(
-            userId="me", id=m["id"], format="full"
+    if not msgs:
+        return []
+
+    def _fetch_detail(msg_id: str) -> dict:
+        return service.users().messages().get(
+            userId="me", id=msg_id, format="full"
         ).execute()
-        item = _parse_message(detail)
-        if item:
-            items.append(item)
+
+    items: list[WorkItem] = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch_detail, m["id"]): m for m in msgs}
+        for future in as_completed(futures):
+            try:
+                item = _parse_message(future.result())
+                if item:
+                    items.append(item)
+            except Exception:
+                pass
     return items
 
 

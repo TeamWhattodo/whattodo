@@ -4,11 +4,14 @@ Google OAuth2 토큰 관리.
 - 이후 사용: get_credentials() (자동 갱신)
 """
 import json
+import threading
 from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import Flow
 from backend.config import settings
+
+_TOKEN_LOCK = threading.Lock()
 
 _PKCE_PATH = Path("data/.oauth_state.json")
 
@@ -74,12 +77,13 @@ def handle_callback(code: str) -> None:
 def get_credentials() -> Credentials | None:
     if not _TOKEN_PATH.exists():
         return None
-    creds = Credentials.from_authorized_user_info(
-        json.loads(_TOKEN_PATH.read_text()), SCOPES
-    )
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        _save_token(creds)
+    with _TOKEN_LOCK:
+        creds = Credentials.from_authorized_user_info(
+            json.loads(_TOKEN_PATH.read_text()), SCOPES
+        )
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            _save_token(creds)
     return creds
 
 
