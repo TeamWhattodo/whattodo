@@ -159,16 +159,14 @@ def fetch_calendar(days: int = 7) -> str:
 
 @tool
 def process_expense_report(receipt_text: str) -> str:
-    """영수증 텍스트를 분석해 경비정산서(엑셀·PDF)를 작성합니다. receipt_text: 추출된 영수증 텍스트."""
+    """영수증 텍스트를 파싱해 항목 목록을 반환합니다. receipt_text: 추출된 영수증 텍스트.
+    엑셀 출력은 write_report(report_type="expense_report")가 담당합니다."""
     from backend.tools.receipt import parse_receipt_from_text
-    from backend.tools.expense import build_expense_report
     items = parse_receipt_from_text(receipt_text)
-    report = build_expense_report(items)
+    total = sum(item.get("amount", 0) for item in items if isinstance(item.get("amount"), (int, float)))
     return json.dumps({
-        "report_type":  report["report_type"],
-        "total_amount": report["total_amount"],
-        "items":        report["items"],
-        "xlsx_path":    report["xlsx_path"],
+        "items": items,
+        "total_amount": total,
     }, ensure_ascii=False, default=str)
 
 
@@ -176,6 +174,63 @@ def process_expense_report(receipt_text: str) -> str:
 def spell_check(text: str) -> str:
     """주어진 한국어 텍스트의 맞춤법, 띄어쓰기, 어색한 문맥을 교정합니다. text: 교정할 원본 텍스트."""
     return json.dumps(_check_spelling(text), ensure_ascii=False, default=str)
+
+
+@tool
+def fetch_completed_tasks(week: str = "this_week") -> str:
+    """이번 주 완료된 업무 목록을 DB에서 가져옵니다. week: this_week | last_week | YYYY-WNN.
+    TODO: DB 미구현 — 임시 stub 데이터 반환."""
+    from datetime import date, timedelta
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    stub_tasks = [
+        {
+            "id": "task-001",
+            "title": "Q2 마케팅 예산 검토 및 승인",
+            "source": "jira",
+            "category": "review",
+            "completed_at": str(monday),
+            "assignee": "김철수",
+            "description": "Q2 마케팅 캠페인 예산안 검토 후 팀장 승인 완료",
+        },
+        {
+            "id": "task-002",
+            "title": "신규 온보딩 문서 작성",
+            "source": "notion",
+            "category": "documentation",
+            "completed_at": str(monday + timedelta(days=1)),
+            "assignee": "이영희",
+            "description": "신입 사원용 온보딩 가이드 초안 작성 및 공유",
+        },
+        {
+            "id": "task-003",
+            "title": "슬랙 채널 권한 정리",
+            "source": "slack",
+            "category": "admin",
+            "completed_at": str(monday + timedelta(days=2)),
+            "assignee": "박민준",
+            "description": "#general 채널 권한 재설정, 퇴사자 계정 비활성화",
+        },
+        {
+            "id": "task-004",
+            "title": "6월 팀 회식 일정 조율",
+            "source": "gmail",
+            "category": "coordination",
+            "completed_at": str(monday + timedelta(days=3)),
+            "assignee": "김철수",
+            "description": "팀원 일정 수합 후 6월 15일 저녁 확정, 장소 예약 완료",
+        },
+        {
+            "id": "task-005",
+            "title": "API 응답 속도 이슈 수정",
+            "source": "jira",
+            "category": "bug_fix",
+            "completed_at": str(monday + timedelta(days=4)),
+            "assignee": "이영희",
+            "description": "검색 API 응답 지연(p95 3.2s → 0.8s) 원인 분석 및 캐시 레이어 추가",
+        },
+    ]
+    return json.dumps({"week": week, "tasks": stub_tasks, "total": len(stub_tasks)}, ensure_ascii=False, default=str)
 
 
 LOCAL_TOOLS = [
@@ -201,6 +256,7 @@ LOCAL_TOOLS = [
     fetch_calendar,
     process_expense_report,
     spell_check,
+    fetch_completed_tasks,
     list_notion_pages,
     *SLACK_TOOLS,
     *JIRA_TOOLS,

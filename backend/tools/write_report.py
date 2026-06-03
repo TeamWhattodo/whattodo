@@ -2,7 +2,11 @@ import os
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 from backend.agents.llm_client import complete
+
+from openpyxl import load_workbook
+
 
 try:
     from reportlab.pdfbase import pdfmetrics
@@ -107,12 +111,72 @@ MONTHLY_REPORT_SYSTEM = """
 }
 """
 
+_EXPENSE_OUTPUT_DIR    = "outputs"
+_EXPENSE_TEMPLATE_PATH = str(Path(__file__).resolve().parents[2] / "backend/db/data/Form/경비정산서 양식.xlsx")
+_EXPENSE_CATEGORY_MAP  = {
+    "식비":   "식비",
+    "숙박비": "숙박비",
+    "유류비": "교통비",
+    "출장비": "기타",
+    "기타":   "기타",
+}
+
+
+def _write_expense_xlsx(items: list[dict], total: int | float, report_id: str) -> str:
+    path = f"{_EXPENSE_OUTPUT_DIR}/{report_id}.xlsx"
+    wb = load_workbook(_EXPENSE_TEMPLATE_PATH)
+    ws = wb.active
+    if ws is None:
+        raise ValueError(f"활성 시트 없음: {_EXPENSE_TEMPLATE_PATH}")
+
+    data_start_row = None
+    total_row      = None
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value == "내역":
+                data_start_row = cell.row
+            elif cell.value == "경비 총액":
+                total_row = cell.row
+
+    if data_start_row is None or total_row is None:
+        raise ValueError("템플릿에서 '내역' 또는 '경비 총액' 행을 찾지 못함")
+
+    for i, item in enumerate(items):
+        row = data_start_row + i
+        ws[f"C{row}"] = item["date"]
+        ws[f"E{row}"] = _EXPENSE_CATEGORY_MAP.get(item["category"], "기타")
+        ws[f"G{row}"] = item["amount"]
+        memo = item.get("memo")
+        ws[f"I{row}"] = "" if not memo or memo == "null" else memo
+
+    ws[f"D{total_row}"] = total
+    wb.save(path)
+    return path
+
 def write_report(report_type: str, data: dict | list) -> dict:
     """
-    report_type: "briefing" | "daily_summary" | "kpi_weekly" | "monthly_summary" | "billing"
+    report_type: "expense_report" | "briefing" | "daily_summary" | "kpi_weekly" | "monthly_summary" | "billing"
     data: 보고서에 포함할 항목들
-    반환: {"report_type": ..., "content": str, "pdf_path": str}
+    반환: {"report_type": ..., "content": str, "pdf_path"/"xlsx_path": str}
     """
+    if report_type == "expense_report":
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                data = {}
+        items = data.get("items", []) if isinstance(data, dict) else data
+        total = sum(i.get("amount", 0) for i in items if isinstance(i.get("amount"), (int, float)))
+        os.makedirs(_EXPENSE_OUTPUT_DIR, exist_ok=True)
+        report_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        xlsx_path = _write_expense_xlsx(items, total, report_id)
+        return {
+            "report_type":  "expense_report",
+            "total_amount": total,
+            "items":        items,
+            "xlsx_path":    xlsx_path,
+        }
+
     if isinstance(data, str):
         data_str = data
     else:
@@ -120,11 +184,11 @@ def write_report(report_type: str, data: dict | list) -> dict:
             data_str = json.dumps(data, ensure_ascii=False, default=str)
         except Exception:
             data_str = str(data)
-            
+
     is_daily = (report_type == "daily_summary")
     is_weekly = (report_type == "kpi_weekly")
     is_monthly = (report_type == "monthly_summary")
-    
+
     if is_monthly:
         system = MONTHLY_REPORT_SYSTEM
     elif is_weekly:
