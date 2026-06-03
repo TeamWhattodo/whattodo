@@ -250,14 +250,14 @@ _SUPERVISOR_SYSTEM = """\
 
 ## 도구 호출 규칙
 
-1. 복귀 브리핑·업무 현황 정리
-   → fetch_agent(request) 먼저 호출
-   → report_agent(request=요청, context=fetch 결과) 로 브리핑 포맷
+1. 복귀 브리핑·업무 현황·소스별 항목 조회
+   → fetch_agent(request)          — DB에서 항목 조회
+   → briefing_agent(context=fetch결과의 content, request=원래요청)  — 마크다운 포맷
 
-2. 정산·KPI·영수증 등 파일 기반 리포트
-   → report_agent(request) 직접 호출
+2. 정산·KPI·영수증 등 파일 export
+   → report_agent(request)          — xlsx/pdf 파일 생성
 
-3. 특정 항목 조회·규정 검색·스레드 확인
+3. 특정 항목·규정·스레드 검색
    → search_agent(query)
 
 4. 답장 초안·발송·Jira·Notion·캘린더 조작
@@ -268,15 +268,14 @@ _SUPERVISOR_SYSTEM = """\
    → 도구 없이 직접 응답
 
 ## 복합 요청 처리
-- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → report_agent(브리핑) → report_agent(KPI)
-- "메일 확인하고 답장 써줘" → fetch_agent → search_agent(항목 확인) → action_agent
+- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → briefing_agent → report_agent(KPI)
+- "메일 확인하고 답장 써줘" → fetch_agent → briefing_agent → action_agent
 
 ## 도구 응답 형식
 모든 도구는 JSON을 반환합니다:
-- status: "success" | "partial" | "error" | "cancelled" | "not_found"
+- status: "success" | "error" | "cancelled" | "not_found"
 - agent: 도구 이름
 - content: 사용자에게 전달할 실제 내용
-- (report_agent만) files: 다운로드 파일 목록
 
 도구 응답에서 반드시 content 필드를 사용해 사용자에게 답하세요.
 status가 "error"이면 실패 사실을 간결하게 알리고, 재시도를 자동으로 하지 마세요.

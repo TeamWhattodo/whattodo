@@ -189,6 +189,23 @@ def spell_check(text: str) -> str:
     return json.dumps(_check_spelling(text), ensure_ascii=False, default=str)
 
 
+@tool
+def read_work_items(source: str = "", limit: int = 20, status: str = "", query: str = "") -> str:
+    """로컬 DB에서 업무 항목을 조회합니다. 외부 API 호출 없이 즉시 반환됩니다.
+    source: gmail | slack | jira | notion | calendar | "" (전체 소스)
+    status: pending | done | snoozed | "" (전체 상태)
+    limit: 최대 조회 수 (기본 20)
+    query: 제목/내용 검색 키워드"""
+    from backend.tools.storage import search_items
+    items = search_items(
+        query=query,
+        status=status or None,
+        source=source or None,
+    )
+    items = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)[:limit]
+    return json.dumps(items, ensure_ascii=False, default=str)
+
+
 LOCAL_TOOLS = [
     score_urgency,
     classify_items,
@@ -210,6 +227,7 @@ LOCAL_TOOLS = [
     compute_kpi,
     fetch_gmail,
     fetch_calendar,
+    read_work_items,
     process_expense_report,
     spell_check,
     list_notion_pages,

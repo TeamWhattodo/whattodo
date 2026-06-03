@@ -18,14 +18,28 @@ def _wrap(agent: str, status: str, content: str, **extra) -> str:
 
 @tool
 def fetch_agent(request: str) -> str:
-    """Gmail·Calendar·Slack·Jira·Notion에서 업무 데이터를 수집합니다.
-    브리핑·복귀 정리·소스별 현황 파악 시 사용. 수집 결과의 content를 report_agent에 context로 전달하세요."""
+    """로컬 DB에서 업무 항목을 조회합니다. (Gmail·Slack·Jira·Notion·Calendar)
+    브리핑·복귀 정리·소스별 현황 파악 시 사용.
+    수집 결과를 briefing_agent에 context로 전달해 포맷하세요."""
     from backend.agents.subagents.fetch_agent import run
     try:
         text, _ = _run(run(request))
         return _wrap("fetch", "success", text)
     except Exception as e:
         return _wrap("fetch", "error", f"수집 실패: {e}")
+
+
+@tool
+def briefing_agent(context: str, request: str = "") -> str:
+    """fetch_agent가 조회한 데이터를 받아 긴급도(🔴🟡🟢) 기준 마크다운 브리핑으로 변환합니다.
+    context: fetch_agent 결과의 content
+    request: 원래 사용자 요청 (포맷 힌트용)"""
+    from backend.agents.subagents.briefing_agent import run
+    try:
+        text, _ = _run(run(context, request))
+        return _wrap("briefing", "success", text)
+    except Exception as e:
+        return _wrap("briefing", "error", f"브리핑 생성 실패: {e}")
 
 
 @tool
@@ -110,4 +124,4 @@ def action_agent(request: str) -> str:
                      action_type=_detect_action_type(request))
 
 
-SUPERVISOR_TOOLS = [fetch_agent, report_agent, search_agent, action_agent]
+SUPERVISOR_TOOLS = [fetch_agent, briefing_agent, report_agent, search_agent, action_agent]
