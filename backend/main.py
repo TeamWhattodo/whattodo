@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
@@ -14,11 +15,11 @@ async def lifespan(app: FastAPI):
     init_db()
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(sync_gmail,    "interval", minutes=5,  id="sync_gmail")
-    scheduler.add_job(sync_slack,    "interval", minutes=2,  id="sync_slack")
-    scheduler.add_job(sync_calendar, "interval", minutes=5,  id="sync_calendar")
-    scheduler.add_job(sync_jira,     "interval", minutes=10, id="sync_jira")
-    scheduler.add_job(sync_notion,   "interval", minutes=15, id="sync_notion")
+    scheduler.add_job(sync_gmail,    "interval", minutes=5,  id="sync_gmail",    next_run_time=datetime.now())
+    scheduler.add_job(sync_slack,    "interval", minutes=2,  id="sync_slack",    next_run_time=datetime.now())
+    scheduler.add_job(sync_calendar, "interval", minutes=5,  id="sync_calendar", next_run_time=datetime.now())
+    scheduler.add_job(sync_jira,     "interval", minutes=10, id="sync_jira",     next_run_time=datetime.now())
+    scheduler.add_job(sync_notion,   "interval", minutes=15, id="sync_notion",   next_run_time=datetime.now())
     scheduler.start()
 
     yield
