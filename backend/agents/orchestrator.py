@@ -290,20 +290,29 @@ status가 "error"이면 실패 사실을 간결하게 알리고, 재시도를 �
 
 def build_supervisor():
     from langgraph.prebuilt import create_react_agent
-    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.checkpoint.postgres import PostgresSaver
     from backend.agents.subagents.agent_tools import SUPERVISOR_TOOLS
+    from backend.config import settings
 
     def _trim_hook(state: dict) -> dict:
-        """LLM에 전달하는 메시지를 최근 20개로 제한한다. checkpointer 저장 내용은 유지."""
         msgs = state.get("messages", [])
         if len(msgs) > 20:
             return {"messages": msgs[-20:]}
         return {}
+
+    try:
+        checkpointer = PostgresSaver.from_conn_string(settings.database_url)
+        checkpointer.setup()
+    except Exception:
+        import logging
+        logging.warning("PostgresSaver 초기화 실패 — MemorySaver로 폴백")
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
 
     return create_react_agent(
         model=get_llm("fast"),
         tools=SUPERVISOR_TOOLS,
         prompt=_SUPERVISOR_SYSTEM,
         pre_model_hook=_trim_hook,
-        checkpointer=MemorySaver(),
+        checkpointer=checkpointer,
     )
