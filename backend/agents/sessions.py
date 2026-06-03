@@ -15,18 +15,19 @@ def save_session(session_id: str, display_messages: list[dict], langchain_histor
         elif isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content.strip():
             simple_history.append({"type": "ai", "content": msg.content})
 
+    import json as _json
     with get_session() as db:
         db.execute(text("""
             INSERT INTO sessions (session_id, display_messages, history, created_at, updated_at)
-            VALUES (:sid, :display::jsonb, :history::jsonb, :now, :now)
+            VALUES (:sid, CAST(:display AS jsonb), CAST(:history AS jsonb), :now, :now)
             ON CONFLICT (session_id) DO UPDATE
-            SET display_messages = :display::jsonb,
-                history          = :history::jsonb,
+            SET display_messages = CAST(:display AS jsonb),
+                history          = CAST(:history AS jsonb),
                 updated_at       = :now
         """), {
             "sid":     session_id,
-            "display": __import__("json").dumps(display_messages, ensure_ascii=False),
-            "history": __import__("json").dumps(simple_history, ensure_ascii=False),
+            "display": _json.dumps(display_messages, ensure_ascii=False),
+            "history": _json.dumps(simple_history, ensure_ascii=False),
             "now":     datetime.now(timezone.utc),
         })
 

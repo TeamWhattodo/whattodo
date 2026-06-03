@@ -301,11 +301,13 @@ def build_supervisor():
         return {}
 
     try:
-        checkpointer = PostgresSaver.from_conn_string(settings.database_url)
+        from psycopg_pool import ConnectionPool
+        pool = ConnectionPool(settings.database_url, open=True, max_size=5)
+        checkpointer = PostgresSaver(pool)
         checkpointer.setup()
-    except Exception:
+    except Exception as e:
         import logging
-        logging.warning("PostgresSaver 초기화 실패 — MemorySaver로 폴백")
+        logging.warning(f"PostgresSaver 초기화 실패 ({e}) — MemorySaver로 폴백")
         from langgraph.checkpoint.memory import MemorySaver
         checkpointer = MemorySaver()
 
