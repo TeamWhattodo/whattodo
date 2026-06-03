@@ -21,13 +21,25 @@ def fetch_agent(request: str) -> str:
     """로컬 DB에서 업무 항목을 조회하고 마크다운 브리핑으로 변환합니다.
     브리핑·복귀 정리·소스별 현황 파악 시 사용."""
     from backend.agents.subagents.fetch_agent import run as fetch_run
-    from backend.agents.subagents.briefing_agent import run as briefing_run
+    from backend.agents.llm_client import get_llm
+    from langchain_core.messages import SystemMessage, HumanMessage
+
     try:
         raw, _ = _run(fetch_run(request))
-        if not raw or raw.strip() == "[]":
+        if not raw or raw.strip() in ("", "[]"):
             return _wrap("fetch", "success", "조회된 항목이 없습니다. 백그라운드 워커가 데이터를 수집 중일 수 있습니다.")
-        briefing, _ = _run(briefing_run(raw, request))
-        return _wrap("fetch", "success", briefing)
+
+        llm = get_llm("fast")
+        system = """수집된 WorkItem JSON을 받아 긴급도(urgency_level) 기준으로 마크다운 브리핑을 작성하세요.
+🔴 긴급(4~5) / 🟡 중요(3) / 🟢 일반(1~2) 섹션으로 분류.
+각 항목: - [소스] 발신자 | 요약 | 날짜
+urgency_level 없으면 🟢 일반으로 분류. 빈 섹션은 생략. 실제 데이터만 출력."""
+
+        response = llm.invoke([
+            SystemMessage(content=system),
+            HumanMessage(content=f"요청: {request}\n\n데이터:\n{raw[:6000]}"),
+        ])
+        return _wrap("fetch", "success", response.content)
     except Exception as e:
         return _wrap("fetch", "error", f"수집 실패: {e}")
 
