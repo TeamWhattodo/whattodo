@@ -74,18 +74,21 @@ async def chat_stream(req: ChatRequest):
             final_text = ""
 
         # display 메시지 누적 저장 (세션 목록·복원용)
-        existing_display, _ = load_session(req.session_id)
-        new_display = existing_display + [
-            {"role": "user", "content": req.query},
-            {"role": "assistant", "content": final_text},
-        ]
-        # 프로세스 재시작 후 복원용 history도 저장
-        history_msgs = [
-            HumanMessage(content=m["content"]) if m["role"] == "user"
-            else AIMessage(content=m["content"])
-            for m in new_display
-        ]
-        save_session(req.session_id, new_display, history_msgs)
+        try:
+            existing_display, _ = load_session(req.session_id)
+            new_display = existing_display + [
+                {"role": "user", "content": req.query},
+                {"role": "assistant", "content": final_text},
+            ]
+            history_msgs = [
+                HumanMessage(content=m["content"]) if m["role"] == "user"
+                else AIMessage(content=m["content"])
+                for m in new_display
+            ]
+            save_session(req.session_id, new_display, history_msgs)
+        except Exception as e:
+            import logging
+            logging.warning(f"세션 저장 실패 (무시): {e}")
 
         done_payload = {"type": "done", "text": final_text}
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"

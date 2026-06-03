@@ -300,16 +300,8 @@ def build_supervisor():
             return {"messages": msgs[-20:]}
         return {}
 
-    try:
-        from psycopg_pool import ConnectionPool
-        pool = ConnectionPool(settings.database_url, open=True, max_size=5)
-        checkpointer = PostgresSaver(pool)
-        checkpointer.setup()
-    except Exception as e:
-        import logging
-        logging.warning(f"PostgresSaver 초기화 실패 ({e}) — MemorySaver로 폴백")
-        from langgraph.checkpoint.memory import MemorySaver
-        checkpointer = MemorySaver()
+    from langgraph.checkpoint.memory import MemorySaver
+    checkpointer = MemorySaver()
 
     return create_react_agent(
         model=get_llm("fast"),
