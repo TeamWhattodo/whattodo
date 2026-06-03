@@ -29,6 +29,7 @@ export default function App() {
   const [toolLogs, setToolLogs]           = useState([]);
   const [integrations, setIntegrations]   = useState({ slack: false, jira: false });
   const [briefingBadge, setBriefingBadge] = useState(3);
+  const [policyStatus, setPolicyStatus]   = useState(null);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -39,6 +40,18 @@ export default function App() {
     axios.get(`${API}/integrations`).then(res => {
       setIntegrations(res.data);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const poll = () => {
+      axios.get(`${API}/policy/status`).then(res => {
+        setPolicyStatus(res.data);
+        if (res.data.status === "running") {
+          setTimeout(poll, 3000);
+        }
+      }).catch(() => {});
+    };
+    poll();
   }, []);
 
   const handleMenuClick = (menu) => {
@@ -165,6 +178,25 @@ export default function App() {
           <span className="main-header-title">{currentMenu?.label}</span>
           <span className="main-header-pill">✅ 준비 완료</span>
         </div>
+
+        {policyStatus?.status === "running" && (
+          <div className="policy-banner policy-banner--running">
+            ⏳ 사내 규정 문서 임베딩 중...
+            {policyStatus.files?.length > 0 && (
+              <span> ({policyStatus.done_files?.length ?? 0}/{policyStatus.files.length} 완료)</span>
+            )}
+          </div>
+        )}
+        {policyStatus?.status === "done" && policyStatus.done_files?.length > 0 && (
+          <div className="policy-banner policy-banner--done">
+            ✅ 사내 규정 문서 임베딩 완료
+          </div>
+        )}
+        {policyStatus?.status === "error" && (
+          <div className="policy-banner policy-banner--error">
+            ❌ 임베딩 실패: {policyStatus.error}
+          </div>
+        )}
 
         <div className="chat-area">
           {messages.map((msg, i) => {

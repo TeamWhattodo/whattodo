@@ -132,6 +132,12 @@ def get_integrations():
     }
 
 
+@router.get("/policy/status")
+def get_policy_status():
+    from backend.db.store import policy_ingest_status
+    return policy_ingest_status
+
+
 @router.get("/sync/status")
 def get_sync_status():
     from sqlalchemy import text
