@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -70,3 +71,13 @@ class OAuthTokenORM(Base):
     access_token  = Column(Text,        nullable=True)
     refresh_token = Column(Text,        nullable=True)
     expires_at    = Column(DateTime(timezone=True), nullable=True)
+
+
+class PolicyEmbeddingORM(Base):
+    __tablename__ = "policy_embeddings"
+
+    id          = Column(String(255), primary_key=True)
+    content     = Column(Text,        nullable=False)
+    parent_text = Column(Text,        nullable=True)
+    metadata_   = Column("metadata",  JSONB, nullable=False, default=dict)
+    embedding   = Column(Vector(1536), nullable=True)
