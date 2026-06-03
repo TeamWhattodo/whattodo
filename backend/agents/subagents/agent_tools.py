@@ -18,13 +18,16 @@ def _wrap(agent: str, status: str, content: str, **extra) -> str:
 
 @tool
 def fetch_agent(request: str) -> str:
-    """로컬 DB에서 업무 항목을 조회합니다. (Gmail·Slack·Jira·Notion·Calendar)
-    브리핑·복귀 정리·소스별 현황 파악 시 사용.
-    수집 결과를 briefing_agent에 context로 전달해 포맷하세요."""
-    from backend.agents.subagents.fetch_agent import run
+    """로컬 DB에서 업무 항목을 조회하고 마크다운 브리핑으로 변환합니다.
+    브리핑·복귀 정리·소스별 현황 파악 시 사용."""
+    from backend.agents.subagents.fetch_agent import run as fetch_run
+    from backend.agents.subagents.briefing_agent import run as briefing_run
     try:
-        text, _ = _run(run(request))
-        return _wrap("fetch", "success", text)
+        raw, _ = _run(fetch_run(request))
+        if not raw or raw.strip() == "[]":
+            return _wrap("fetch", "success", "조회된 항목이 없습니다. 백그라운드 워커가 데이터를 수집 중일 수 있습니다.")
+        briefing, _ = _run(briefing_run(raw, request))
+        return _wrap("fetch", "success", briefing)
     except Exception as e:
         return _wrap("fetch", "error", f"수집 실패: {e}")
 

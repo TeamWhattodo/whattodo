@@ -251,8 +251,7 @@ _SUPERVISOR_SYSTEM = """\
 ## 도구 호출 규칙
 
 1. 복귀 브리핑·업무 현황·소스별 항목 조회
-   → fetch_agent(request)          — DB에서 항목 조회
-   → briefing_agent(context=fetch결과의 content, request=원래요청)  — 마크다운 포맷
+   → fetch_agent(request)          — DB 조회 + 마크다운 브리핑 자동 생성
 
 2. 정산·KPI·영수증 등 파일 export
    → report_agent(request)          — xlsx/pdf 파일 생성
@@ -268,8 +267,8 @@ _SUPERVISOR_SYSTEM = """\
    → 도구 없이 직접 응답
 
 ## 복합 요청 처리
-- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → briefing_agent → report_agent(KPI)
-- "메일 확인하고 답장 써줘" → fetch_agent → briefing_agent → action_agent
+- "브리핑하고 KPI 리포트도 만들어줘" → fetch_agent → report_agent(KPI)
+- "메일 확인하고 답장 써줘" → fetch_agent → action_agent
 
 ## 도구 응답 형식
 모든 도구는 JSON을 반환합니다:
