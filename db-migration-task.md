@@ -74,12 +74,10 @@
 
 ## Phase 6. 에이전트 구조 개편
 
-- [ ] **6-1.** `fetch_agent` — 외부 API 호출 제거, `read_work_items` DB 툴로 전환
-- [ ] **6-2.** `briefing_agent` 신규 구현 (report_agent에서 분리)
-  - 툴 없음, LLM 직접 호출
-  - 긴급도 기준 🔴🟡🟢 마크다운 출력
-- [ ] **6-3.** `report_agent` 리팩토링 — 파일 export 전용 (브리핑 로직 제거)
-- [ ] **6-4.** Supervisor 라우팅 업데이트 (briefing_agent 연결)
+- [o] **6-1.** `fetch_agent` — 외부 API 호출 제거, `read_work_items` DB 툴로 전환
+- [o] **6-2.** `briefing_agent` 신규 구현 (Python 포맷 + Supervisor LLM 자연어 응답)
+- [o] **6-3.** `report_agent` 리팩토링 — 파일 export 전용 (브리핑 로직 제거)
+- [o] **6-4.** Supervisor 라우팅 업데이트 (briefing_agent 연결)
 
 ---
 
