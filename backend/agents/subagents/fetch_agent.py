@@ -12,7 +12,7 @@ from backend.agents.tools_registry import load_all_tools, _run
 
 _GMAIL_TOOLS = {"fetch_gmail"}
 _CALENDAR_TOOLS = {"fetch_calendar"}
-_SLACK_TOOLS = {"slack_list_channels", "fetch_slack_as_items"}
+_SLACK_TOOLS = {"fetch_slack_all_items"}
 _JIRA_TOOLS = {"jira_search_issues"}
 _NOTION_TOOLS = {"notion_search", "notion_get_page_content"}
 
@@ -35,11 +35,8 @@ FETCH_AGENT_SYSTEM = """\
 [Calendar] — fetch_calendar 사용 시
 fetch_calendar(days=14) 호출 → 결과 항목을 그대로 나열
 
-[Slack] — slack_list_channels, fetch_slack_as_items 사용 시
-① slack_list_channels(limit=100) 호출
-② is_member=true 인 채널만 추린다
-③ 추린 채널 각각에 fetch_slack_as_items(channel_id=<id>) 호출
-   ※ channel_id 는 반드시 C로 시작하는 id 값 사용
+[Slack] — fetch_slack_all_items 사용 시
+fetch_slack_all_items() 단일 호출로 참여 중인 모든 채널 메시지를 수집
 
 [Jira] — jira_search_issues 사용 시
 jira_search_issues(jql="statusCategory not in (Done) ORDER BY updated DESC", max_results=20)
@@ -59,7 +56,7 @@ jira_search_issues(jql="statusCategory not in (Done) ORDER BY updated DESC", max
 - 일정명: OOO | 시간: OOO | 주최자: OOO
 
 [Slack]
-- 채널: OOO | 발신자: OOO | 내용: OOO
+- #채널명 | 발신자: OOO | 내용: OOO
 
 [Jira]
 - 키: OOO | 제목: OOO | 상태: OOO | 우선순위: OOO
