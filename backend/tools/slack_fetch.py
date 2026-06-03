@@ -133,6 +133,62 @@ def fetch_slack_as_items(channel_id: str, limit: int = 30) -> str:
     return json.dumps({"ok": True, "saved": len(items), "items": items}, ensure_ascii=False, default=str)
 
 
+@tool
+def fetch_slack_all_items(limit_per_channel: int = 30) -> str:
+    """봇이 참여 중인 모든 Slack 채널의 메시지를 한 번에 수집해 WorkItem 목록으로 반환합니다.
+    별도의 채널 목록 조회 없이 단일 호출로 완료됩니다."""
+    import hashlib
+    from datetime import datetime
+    from backend.models import WorkItem
+    from backend.tools.storage import save_items
+
+    client = _client()
+
+    try:
+        ch_result = client.conversations_list(limit=200, types="public_channel")
+        channels = [c for c in ch_result.data.get("channels", []) if c.get("is_member")]
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"채널 목록 조회 실패: {e}"}, ensure_ascii=False)
+
+    all_items = []
+    errors = []
+    for ch in channels:
+        channel_id = ch["id"]
+        channel_name = ch.get("name", channel_id)
+        try:
+            msgs = client.conversations_history(channel=channel_id, limit=limit_per_channel).data.get("messages", [])
+        except Exception as e:
+            errors.append(f"{channel_name}: {e}")
+            continue
+
+        for msg in msgs:
+            ts = msg.get("ts", "")
+            text = msg.get("text", "")
+            user = msg.get("user") or msg.get("username") or "unknown"
+            if not text or msg.get("subtype"):
+                continue
+
+            source_id = f"{channel_id}:{ts}"
+            item = WorkItem(
+                id=hashlib.md5(source_id.encode()).hexdigest(),
+                source="slack",
+                raw_content=text[:1000],
+                summary=f"[#{channel_name}] {text[:80]}{'...' if len(text) > 80 else ''}",
+                urgency_level=3,
+                action_type="reply",
+                from_person=user,
+                source_id=source_id,
+                created_at=datetime.utcfromtimestamp(float(ts)) if ts else datetime.utcnow(),
+            )
+            all_items.append(item.model_dump(mode="json"))
+
+    save_items(all_items)
+    result = {"ok": True, "channels_fetched": len(channels), "saved": len(all_items), "items": all_items}
+    if errors:
+        result["errors"] = errors
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
 SLACK_TOOLS = [
     slack_list_channels,
     slack_get_channel_history,
@@ -141,4 +197,5 @@ SLACK_TOOLS = [
     slack_delete_message,
     slack_search_messages,
     fetch_slack_as_items,
+    fetch_slack_all_items,
 ]
