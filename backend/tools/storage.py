@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select, update, or_
+from sqlalchemy import select, update, or_, desc, nulls_last
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from backend.db.store import get_session
@@ -94,6 +94,7 @@ def search_items(query: str = "", status: str = None, source: str = None) -> lis
                     WorkItemORM.raw_content.ilike(q),
                 )
             )
+        stmt = stmt.order_by(nulls_last(desc(WorkItemORM.created_at)))
         rows = db.execute(stmt).scalars().all()
         return [_row_to_dict(r) for r in rows]
 
