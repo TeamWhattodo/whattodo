@@ -26,7 +26,7 @@ def _seed_sync_log() -> None:
     with engine.begin() as conn:
         for src in sources:
             conn.execute(
-                text("INSERT INTO sync_log (source, status) VALUES (:s, 'idle') ON CONFLICT (source) DO NOTHING"),
+                text("INSERT INTO sync_log (source, status, items_count) VALUES (:s, 'idle', 0) ON CONFLICT (source) DO NOTHING"),
                 {"s": src},
             )
 
