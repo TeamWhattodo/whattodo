@@ -5,7 +5,7 @@ from backend.tools.jira_fetch import jira_search_issues
 
 
 def _fetch() -> list[dict]:
-    raw = jira_search_issues(
+    raw = jira_search_issues.func(
         jql="statusCategory not in (Done) ORDER BY updated DESC",
         max_results=50,
     )

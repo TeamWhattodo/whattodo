@@ -4,7 +4,7 @@ from backend.tools.slack_fetch import fetch_slack_all_items
 
 
 def _fetch() -> list[dict]:
-    raw = fetch_slack_all_items()
+    raw = fetch_slack_all_items.func()
     try:
         data = json.loads(raw)
         return data.get("items", []) if isinstance(data, dict) else []
