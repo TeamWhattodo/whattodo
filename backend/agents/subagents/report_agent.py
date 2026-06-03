@@ -11,7 +11,7 @@ from backend.agents.tools_registry import load_all_tools
 REPORT_AGENT_LOCAL_TOOLS: list[str] = [
     "parse_receipt_from_text",
     "process_expense_report",
-    "fetch_completed_tasks",
+    "fetch_tasks",
     "write_report",
 ]
 
@@ -24,7 +24,7 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
 
 사용 가능한 tool:
   parse_receipt_from_text, process_expense_report,
-  fetch_completed_tasks, write_report
+  fetch_tasks, write_report
 
 ─────────────────────────────────────────────
 [1] 경비정산서  (엑셀 출력)
@@ -55,10 +55,12 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
 트리거: "주간 보고서", "주간 보고", "이번 주 보고서"
 
 실행 순서:
-  1. fetch_completed_tasks(week="this_week") → 이번 주 완료 업무 수집
-  2. write_report(report_type="kpi_weekly", data=<fetch 결과 JSON>)
+  1. 오늘 날짜 기준으로 이번 주 월요일(start)·일요일(end) 계산
+  2. fetch_tasks(start=<월요일>, end=<일요일>) 호출 → 업무 목록 수집
+  3. write_report(report_type="kpi_weekly", data=<fetch 결과 JSON>)
      - fetch 없이 write_report 먼저 호출 금지
      - data에 담당자·부서·직책 정보 없으면 "-" 입력
+     - start/end는 YYYY-MM-DD 형식
 
 응답 형식:
   ## 📊 주간 업무 보고서
