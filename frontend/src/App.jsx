@@ -43,15 +43,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let timer;
     const poll = () => {
       axios.get(`${API}/policy/status`).then(res => {
         setPolicyStatus(res.data);
-        if (res.data.status === "running") {
-          setTimeout(poll, 3000);
+        if (res.data.status === "running" || res.data.status === "idle") {
+          timer = setTimeout(poll, 10000);
         }
       }).catch(() => {});
     };
     poll();
+    return () => clearTimeout(timer);
   }, []);
 
   const handleMenuClick = (menu) => {
