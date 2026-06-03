@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from backend.db.store import get_session
 from backend.tools.storage import save_items
-from backend.workers.score_urgency import score_urgency
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 def run_sync(source: str, fetch_fn, *args, **kwargs) -> int:
     """
     공통 싱크 실행 래퍼.
-    fetch_fn 호출 → score_urgency 계산 → DB 저장 → sync_log 갱신
+    fetch_fn 호출 → DB 저장 → sync_log 갱신
     반환: 저장된 항목 수
     """
     _update_sync_log(source, "running")
@@ -22,9 +21,6 @@ def run_sync(source: str, fetch_fn, *args, **kwargs) -> int:
             items = []
 
         for item in items:
-            level, reason = score_urgency(item)
-            item["urgency_level"] = level
-            item["urgency_reason"] = reason
             item["synced_at"] = datetime.now(timezone.utc).isoformat()
 
         save_items(items)
