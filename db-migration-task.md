@@ -1,118 +1,120 @@
-# DB 마이그레이션 Task 목록 (TinyDB + ChromaDB → PostgreSQL)
+# DB 마이그레이션 Task 목록
 
-> 브랜치: `feat/postgresql-migration`
-> 참고: [implementation.md](implementation.md)
-> 배포 방식: Docker Compose (앱 + PostgreSQL + pgvector 한번에 실행, 사용자 별도 설치 불필요)
-
----
-
-## Phase 1. 환경 세팅
-
-- [o] **1-1.** PostgreSQL 로컬 설치 확인 (개발용)
-  - 로컬 개발: 설치된 PostgreSQL 사용
-  - 배포: Docker Compose로 자동 실행
-
-- [o] **1-2.** `docker-compose.yml` 작성
-  - `pgvector/pgvector:pg17` 이미지 (PostgreSQL 17 + pgvector 내장)
-  - Python 앱 서비스
-  - 볼륨 마운트로 데이터 영속성 확보
-  - 환경변수 자동 주입
-
-- [o] **1-3.** `Dockerfile` 작성
-  - Python 3.11 기반
-  - uv로 의존성 설치
-  - Streamlit + FastAPI 실행
-
-- [o] **1-4.** `pyproject.toml` 의존성 교체
-  - 제거: `tinydb`, `chromadb`
-  - 추가: `sqlalchemy`, `psycopg2-binary`, `pgvector`, `langchain-postgres`
-  - 실행: `uv sync`
-
-- [o] **1-5.** `.env` 환경변수 추가
-  ```bash
-  # 로컬 개발용
-  DATABASE_URL=postgresql://postgres:password@localhost:5432/whattodo
-  ```
-
-- [o] **1-6.** `backend/config.py` 에 `database_url` 필드 추가
+> 브랜치: `feat/postgresql-migration`  
+> 참고: [implementation.md](implementation.md) | [docs/DB_SYNC_ARCHITECTURE.md](docs/DB_SYNC_ARCHITECTURE.md)  
+> 배포 방식: Docker Compose (frontend + backend + PostgreSQL)
 
 ---
 
-## Phase 2. 스키마 및 ORM 모델 생성
+## Phase 1. 환경 세팅 ✅ 완료
+
+- [o] **1-1.** PostgreSQL 로컬 설치 확인
+- [o] **1-2.** `docker-compose.dev.yml` 작성 (DB 단독 개발용)
+- [o] **1-3.** `Dockerfile` 작성 (Python 앱)
+- [o] **1-4.** `pyproject.toml` 의존성 교체 (tinydb/chromadb 제거, sqlalchemy 등 추가)
+- [o] **1-5.** `.env` DATABASE_URL 추가
+- [o] **1-6.** `backend/config.py` database_url 필드 추가
+
+---
+
+## Phase 2. 스키마 및 ORM 모델 ✅ 완료
 
 - [o] **2-1.** `backend/db/migrations/001_init.sql` 작성
-  - `work_items` 테이블 + 인덱스 (status, source, created_at)
-  - `expense_reports` 테이블
-  - `policy_embeddings` 테이블 (pgvector, embedding vector(1536))
-  - IVFFlat 인덱스
-
-- [o] **2-2.** `backend/db/orm_models.py` 작성
-  - `Base`, `WorkItemORM`, `ExpenseReportORM` SQLAlchemy 클래스
-
-- [o] **2-3.** 로컬 DB에 스키마 적용 (개발 확인용)
-  ```bash
-  psql -U postgres -d whattodo -f backend/db/migrations/001_init.sql
-  ```
+- [o] **2-2.** `backend/db/orm_models.py` 작성 (WorkItemORM, ExpenseReportORM)
+- [o] **2-3.** 로컬 DB 스키마 적용
 
 ---
 
-## Phase 3. RDB 마이그레이션 (TinyDB → PostgreSQL)
+## Phase 3. RDB 마이그레이션 (TinyDB → PostgreSQL) ✅ 완료
 
-- [o] **3-1.** `backend/db/store.py` 교체
-  - TinyDB 제거 → SQLAlchemy `create_engine()`, `sessionmaker()`, `get_session()`
-
-- [o] **3-2.** `backend/tools/storage.py` 함수 교체
-
-  | 함수 | 변경 내용 |
-  |---|---|
-  | `save_items(items)` | `INSERT ... ON CONFLICT (id) DO NOTHING` |
-  | `get_pending_items()` | `SELECT * WHERE status = 'pending'` |
-  | `get_item_by_id(id)` | `SELECT * WHERE id = :id` |
-  | `search_items(query, status, source)` | `SELECT` + `ILIKE` 조합 |
-  | `update_item_status(id, status)` | `UPDATE SET status WHERE id` |
-  | `save_expense_report(report)` | `INSERT INTO expense_reports` |
-
-- [o] **3-3.** 동작 확인 (import OK 확인)
+- [o] **3-1.** `backend/db/store.py` SQLAlchemy로 교체
+- [o] **3-2.** `backend/tools/storage.py` upsert SQL로 교체
+- [o] **3-3.** `backend/main.py` init_db() 추가
+- [o] **3-4.** Jira/Notion MCP 결과 WorkItem 변환 래퍼 추가 (fetch_agent)
+- [o] **3-5.** fetch_calendar save_items 추가
 
 ---
 
-## Phase 4. Vector DB 마이그레이션 (ChromaDB → pgvector)
+## Phase 4. 스키마 확장 (신규 테이블)
 
-- [ ] **4-1.** `backend/scripts/ingest_policy.py` 교체
-  - `Chroma.from_documents()` → `PGVector.from_documents()`
-
-- [ ] **4-2.** `backend/tools/policy_search.py` 교체
-  - `Chroma` → `PGVector` (LangChain postgres 백엔드)
-
-- [ ] **4-3.** PDF 재인게스션
-  ```bash
-  uv run python backend/scripts/ingest_policy.py
+- [ ] **4-1.** `sessions` 테이블 추가 (JSON 파일 세션 → DB 이관)
+  ```sql
+  CREATE TABLE sessions (session_id, name, display_messages, history, created_at, updated_at)
   ```
-
-- [ ] **4-4.** 동작 확인 (S3 시나리오: "출장비 식대 한도")
+- [ ] **4-2.** `sync_log` 테이블 추가 (소스별 마지막 싱크 시각·상태)
+  ```sql
+  CREATE TABLE sync_log (source, last_synced_at, status, items_count, error_message)
+  ```
+- [ ] **4-3.** `oauth_tokens` 테이블 추가 (토큰 파일 → DB 이관)
+  ```sql
+  CREATE TABLE oauth_tokens (source, access_token, refresh_token, expires_at)
+  ```
+- [ ] **4-4.** `work_items` 컬럼 보완 (`urgency_reason`, `deadline`, `contact_count`, `synced_at`)
+- [ ] **4-5.** `backend/db/migrations/002_extend.sql` 작성 및 적용
+- [ ] **4-6.** ORM 모델 업데이트
 
 ---
 
-## Phase 5. 정리 및 검증
+## Phase 5. 백그라운드 워커 (APScheduler)
 
-- [ ] **5-1.** 구 파일 삭제
-  - `backend/db/data/work_items.json`
-  - `backend/db/data/expense_reports.json`
-  - `backend/db/data/policy_store/`
+- [ ] **5-1.** `apscheduler` 의존성 추가
+- [ ] **5-2.** `backend/workers/` 디렉토리 생성
+- [ ] **5-3.** 소스별 싱크 워커 구현
+  - `sync_gmail.py` — 5분 주기
+  - `sync_slack.py` — 2분 주기
+  - `sync_jira.py` — 10분 주기
+  - `sync_notion.py` — 15분 주기
+  - `sync_calendar.py` — 5분 주기
+- [ ] **5-4.** `score_urgency` 로직 구현 (수집 후 자동 실행, LLM 없는 규칙 기반)
+- [ ] **5-5.** `backend/main.py` lifespan에 APScheduler 연동
+- [ ] **5-6.** `sync_log` 기록 + 실패 시 재시도 로직
+- [ ] **5-7.** `/api/sync/status` 엔드포인트 추가
 
-- [ ] **5-2.** `.gitignore` 정리
+---
 
-- [ ] **5-3.** Docker Compose로 전체 실행 확인
-  ```bash
-  docker compose up --build
-  ```
+## Phase 6. 에이전트 구조 개편
 
-- [ ] **5-4.** eval 재실행으로 성능 비교
-  ```bash
-  uv run python -m eval.run_eval
-  ```
+- [ ] **6-1.** `fetch_agent` — 외부 API 호출 제거, `read_work_items` DB 툴로 전환
+- [ ] **6-2.** `briefing_agent` 신규 구현 (report_agent에서 분리)
+  - 툴 없음, LLM 직접 호출
+  - 긴급도 기준 🔴🟡🟢 마크다운 출력
+- [ ] **6-3.** `report_agent` 리팩토링 — 파일 export 전용 (브리핑 로직 제거)
+- [ ] **6-4.** Supervisor 라우팅 업데이트 (briefing_agent 연결)
 
-- [ ] **5-5.** PR 작성 → `dev` 브랜치로 머지
+---
+
+## Phase 7. Vector DB 마이그레이션 (ChromaDB → pgvector)
+
+- [ ] **7-1.** `backend/scripts/ingest_policy.py` — `PGVector.from_documents()`로 교체
+- [ ] **7-2.** `backend/tools/policy_search.py` — `PGVector` 백엔드로 교체
+- [ ] **7-3.** PDF 재인게스션 실행
+- [ ] **7-4.** 동작 확인 (S3 시나리오: "출장비 식대 한도")
+
+---
+
+## Phase 8. LangGraph 체크포인터 교체
+
+- [ ] **8-1.** `langgraph-checkpoint-postgres` 의존성 추가
+- [ ] **8-2.** `MemorySaver` → `AsyncPostgresSaver` 교체
+- [ ] **8-3.** 세션 파일 복원 로직 제거 (`_build_messages`, `load_session`)
+
+---
+
+## Phase 9. Docker Compose 최종 구성
+
+- [ ] **9-1.** `frontend/Dockerfile` 작성 (Vite 빌드 → nginx)
+- [ ] **9-2.** `frontend/nginx.conf` 작성 (`/api/` 프록시 설정)
+- [ ] **9-3.** `docker-compose.yml` 업데이트 (frontend 서비스 추가)
+- [ ] **9-4.** `App.jsx` API URL → `/api`로 변경 (nginx 프록시 활용)
+- [ ] **9-5.** `docker compose up --build` 전체 실행 확인
+
+---
+
+## Phase 10. 검증
+
+- [ ] **10-1.** 구 파일 삭제 (`work_items.json`, `expense_reports.json`, `policy_store/`)
+- [ ] **10-2.** eval 재실행 및 마이그레이션 전 결과와 비교
+- [ ] **10-3.** PR 작성 → `dev` 브랜치 머지
 
 ---
 
@@ -120,14 +122,21 @@
 
 | 파일 | 작업 | Phase |
 |---|---|---|
-| `docker-compose.yml` | **신규** Docker 서비스 정의 | 1 |
-| `Dockerfile` | **신규** Python 앱 컨테이너 | 1 |
-| `pyproject.toml` | 의존성 교체 | 1 |
-| `.env` | DATABASE_URL 추가 | 1 |
-| `backend/config.py` | database_url 필드 추가 | 1 |
-| `backend/db/migrations/001_init.sql` | **신규** 스키마 SQL | 2 |
-| `backend/db/orm_models.py` | **신규** ORM 모델 | 2 |
-| `backend/db/store.py` | TinyDB → SQLAlchemy | 3 |
-| `backend/tools/storage.py` | TinyDB CRUD → SQL | 3 |
-| `backend/scripts/ingest_policy.py` | Chroma → PGVector | 4 |
-| `backend/tools/policy_search.py` | Chroma → PGVector | 4 |
+| `docker-compose.dev.yml` | 개발용 DB 단독 | 1 ✅ |
+| `Dockerfile` | Python 앱 | 1 ✅ |
+| `pyproject.toml` | 의존성 교체 | 1 ✅ |
+| `.env` / `config.py` | DATABASE_URL | 1 ✅ |
+| `backend/db/orm_models.py` | ORM 모델 | 2 ✅ |
+| `backend/db/store.py` | SQLAlchemy | 2-3 ✅ |
+| `backend/tools/storage.py` | upsert SQL | 3 ✅ |
+| `backend/db/migrations/002_extend.sql` | 신규 테이블 | 4 |
+| `backend/workers/sync_*.py` | 백그라운드 워커 | 5 |
+| `backend/agents/subagents/fetch_agent.py` | DB 전용 | 6 |
+| `backend/agents/subagents/briefing_agent.py` | 신규 | 6 |
+| `backend/agents/subagents/report_agent.py` | 파일 export만 | 6 |
+| `backend/tools/policy_search.py` | pgvector | 7 |
+| `backend/scripts/ingest_policy.py` | pgvector | 7 |
+| `backend/agents/graph.py` | AsyncPostgresSaver | 8 |
+| `frontend/Dockerfile` | nginx 빌드 | 9 |
+| `frontend/nginx.conf` | 프록시 설정 | 9 |
+| `docker-compose.yml` | frontend 추가 | 9 |

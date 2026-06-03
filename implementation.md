@@ -1,172 +1,144 @@
-# PostgreSQL 마이그레이션 구현 계획
+# WhatToDo — DB 통합 및 확장 아키텍처 구현 계획
 
-## 개요
-
-| 항목 | 현재 | 변경 후 |
-|---|---|---|
-| RDB 저장소 | TinyDB (JSON 파일) | PostgreSQL (RDB) |
-| Vector 저장소 | ChromaDB (파일 기반) | PostgreSQL + pgvector |
-| 브랜치 | - | `feat/postgresql-migration` |
+> 참고 문서: [docs/DB_SYNC_ARCHITECTURE.md](docs/DB_SYNC_ARCHITECTURE.md)  
+> 브랜치: `feat/postgresql-migration`
 
 ---
 
-## 마이그레이션 대상
+## 핵심 원칙
 
-### 1. RDB (TinyDB → PostgreSQL)
+> **읽기는 DB에서, 쓰기만 SDK를 직접 호출한다**
 
-#### 직접 수정 파일
+외부 API 수집은 백그라운드 워커가 주기적으로 처리.  
+에이전트는 DB에 저장된 데이터만 읽어 응답 → 요청 시점 외부 API 호출 제거.
 
-| 파일 | 현재 방식 | 변경 내용 |
-|---|---|---|
-| `backend/db/store.py` | TinyDB 인스턴스 초기화 | SQLAlchemy 엔진 + 세션 초기화로 교체 |
-| `backend/tools/storage.py` | TinyDB CRUD 쿼리 | SQL 쿼리 (SQLAlchemy ORM) 로 교체 |
-| `backend/config.py` | DB 설정 없음 | `DATABASE_URL` 환경변수 추가 |
+---
 
-#### 간접 영향 파일 (import 구조 유지, 내부 변경 없음)
+## 전체 구조 (목표)
 
-- `backend/tools/search_items.py`
-- `backend/tools/update_status.py`
-- `backend/tools/compute_stats.py`
-- `backend/tools/write_draft.py`
-- `backend/tools/slack_fetch.py`
-- `backend/agents/tools_registry.py`
+```
+┌─────────────────────────────────────────────────────┐
+│  백그라운드 워커 (APScheduler)                        │
+│  Gmail(5분) / Slack(2분) / Jira(10분) /              │
+│  Notion(15분) / Calendar(5분)                        │
+│         ↓ score_urgency 계산 후 저장                  │
+│              PostgreSQL                              │
+└─────────────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────────┐
+│  Supervisor (AsyncPostgresSaver)                    │
+│  ├── fetch_agent    → DB SELECT 전용 (~5ms)         │
+│  ├── briefing_agent → 마크다운 시각화 (신규)         │
+│  ├── report_agent   → 파일 export 전용              │
+│  ├── search_agent   → DB + pgvector 검색            │
+│  └── action_agent   → 외부 SDK 쓰기만               │
+└─────────────────────────────────────────────────────┘
+```
 
-#### 신규 생성 파일
+---
 
-| 파일 | 역할 |
+## 현재 완료 현황
+
+| 항목 | 상태 |
 |---|---|
-| `backend/db/orm_models.py` | SQLAlchemy ORM 모델 정의 |
-| `backend/db/migrations/001_init.sql` | 초기 스키마 SQL |
+| PostgreSQL 로컬 세팅 + docker-compose.dev.yml | ✅ |
+| pyproject.toml 의존성 교체 (tinydb/chromadb 제거) | ✅ |
+| ORM 모델 (WorkItemORM, ExpenseReportORM) | ✅ |
+| store.py SQLAlchemy 교체 + init_db() | ✅ |
+| storage.py TinyDB → SQL upsert | ✅ |
+| fetch_agent Jira/Notion MCP 저장 래퍼 | ✅ |
+| Gmail query 파라미터 동적 조회 | ✅ |
 
 ---
 
-### 2. Vector DB (ChromaDB → pgvector)
-
-#### 직접 수정 파일
-
-| 파일 | 현재 방식 | 변경 내용 |
-|---|---|---|
-| `backend/tools/policy_search.py` | `langchain_community.Chroma` 검색 | LangChain `PGVector` 백엔드로 교체 |
-| `backend/scripts/ingest_policy.py` | `Chroma.from_documents()` 저장 | pgvector 저장으로 교체 |
-
----
-
-## PostgreSQL 스키마
-
-### RDB 테이블
+## PostgreSQL 스키마 (최종)
 
 ```sql
--- WorkItem 테이블
+-- 업무 항목 (현재 구현됨 + 컬럼 추가 예정)
 CREATE TABLE work_items (
-    id                VARCHAR(255) PRIMARY KEY,
-    source            VARCHAR(50)  NOT NULL,        -- gmail | slack | calendar | jira | notion
-    raw_content       TEXT         NOT NULL,
-    summary           TEXT         NOT NULL,
-    urgency_level     INT          NOT NULL,
-    urgency_breakdown JSONB        NOT NULL DEFAULT '{}',
-    action_type       VARCHAR(50)  NOT NULL,         -- reply | approve | review | fyi | none
-    from_person       VARCHAR(255),
-    due_at            TIMESTAMP,
-    source_id         VARCHAR(255),
-    status            VARCHAR(50)  NOT NULL DEFAULT 'pending',  -- pending | done | snoozed
-    created_at        TIMESTAMP    NOT NULL,
-    completed_at      TIMESTAMP,
-    actual_minutes    INT
+    id              TEXT PRIMARY KEY,
+    source          TEXT NOT NULL,
+    raw_content     TEXT,
+    summary         TEXT,
+    urgency_level   INTEGER DEFAULT 2,
+    urgency_reason  TEXT,
+    action_type     TEXT DEFAULT 'none',
+    from_person     TEXT,
+    source_id       TEXT,
+    deadline        TIMESTAMPTZ,
+    contact_count   INTEGER DEFAULT 1,
+    created_at      TIMESTAMPTZ,
+    synced_at       TIMESTAMPTZ DEFAULT NOW(),
+    status          TEXT DEFAULT 'pending'
 );
 
-CREATE INDEX idx_work_items_status     ON work_items (status);
-CREATE INDEX idx_work_items_source     ON work_items (source);
-CREATE INDEX idx_work_items_created_at ON work_items (created_at DESC);
-
--- ExpenseReport 테이블
-CREATE TABLE expense_reports (
-    id           VARCHAR(255) PRIMARY KEY,
-    created_at   TIMESTAMP    NOT NULL,
-    report_type  VARCHAR(100) NOT NULL,
-    items        JSONB        NOT NULL DEFAULT '[]',
-    total_amount INT          NOT NULL,
-    xlsx_path    VARCHAR(500),
-    pdf_path     VARCHAR(500)
+-- 대화 세션 (JSON 파일 → DB 이관 예정)
+CREATE TABLE sessions (
+    session_id       TEXT PRIMARY KEY,
+    name             TEXT,
+    display_messages JSONB DEFAULT '[]',
+    history          JSONB DEFAULT '[]',
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
-```
 
-### Vector DB 테이블 (pgvector)
+-- OAuth 토큰 (파일 → DB 이관 예정)
+CREATE TABLE oauth_tokens (
+    source        TEXT PRIMARY KEY,
+    access_token  TEXT,
+    refresh_token TEXT,
+    expires_at    TIMESTAMPTZ
+);
 
-```sql
+-- 싱크 상태 로그 (신규)
+CREATE TABLE sync_log (
+    source         TEXT PRIMARY KEY,
+    last_synced_at TIMESTAMPTZ,
+    status         TEXT,
+    items_count    INTEGER DEFAULT 0,
+    error_message  TEXT
+);
+
+-- 사내 규정 벡터 임베딩 (pgvector)
 CREATE EXTENSION IF NOT EXISTS vector;
-
 CREATE TABLE policy_embeddings (
-    id          VARCHAR(255) PRIMARY KEY,
-    content     TEXT    NOT NULL,          -- 자식 청크 텍스트
-    parent_text TEXT,                      -- 부모 청크 텍스트
-    metadata    JSONB   NOT NULL DEFAULT '{}',
-    embedding   vector(1536)               -- text-embedding-3-small 차원
+    id          TEXT PRIMARY KEY,
+    content     TEXT NOT NULL,
+    parent_text TEXT,
+    metadata    JSONB DEFAULT '{}',
+    embedding   vector(1536)
 );
-
-CREATE INDEX ON policy_embeddings USING ivfflat (embedding vector_cosine_ops);
 ```
 
 ---
 
-## 데이터 흐름 (변경 후)
+## 에이전트 구조 변경
 
-```
-수집 (Fetch)
-  gmail_fetch / slack_fetch / jira_fetch / notion_fetch
-        ↓
-   WorkItem 생성 (models.py 유지)
-        ↓
-  storage.save_items()        ← PostgreSQL INSERT
-        ↓
-  classify / scoring (변경 없음)
-        ↓
-  storage.search_items()      ← PostgreSQL SELECT
-        ↓
-  update_status()             ← PostgreSQL UPDATE
-
-문서 검색 (policy_search)
-  query → OpenAI Embedding → pgvector similarity search → 결과 반환
-```
-
----
-
-## 의존성 변경
-
-### 제거
-```
-tinydb
-chromadb
-langchain-community (Chroma 래퍼 부분)
-```
-
-### 추가
-```
-sqlalchemy
-psycopg2-binary
-pgvector
-langchain-postgres   # LangChain PGVector 백엔드
-alembic              # (선택) 마이그레이션 관리
-```
-
----
-
-## 환경변수 추가
-
-```bash
-# .env 추가 필요
-DATABASE_URL=postgresql://user:password@localhost:5432/whattodo
-```
-
----
-
-## 작업 단계 요약
-
-| 단계 | 내용 | 파일 수 |
+| 에이전트 | 현재 | 목표 |
 |---|---|---|
-| 1. 환경 세팅 | PostgreSQL 설치, pgvector 확장, 의존성 교체 | - |
-| 2. 스키마 생성 | SQL 테이블 생성, ORM 모델 작성 | 2개 신규 |
-| 3. RDB 마이그레이션 | store.py, storage.py 교체 | 2개 수정 |
-| 4. Vector DB 마이그레이션 | policy_search.py, ingest_policy.py 교체 | 2개 수정 |
-| 5. config 업데이트 | DATABASE_URL 추가 | 1개 수정 |
-| 6. 재인게스션 | PDF → pgvector 재임베딩 | 스크립트 실행 |
-| 7. 테스트 | 전체 시나리오 eval 재실행 | - |
+| fetch_agent | 외부 SDK 직접 호출 | DB SELECT 전용 |
+| briefing_agent | *(없음)* | **신규** — 인앱 마크다운 시각화 |
+| report_agent | 브리핑 포맷 + 파일 생성 혼재 | 파일 export 전용 |
+| search_agent | TinyDB + ChromaDB | PostgreSQL + pgvector |
+| action_agent | 외부 SDK 쓰기 | 변경 없음 |
+
+---
+
+## Docker Compose 최종 구성
+
+```
+frontend (nginx:80) ←→ backend (FastAPI:8000) ←→ db (PostgreSQL:5432)
+```
+
+- frontend: React Vite 빌드 → nginx 서빙, `/api/` 요청은 backend로 프록시
+- backend: FastAPI + APScheduler 백그라운드 워커
+- db: pgvector/pgvector:pg17
+
+---
+
+## 의존성 추가 예정
+
+```
+apscheduler          # 백그라운드 워커
+langgraph-checkpoint-postgres  # AsyncPostgresSaver
+```
