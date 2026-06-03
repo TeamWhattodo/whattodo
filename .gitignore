@@ -1,3 +1,6 @@
+# Policy ingestion marker (로컬 전용)
+docs/policy/.ingested.json
+
 # Python-generated files
 __pycache__/
 *.py[oc]
