@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     notion_api_token: str = ""
 
+    database_url: str = "postgresql://whattodo:whattodo@localhost:5432/whattodo"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

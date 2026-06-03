@@ -142,10 +142,18 @@ def trash_gmail(message_id: str) -> str:
 
 
 @tool
-def fetch_gmail(max_results: int = 20) -> str:
-    """Gmail 미읽음 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다. Google 인증이 필요합니다."""
+def fetch_gmail(max_results: int = 20, query: str = "") -> str:
+    """Gmail 메일을 가져와 WorkItem 목록으로 반환합니다. 가져온 항목은 자동으로 저장됩니다.
+    query 파라미터로 조회 조건을 지정하세요:
+      - "is:unread"  : 읽지 않은 메일만 (기본값)
+      - "is:read"    : 읽은 메일만
+      - ""           : 읽은 + 읽지 않은 전체
+    사용자가 읽은 메일을 요청하면 query="is:read", 전체 메일이면 query="" 로 호출하세요."""
     from backend.tools.storage import save_items
-    items = _fetch_gmail(max_results)
+    try:
+        items = _fetch_gmail(max_results, query=query)
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
     items_dict = [i.model_dump(mode="json") if hasattr(i, "model_dump") else i for i in items]
     save_items(items_dict)
     return json.dumps(items_dict, ensure_ascii=False, default=str)
@@ -154,7 +162,11 @@ def fetch_gmail(max_results: int = 20) -> str:
 @tool
 def fetch_calendar(days: int = 7) -> str:
     """Google Calendar 일정을 가져와 WorkItem 목록으로 반환합니다. days: 조회할 일수(기본 7일)."""
-    return json.dumps(_fetch_calendar(days), ensure_ascii=False, default=str)
+    from backend.tools.storage import save_items
+    items = _fetch_calendar(days)
+    items_dict = [i.model_dump(mode="json") if hasattr(i, "model_dump") else i for i in items]
+    save_items(items_dict)
+    return json.dumps(items_dict, ensure_ascii=False, default=str)
 
 
 @tool
@@ -175,6 +187,23 @@ def process_expense_report(receipt_text: str) -> str:
 def spell_check(text: str) -> str:
     """주어진 한국어 텍스트의 맞춤법, 띄어쓰기, 어색한 문맥을 교정합니다. text: 교정할 원본 텍스트."""
     return json.dumps(_check_spelling(text), ensure_ascii=False, default=str)
+
+
+@tool
+def read_work_items(source: str = "", limit: int = 20, status: str = "", query: str = "") -> str:
+    """로컬 DB에서 업무 항목을 조회합니다. 외부 API 호출 없이 즉시 반환됩니다.
+    source: gmail | slack | jira | notion | calendar | "" (전체 소스)
+    status: pending | done | snoozed | "" (전체 상태)
+    limit: 최대 조회 수 (기본 20)
+    query: 제목/내용 검색 키워드"""
+    from backend.tools.storage import search_items
+    items = search_items(
+        query=query,
+        status=status or None,
+        source=source or None,
+    )
+    items = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)[:limit]
+    return json.dumps(items, ensure_ascii=False, default=str)
 
 
 LOCAL_TOOLS = [
@@ -198,6 +227,7 @@ LOCAL_TOOLS = [
     compute_kpi,
     fetch_gmail,
     fetch_calendar,
+    read_work_items,
     process_expense_report,
     spell_check,
     list_notion_pages,

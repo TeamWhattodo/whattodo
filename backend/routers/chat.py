@@ -74,18 +74,21 @@ async def chat_stream(req: ChatRequest):
             final_text = ""
 
         # display 메시지 누적 저장 (세션 목록·복원용)
-        existing_display, _ = load_session(req.session_id)
-        new_display = existing_display + [
-            {"role": "user", "content": req.query},
-            {"role": "assistant", "content": final_text},
-        ]
-        # 프로세스 재시작 후 복원용 history도 저장
-        history_msgs = [
-            HumanMessage(content=m["content"]) if m["role"] == "user"
-            else AIMessage(content=m["content"])
-            for m in new_display
-        ]
-        save_session(req.session_id, new_display, history_msgs)
+        try:
+            existing_display, _ = load_session(req.session_id)
+            new_display = existing_display + [
+                {"role": "user", "content": req.query},
+                {"role": "assistant", "content": final_text},
+            ]
+            history_msgs = [
+                HumanMessage(content=m["content"]) if m["role"] == "user"
+                else AIMessage(content=m["content"])
+                for m in new_display
+            ]
+            save_session(req.session_id, new_display, history_msgs)
+        except Exception as e:
+            import logging
+            logging.warning(f"세션 저장 실패 (무시): {e}")
 
         done_payload = {"type": "done", "text": final_text}
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
@@ -130,3 +133,27 @@ def get_integrations():
         "jira":  bool(settings.jira_api_token),
         "gmail": bool(settings.gmail_client_id),
     }
+
+
+@router.get("/policy/status")
+def get_policy_status():
+    from backend.db.store import policy_ingest_status
+    return policy_ingest_status
+
+
+@router.get("/sync/status")
+def get_sync_status():
+    from sqlalchemy import text
+    from backend.db.store import get_session
+    with get_session() as db:
+        rows = db.execute(text("SELECT source, last_synced_at, status, items_count, error_message FROM sync_log")).fetchall()
+    return [
+        {
+            "source":         r[0],
+            "last_synced_at": r[1].isoformat() if r[1] else None,
+            "status":         r[2],
+            "items_count":    r[3],
+            "error_message":  r[4],
+        }
+        for r in rows
+    ]

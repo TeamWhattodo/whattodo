@@ -16,16 +16,94 @@ def _wrap(agent: str, status: str, content: str, **extra) -> str:
     )
 
 
+_SOURCE_LABEL = {
+    "gmail": "Gmail", "slack": "Slack", "jira": "Jira",
+    "notion": "Notion", "calendar": "Calendar",
+}
+
+
+def _clean_name(raw: str) -> str:
+    """'"이름" <email>' → '이름' 또는 'email' 앞부분만 추출."""
+    if not raw:
+        return ""
+    import re
+    m = re.match(r'^"?([^"<]+)"?\s*<', raw)
+    if m:
+        return m.group(1).strip()
+    m = re.match(r'^([^@<\s]+)', raw)
+    return m.group(1).strip() if m else raw.strip()
+
+
+def _clean_summary(raw: str) -> str:
+    """'[메일] 제목 (from ...)' → '제목'만 추출."""
+    import re
+    s = re.sub(r"^\[.*?\]\s*", "", raw)   # 앞의 [메일] 태그 제거
+    s = re.sub(r"\s*\(from .*\)$", "", s) # 끝의 (from ...) 제거
+    return s.strip()[:80]
+
+
+def _format_briefing(items: list[dict]) -> str:
+    urgent    = [i for i in items if (i.get("urgency_level") or 1) >= 4]
+    important = [i for i in items if (i.get("urgency_level") or 1) == 3]
+    normal    = [i for i in items if (i.get("urgency_level") or 1) <= 2]
+
+    def row(item: dict) -> str:
+        src    = _SOURCE_LABEL.get(item.get("source", ""), item.get("source", ""))
+        title  = _clean_summary(item.get("summary") or "")
+        person = _clean_name(item.get("from_person") or "")
+        date   = str(item.get("created_at") or "")[:10]
+        return f"- [{src}] {person} | {title} | {date}"
+
+    lines = ["## 📋 업무 브리핑\n"]
+    for emoji, label, group in [
+        ("🔴", "긴급", urgent),
+        ("🟡", "중요", important),
+        ("🟢", "일반", normal),
+    ]:
+        if not group:
+            continue
+        lines.append(f"### {emoji} {label} ({len(group)}건)")
+        lines.extend(row(i) for i in group[:10])
+        if len(group) > 10:
+            lines.append(f"  외 {len(group) - 10}건")
+        lines.append("")
+
+    total = len(items)
+    lines.append(f"---\n총 {total}건 | 긴급 {len(urgent)}건 · 중요 {len(important)}건 · 일반 {len(normal)}건")
+    return "\n".join(lines)
+
+
 @tool
 def fetch_agent(request: str) -> str:
-    """Gmail·Calendar·Slack·Jira·Notion에서 업무 데이터를 수집합니다.
-    브리핑·복귀 정리·소스별 현황 파악 시 사용. 수집 결과의 content를 report_agent에 context로 전달하세요."""
-    from backend.agents.subagents.fetch_agent import run
+    """로컬 DB에서 업무 항목을 조회하고 마크다운 브리핑으로 변환합니다.
+    브리핑·복귀 정리·소스별 현황 파악 시 사용."""
+    from backend.agents.subagents.fetch_agent import run as fetch_run
+
     try:
-        text, _ = _run(run(request))
-        return _wrap("fetch", "success", text)
+        raw, _ = _run(fetch_run(request))
+        if not raw or raw.strip() in ("", "[]"):
+            return _wrap("fetch", "success", "조회된 항목이 없습니다. 백그라운드 워커가 데이터를 수집 중일 수 있습니다.")
+
+        items = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(items, list):
+            items = []
+
+        return _wrap("fetch", "success", _format_briefing(items))
     except Exception as e:
         return _wrap("fetch", "error", f"수집 실패: {e}")
+
+
+@tool
+def briefing_agent(context: str, request: str = "") -> str:
+    """fetch_agent가 조회한 데이터를 받아 긴급도(🔴🟡🟢) 기준 마크다운 브리핑으로 변환합니다.
+    context: fetch_agent 결과의 content
+    request: 원래 사용자 요청 (포맷 힌트용)"""
+    from backend.agents.subagents.briefing_agent import run
+    try:
+        text, _ = _run(run(context, request))
+        return _wrap("briefing", "success", text)
+    except Exception as e:
+        return _wrap("briefing", "error", f"브리핑 생성 실패: {e}")
 
 
 @tool
@@ -110,4 +188,4 @@ def action_agent(request: str) -> str:
                      action_type=_detect_action_type(request))
 
 
-SUPERVISOR_TOOLS = [fetch_agent, report_agent, search_agent, action_agent]
+SUPERVISOR_TOOLS = [fetch_agent, briefing_agent, report_agent, search_agent, action_agent]

@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+.git
+.claude
+node_modules
+frontend/node_modules
+frontend/dist
+eval/results
+outputs
+data/sessions
+*.log
