@@ -57,6 +57,11 @@ async def _run_async(user_input: str) -> str:
         config={"recursion_limit": 20},
     )
     messages = result["messages"]
+    # read_work_items 툴 결과(JSON)를 직접 반환
+    for msg in reversed(messages):
+        if hasattr(msg, "name") and msg.name == "read_work_items":
+            return msg.content if isinstance(msg.content, str) else ""
+    # 툴 호출이 없었으면 마지막 AIMessage 반환
     return messages[-1].content if messages else ""
 
 
