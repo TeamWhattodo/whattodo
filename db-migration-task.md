@@ -83,10 +83,10 @@
 
 ## Phase 7. Vector DB 마이그레이션 (ChromaDB → pgvector)
 
-- [ ] **7-1.** `backend/scripts/ingest_policy.py` — `PGVector.from_documents()`로 교체
-- [ ] **7-2.** `backend/tools/policy_search.py` — `PGVector` 백엔드로 교체
-- [ ] **7-3.** PDF 재인게스션 실행
-- [ ] **7-4.** 동작 확인 (S3 시나리오: "출장비 식대 한도")
+- [o] **7-1.** `backend/scripts/ingest_policy.py` — pgvector 직접 저장으로 교체
+- [o] **7-2.** `backend/tools/policy_search.py` — pgvector cosine 검색으로 교체
+- [o] **7-3.** PDF 재인게스션 실행 (KORA_규정집.pdf, 2040청크 완료)
+- [o] **7-4.** 서버 시작 시 자동 인게스션 + 완료 마커(.ingested.json) 최적화
 
 ---
 
