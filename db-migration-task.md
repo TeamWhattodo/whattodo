@@ -57,18 +57,18 @@
 
 ## Phase 5. 백그라운드 워커 (APScheduler)
 
-- [ ] **5-1.** `apscheduler` 의존성 추가
-- [ ] **5-2.** `backend/workers/` 디렉토리 생성
-- [ ] **5-3.** 소스별 싱크 워커 구현
+- [o] **5-1.** `apscheduler` 의존성 추가
+- [o] **5-2.** `backend/workers/` 디렉토리 생성
+- [o] **5-3.** 소스별 싱크 워커 구현
   - `sync_gmail.py` — 5분 주기
   - `sync_slack.py` — 2분 주기
   - `sync_jira.py` — 10분 주기
   - `sync_notion.py` — 15분 주기
   - `sync_calendar.py` — 5분 주기
-- [ ] **5-4.** `score_urgency` 로직 구현 (수집 후 자동 실행, LLM 없는 규칙 기반)
-- [ ] **5-5.** `backend/main.py` lifespan에 APScheduler 연동
-- [ ] **5-6.** `sync_log` 기록 + 실패 시 재시도 로직
-- [ ] **5-7.** `/api/sync/status` 엔드포인트 추가
+- [-] **5-4.** `score_urgency` 로직 구현 — 미구현 (제외)
+- [o] **5-5.** `backend/main.py` lifespan에 APScheduler 연동 (서버 시작 시 즉시 실행)
+- [o] **5-6.** `sync_log` 기록 + 실패 시 재시도 로직
+- [o] **5-7.** `/api/sync/status` 엔드포인트 추가
 
 ---
 
