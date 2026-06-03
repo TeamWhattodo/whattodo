@@ -119,17 +119,30 @@ npm run dev
 TheAgentCompany 방법론 기반 에이전트 평가 스크립트입니다.
 
 ```bash
-# 전체 시나리오 실행 (12개)
+# ── 모델 비교 (권장) ──────────────────────────────────────────
+# 기본 모델(gpt-4o, gpt-4o-mini, claude-sonnet-4-6) 비교: 정리 → 평가 → 차트 한방에
+uv run python -m eval.compare
+
+# 모델당 5회 실행 후 평균 (신뢰도 높은 비교)
+uv run python -m eval.compare --runs 5
+
+# 모델 직접 지정
+uv run python -m eval.compare gpt-4o gpt-4o-mini claude-sonnet-4-6
+
+# 이전 결과 유지하면서 추가 실행
+uv run python -m eval.compare gpt-4o --no-clean
+
+# ── 개별 실행 ─────────────────────────────────────────────────
+# 전체 시나리오 실행
 uv run python -m eval.run_eval
 
 # 특정 시나리오만 실행
 uv run python -m eval.run_eval S1 S3 S6
 
 # 모델 지정 실행
-uv run python -m eval.run_eval --model gpt-4o
 uv run python -m eval.run_eval --model gpt-4o-mini
 
-# 결과 비교 그래프 생성
+# 비교 차트 생성 (eval/results/ 전체 자동 비교)
 uv run python -m eval.visualize
 ```
 
@@ -152,3 +165,4 @@ uv run python -m eval.visualize
 |---|---|
 | [docs/PLANNING.md](docs/PLANNING.md) | 서비스 기획, 기능 명세, 사용자 시나리오, 로드맵 |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | AI 에이전트 파이프라인 상세 흐름 |
+| [docs/SPEC.md](docs/SPEC.md) | 기술 스택, API 목록, 디렉토리 구조, 전체 환경 변수 |

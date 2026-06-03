@@ -27,6 +27,62 @@ def collect_results(paths: list[Path]) -> list[dict]:
     return results
 
 
+def average_by_model(results: list[dict]) -> list[dict]:
+    """같은 모델의 결과가 여러 개면 평균 내서 하나로 합친다."""
+    from collections import defaultdict
+    groups: dict = defaultdict(list)
+    for r in results:
+        groups[r.get("model", "unknown")].append(r)
+
+    averaged = []
+    for model, runs in groups.items():
+        if len(runs) == 1:
+            averaged.append(runs[0])
+            continue
+
+        # summary 평균
+        sr = sum(r["summary"]["success_rate"] for r in runs) / len(runs)
+        ps = sum(r["summary"]["avg_partial_score"] for r in runs) / len(runs)
+        fc = sum(r["summary"]["full_completions"] for r in runs) / len(runs)
+
+        # 카테고리별 평균
+        cats: dict = defaultdict(list)
+        for r in runs:
+            for cat, sc in r["summary"].get("category_scores", {}).items():
+                cats[cat].append(sc)
+        cat_avg = {cat: round(sum(v) / len(v), 3) for cat, v in cats.items()}
+
+        # 시나리오별 평균
+        sid_scores: dict = defaultdict(list)
+        sid_meta: dict = {}
+        for r in runs:
+            for res in r.get("results", []):
+                if "error" not in res:
+                    sid_scores[res["scenario_id"]].append(res["partial_score"])
+                    sid_meta[res["scenario_id"]] = {k: v for k, v in res.items() if k != "partial_score"}
+
+        avg_results = []
+        for sid, scores in sid_scores.items():
+            entry = {**sid_meta.get(sid, {}), "scenario_id": sid,
+                     "partial_score": round(sum(scores) / len(scores), 3)}
+            avg_results.append(entry)
+
+        averaged.append({
+            "model": model,
+            "runs": len(runs),
+            "summary": {
+                "success_rate": round(sr, 1),
+                "avg_partial_score": round(ps, 3),
+                "full_completions": round(fc, 2),
+                "category_scores": cat_avg,
+            },
+            "results": avg_results,
+        })
+        print(f"  {model}: {len(runs)}회 실행 평균 처리")
+
+    return averaged
+
+
 def plot_comparison(results: list[dict]) -> None:
     import matplotlib.pyplot as plt
     import matplotlib
@@ -150,5 +206,7 @@ if __name__ == "__main__":
         print("로드된 결과가 없습니다.")
         sys.exit(1)
 
-    print(f"\n비교 모델: {[r.get('model', 'unknown') for r in results]}")
+    print(f"\n로드된 결과: {len(results)}개")
+    results = average_by_model(results)
+    print(f"비교 모델: {[r.get('model', 'unknown') for r in results]}")
     plot_comparison(results)
