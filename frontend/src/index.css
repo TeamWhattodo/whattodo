@@ -272,6 +272,29 @@ body {
 .btn-send:hover { background: #1450A3; }
 .btn-send:disabled { background: #AAA; cursor: not-allowed; }
 
+/* ── 정책 임베딩 배너 ── */
+.policy-banner {
+  padding: 8px 24px;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid transparent;
+}
+.policy-banner--running {
+  background: #FFF8E1;
+  color: #B7791F;
+  border-color: #FCEFC7;
+}
+.policy-banner--done {
+  background: #F0FFF4;
+  color: #276749;
+  border-color: #C6F6D5;
+}
+.policy-banner--error {
+  background: #FFF5F5;
+  color: #C53030;
+  border-color: #FED7D7;
+}
+
 /* ── 스크롤바 ── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

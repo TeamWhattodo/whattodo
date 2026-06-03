@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./index.css";
 
-const API = "http://localhost:8000/api";
+const API = import.meta.env.VITE_API_URL ?? "/api";
 
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: null },
@@ -12,28 +12,7 @@ const MENUS = [
   { id: "expense",   icon: "🧾", label: "정산 리포트",  query: "정산 현황 알려줘" },
 ];
 
-function urgencyDot(level) {
-  if (level >= 4) return "urgent";
-  if (level >= 3) return "high";
-  return "normal";
-}
 
-function parseTaskCards(text) {
-  const lines = text.split("\n").filter(l => l.trim());
-  const tasks = [];
-  for (const line of lines) {
-    const slackMatch = line.match(/Slack/i);
-    const jiraMatch  = line.match(/Jira|PROJ/i);
-    const source = slackMatch ? "Slack" : jiraMatch ? "Jira" : "기타";
-    const urgentWord = /긴급|초과|마감|즉시|urgent/i.test(line);
-    const highWord   = /승인|검토|대기|pending/i.test(line);
-    const level = urgentWord ? 5 : highWord ? 3 : 2;
-    if (/^[-•*\d]/.test(line.trim()) && line.trim().length > 4) {
-      tasks.push({ title: line.replace(/^[-•*\d.\s]+/, "").trim(), source, level });
-    }
-  }
-  return tasks.slice(0, 6);
-}
 
 export default function App() {
   const [sessionId] = useState(() => {
@@ -50,6 +29,7 @@ export default function App() {
   const [toolLogs, setToolLogs]           = useState([]);
   const [integrations, setIntegrations]   = useState({ slack: false, jira: false });
   const [briefingBadge, setBriefingBadge] = useState(3);
+  const [policyStatus, setPolicyStatus]   = useState(null);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -60,6 +40,20 @@ export default function App() {
     axios.get(`${API}/integrations`).then(res => {
       setIntegrations(res.data);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let timer;
+    const poll = () => {
+      axios.get(`${API}/policy/status`).then(res => {
+        setPolicyStatus(res.data);
+        if (res.data.status === "running" || res.data.status === "idle") {
+          timer = setTimeout(poll, 10000);
+        }
+      }).catch(() => {});
+    };
+    poll();
+    return () => clearTimeout(timer);
   }, []);
 
   const handleMenuClick = (menu) => {
@@ -75,42 +69,58 @@ export default function App() {
     setMessages(prev => [...prev, { role: "user", content: query }]);
     setInput("");
 
-    const res = await fetch(`${API}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
-    });
+    try {
+      const res = await fetch(`${API}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
+      });
 
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder();
-    let responseText = "";
-    let newHistory   = chatHistory;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      for (const line of chunk.split("\n")) {
-        if (!line.startsWith("data: ")) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-          if (event.type === "tool_call") {
-            setToolLogs(prev => [...prev, `🔧 ${event.tool} 호출 중...`]);
-          } else if (event.type === "tool_result") {
-            setToolLogs(prev => [...prev, `✅ ${event.tool} 완료`]);
-          } else if (event.type === "done") {
-            responseText = event.text;
-            newHistory   = event.history;
-          }
-        } catch {}
+      if (!res.ok) {
+        throw new Error(`API 오류: ${res.status}`);
       }
-    }
 
-    setChatHistory(newHistory);
-    setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
-    setToolLogs([]);
-    setLoading(false);
-    if (activeMenu === "briefing") setBriefingBadge(0);
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let responseText = "처리 중 오류가 발생했습니다.";
+      let newHistory   = chatHistory;
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // 마지막 불완전한 줄은 버퍼에 남겨둠
+
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "tool_call") {
+              setToolLogs(prev => [...prev, `🔧 ${event.tool} 호출 중...`]);
+            } else if (event.type === "tool_result") {
+              setToolLogs(prev => [...prev, `✅ ${event.tool} 완료`]);
+            } else if (event.type === "done") {
+              responseText = event.text;
+              newHistory   = event.history;
+            }
+          } catch (e) {
+            console.error("SSE JSON 파싱 오류:", e, "Line:", line);
+          }
+        }
+      }
+
+      setChatHistory(newHistory);
+      setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
+      if (activeMenu === "briefing") setBriefingBadge(0);
+    } catch (error) {
+      console.error("채팅 요청 실패:", error);
+      setMessages(prev => [...prev, { role: "assistant", content: "네트워크 오류 또는 서버 오류가 발생했습니다." }]);
+    } finally {
+      setToolLogs([]);
+      setLoading(false);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -144,7 +154,9 @@ export default function App() {
         <div className="sidebar-integration">
           <span>✉️</span>
           <span>Gmail</span>
-          <span className="int-status disconnected">미연결</span>
+          <span className={`int-status ${integrations.gmail ? "" : "disconnected"}`}>
+            {integrations.gmail ? "연결됨" : "미연결"}
+          </span>
         </div>
         <div className="sidebar-integration">
           <span>#</span>
@@ -169,26 +181,33 @@ export default function App() {
           <span className="main-header-pill">✅ 준비 완료</span>
         </div>
 
+        {policyStatus?.status === "running" && (
+          <div className="policy-banner policy-banner--running">
+            ⏳ 사내 규정 문서 임베딩 중...
+            {policyStatus.files?.length > 0 && (
+              <span> ({policyStatus.done_files?.length ?? 0}/{policyStatus.files.length} 완료)</span>
+            )}
+          </div>
+        )}
+        {policyStatus?.status === "done" && policyStatus.done_files?.length > 0 && (
+          <div className="policy-banner policy-banner--done">
+            ✅ 사내 규정 문서 임베딩 완료
+          </div>
+        )}
+        {policyStatus?.status === "error" && (
+          <div className="policy-banner policy-banner--error">
+            ❌ 임베딩 실패: {policyStatus.error}
+          </div>
+        )}
+
         <div className="chat-area">
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
-            const tasks  = !isUser ? parseTaskCards(msg.content) : [];
             return (
               <div key={i} className={`msg-row ${isUser ? "user" : ""}`}>
                 <div className="msg-avatar">{isUser ? "나" : "W"}</div>
                 <div>
                   <div className="msg-bubble">{msg.content}</div>
-                  {tasks.length > 0 && (
-                    <div className="task-card">
-                      {tasks.map((t, j) => (
-                        <div key={j} className="task-card-item">
-                          <span className={`task-dot ${urgencyDot(t.level)}`} />
-                          <span className="task-title">{t.title}</span>
-                          <span className="task-source">{t.source}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             );

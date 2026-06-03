@@ -7,7 +7,10 @@ requires-python = ">=3.11"
 dependencies = [
     "anthropic",
     "streamlit",
-    "tinydb",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "pgvector",
+    "langchain-postgres",
     "pydantic",
     "pydantic-settings",
     "httpx",
@@ -19,7 +22,6 @@ dependencies = [
     "langchain-anthropic",
     "langchain-openai",
     "langchain-community",
-    "chromadb",
     "pypdf",
     "pymupdf",
     "openai>=2.37.0",
@@ -33,6 +35,9 @@ dependencies = [
     "notion-client>=2.2.1",
     "matplotlib>=3.10.9",
     "fastapi>=0.136.3",
+    "apscheduler>=3.10.0",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "psycopg[binary]>=3.0.0",
 ]
 
 [build-system]

@@ -1,0 +1,46 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: whattodo-db
+    environment:
+      POSTGRES_USER: whattodo
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: whattodo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whattodo -d whattodo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: whattodo-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://whattodo:secret@db:5432/whattodo
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./outputs:/app/outputs
+      - ./docs/policy:/app/docs/policy
+
+  frontend:
+    build: ./frontend
+    container_name: whattodo-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
