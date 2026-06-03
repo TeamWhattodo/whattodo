@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./index.css";
 
-const API = "http://127.0.0.1:8000/api";
+const API = import.meta.env.VITE_API_URL ?? "/api";
 
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: null },
