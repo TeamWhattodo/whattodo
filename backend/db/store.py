@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.config import settings
@@ -18,6 +18,17 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    _seed_sync_log()
+
+
+def _seed_sync_log() -> None:
+    sources = ["gmail", "slack", "jira", "notion", "calendar"]
+    with engine.begin() as conn:
+        for src in sources:
+            conn.execute(
+                text("INSERT INTO sync_log (source, status) VALUES (:s, 'idle') ON CONFLICT (source) DO NOTHING"),
+                {"s": src},
+            )
 
 
 @contextmanager
