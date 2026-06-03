@@ -16,30 +16,60 @@ def _wrap(agent: str, status: str, content: str, **extra) -> str:
     )
 
 
+_SOURCE_LABEL = {
+    "gmail": "Gmail", "slack": "Slack", "jira": "Jira",
+    "notion": "Notion", "calendar": "Calendar",
+}
+
+
+def _format_briefing(items: list[dict]) -> str:
+    urgent    = [i for i in items if (i.get("urgency_level") or 1) >= 4]
+    important = [i for i in items if (i.get("urgency_level") or 1) == 3]
+    normal    = [i for i in items if (i.get("urgency_level") or 1) <= 2]
+
+    def row(item: dict) -> str:
+        src     = _SOURCE_LABEL.get(item.get("source", ""), item.get("source", ""))
+        summary = (item.get("summary") or "")[:80]
+        person  = item.get("from_person") or ""
+        date    = str(item.get("created_at") or "")[:10]
+        return f"- [{src}] {person} | {summary} | {date}"
+
+    lines = ["## 📋 업무 브리핑\n"]
+    for emoji, label, group in [
+        ("🔴", "긴급", urgent),
+        ("🟡", "중요", important),
+        ("🟢", "일반", normal),
+    ]:
+        if not group:
+            continue
+        lines.append(f"### {emoji} {label} ({len(group)}건)")
+        lines.extend(row(i) for i in group[:10])
+        if len(group) > 10:
+            lines.append(f"  외 {len(group) - 10}건")
+        lines.append("")
+
+    total = len(items)
+    lines.append(f"---\n총 {total}건 | 긴급 {len(urgent)}건 · 중요 {len(important)}건 · 일반 {len(normal)}건")
+    return "\n".join(lines)
+
+
 @tool
 def fetch_agent(request: str) -> str:
     """로컬 DB에서 업무 항목을 조회하고 마크다운 브리핑으로 변환합니다.
     브리핑·복귀 정리·소스별 현황 파악 시 사용."""
     from backend.agents.subagents.fetch_agent import run as fetch_run
-    from backend.agents.llm_client import get_llm
-    from langchain_core.messages import SystemMessage, HumanMessage
 
     try:
         raw, _ = _run(fetch_run(request))
         if not raw or raw.strip() in ("", "[]"):
             return _wrap("fetch", "success", "조회된 항목이 없습니다. 백그라운드 워커가 데이터를 수집 중일 수 있습니다.")
 
-        llm = get_llm("fast")
-        system = """수집된 WorkItem JSON을 받아 긴급도(urgency_level) 기준으로 마크다운 브리핑을 작성하세요.
-🔴 긴급(4~5) / 🟡 중요(3) / 🟢 일반(1~2) 섹션으로 분류.
-각 항목: - [소스] 발신자 | 요약 | 날짜
-urgency_level 없으면 🟢 일반으로 분류. 빈 섹션은 생략. 실제 데이터만 출력."""
+        items = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(items, list):
+            items = []
 
-        response = llm.invoke([
-            SystemMessage(content=system),
-            HumanMessage(content=f"요청: {request}\n\n데이터:\n{raw[:6000]}"),
-        ])
-        return _wrap("fetch", "success", response.content)
+        briefing = _format_briefing(items)
+        return _wrap("fetch", "success", briefing)
     except Exception as e:
         return _wrap("fetch", "error", f"수집 실패: {e}")
 

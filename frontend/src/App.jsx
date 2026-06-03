@@ -12,29 +12,7 @@ const MENUS = [
   { id: "expense",   icon: "🧾", label: "정산 리포트",  query: "정산 현황 알려줘" },
 ];
 
-function urgencyDot(level) {
-  if (level >= 4) return "urgent";
-  if (level >= 3) return "high";
-  return "normal";
-}
 
-function parseTaskCards(text) {
-  if (!text) return [];
-  const lines = text.split("\n").filter(l => l.trim());
-  const tasks = [];
-  for (const line of lines) {
-    const slackMatch = line.match(/Slack/i);
-    const jiraMatch  = line.match(/Jira|PROJ/i);
-    const source = slackMatch ? "Slack" : jiraMatch ? "Jira" : "기타";
-    const urgentWord = /긴급|초과|마감|즉시|urgent/i.test(line);
-    const highWord   = /승인|검토|대기|pending/i.test(line);
-    const level = urgentWord ? 5 : highWord ? 3 : 2;
-    if (/^[-•*\d]/.test(line.trim()) && line.trim().length > 4) {
-      tasks.push({ title: line.replace(/^[-•*\d.\s]+/, "").trim(), source, level });
-    }
-  }
-  return tasks.slice(0, 6);
-}
 
 export default function App() {
   const [sessionId] = useState(() => {
@@ -191,23 +169,11 @@ export default function App() {
         <div className="chat-area">
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
-            const tasks  = !isUser ? parseTaskCards(msg.content) : [];
             return (
               <div key={i} className={`msg-row ${isUser ? "user" : ""}`}>
                 <div className="msg-avatar">{isUser ? "나" : "W"}</div>
                 <div>
                   <div className="msg-bubble">{msg.content}</div>
-                  {tasks.length > 0 && (
-                    <div className="task-card">
-                      {tasks.map((t, j) => (
-                        <div key={j} className="task-card-item">
-                          <span className={`task-dot ${urgencyDot(t.level)}`} />
-                          <span className="task-title">{t.title}</span>
-                          <span className="task-source">{t.source}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             );
