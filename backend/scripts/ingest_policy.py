@@ -58,22 +58,34 @@ def ingest(file_path: str) -> int:
             })
 
     print(f"  부모 청크: {len(parent_docs)}개 / 자식 청크: {len(chunks)}개")
-    print(f"  임베딩 생성 중 ({EMBEDDING_MODEL})...")
 
+    # 이미 저장된 청크 ID 조회 → 누락된 것만 임베딩
+    for chunk in chunks:
+        chunk["id"] = hashlib.md5(
+            f"{chunk['source']}_{chunk['content'][:50]}".encode()
+        ).hexdigest()
+
+    init_db()
+    with get_session() as db:
+        from sqlalchemy import text as sqlt
+        rows = db.execute(sqlt("SELECT id FROM policy_embeddings")).fetchall()
+    existing_ids = {r[0] for r in rows}
+
+    new_chunks = [c for c in chunks if c["id"] not in existing_ids]
+    if not new_chunks:
+        print(f"  이미 모두 저장됨, 스킵")
+        return len(chunks)
+
+    print(f"  누락 청크: {len(new_chunks)}개 임베딩 생성 중 ({EMBEDDING_MODEL})...")
     embeddings_model = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=settings.openai_api_key)
-    texts = [c["content"] for c in chunks]
+    texts = [c["content"] for c in new_chunks]
     vectors = embeddings_model.embed_documents(texts)
 
     print(f"  PostgreSQL 저장 중...")
-    init_db()
-
     with get_session() as db:
-        for chunk, vector in zip(chunks, vectors):
-            chunk_id = hashlib.md5(
-                f"{chunk['source']}_{chunk['content'][:50]}".encode()
-            ).hexdigest()
+        for chunk, vector in zip(new_chunks, vectors):
             stmt = pg_insert(PolicyEmbeddingORM).values(
-                id          = chunk_id,
+                id          = chunk["id"],
                 content     = chunk["content"],
                 parent_text = chunk["parent_text"],
                 metadata_   = {"source": chunk["source"], "parent_id": chunk["parent_id"]},

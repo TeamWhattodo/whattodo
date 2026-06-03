@@ -75,22 +75,11 @@ def _auto_ingest_policies() -> None:
     except Exception:
         return
 
-    with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT DISTINCT metadata->>'source' FROM policy_embeddings"
-        )).fetchall()
-    already_ingested = {r[0] for r in rows if r[0]}
-
-    new_pdfs = [p for p in pdfs if p.name not in already_ingested]
-    if not new_pdfs:
-        policy_ingest_status["status"] = "done"
-        return
-
     policy_ingest_status["status"] = "running"
-    policy_ingest_status["files"] = [p.name for p in new_pdfs]
+    policy_ingest_status["files"] = [p.name for p in pdfs]
     policy_ingest_status["done_files"] = []
 
-    for pdf in new_pdfs:
+    for pdf in pdfs:
         try:
             from backend.scripts.ingest_policy import ingest
             logging.info(f"[policy] 임베딩 시작: {pdf.name}")
