@@ -1,8 +1,10 @@
 from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, func
-from sqlalchemy.dialects.postgresql import TIMESTAMPTZ, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
+
+TZ = lambda: DateTime(timezone=True)  # noqa: E731
 
 
 class WorkItemORM(Base):
@@ -18,12 +20,12 @@ class WorkItemORM(Base):
     action_type       = Column(String(50),  nullable=False, default="none")
     from_person       = Column(String(255), nullable=True)
     due_at            = Column(DateTime,    nullable=True)
-    deadline          = Column(TIMESTAMPTZ, nullable=True)
+    deadline          = Column(DateTime(timezone=True), nullable=True)
     source_id         = Column(String(255), nullable=True)
     contact_count     = Column(Integer,     nullable=False, default=1)
     status            = Column(String(50),  nullable=False, default="pending")
     created_at        = Column(DateTime,    nullable=True)
-    synced_at         = Column(TIMESTAMPTZ, nullable=True,  server_default=func.now())
+    synced_at         = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
     completed_at      = Column(DateTime,    nullable=True)
     actual_minutes    = Column(Integer,     nullable=True)
 
@@ -47,15 +49,15 @@ class SessionORM(Base):
     name             = Column(String(255), nullable=True)
     display_messages = Column(JSONB,       nullable=False, default=list)
     history          = Column(JSONB,       nullable=False, default=list)
-    created_at       = Column(TIMESTAMPTZ, nullable=False, server_default=func.now())
-    updated_at       = Column(TIMESTAMPTZ, nullable=False, server_default=func.now(), onupdate=func.now())
+    created_at       = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
 
 class SyncLogORM(Base):
     __tablename__ = "sync_log"
 
     source         = Column(String(50),  primary_key=True)
-    last_synced_at = Column(TIMESTAMPTZ, nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
     status         = Column(String(20),  nullable=False, default="idle")
     items_count    = Column(Integer,     nullable=False, default=0)
     error_message  = Column(Text,        nullable=True)
@@ -67,4 +69,4 @@ class OAuthTokenORM(Base):
     source        = Column(String(50),  primary_key=True)
     access_token  = Column(Text,        nullable=True)
     refresh_token = Column(Text,        nullable=True)
-    expires_at    = Column(TIMESTAMPTZ, nullable=True)
+    expires_at    = Column(DateTime(timezone=True), nullable=True)
