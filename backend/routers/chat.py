@@ -130,3 +130,21 @@ def get_integrations():
         "jira":  bool(settings.jira_api_token),
         "gmail": bool(settings.gmail_client_id),
     }
+
+
+@router.get("/sync/status")
+def get_sync_status():
+    from sqlalchemy import text
+    from backend.db.store import get_session
+    with get_session() as db:
+        rows = db.execute(text("SELECT source, last_synced_at, status, items_count, error_message FROM sync_log")).fetchall()
+    return [
+        {
+            "source":         r[0],
+            "last_synced_at": r[1].isoformat() if r[1] else None,
+            "status":         r[2],
+            "items_count":    r[3],
+            "error_message":  r[4],
+        }
+        for r in rows
+    ]
