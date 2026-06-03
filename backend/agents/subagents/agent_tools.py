@@ -22,17 +22,37 @@ _SOURCE_LABEL = {
 }
 
 
+def _clean_name(raw: str) -> str:
+    """'"이름" <email>' → '이름' 또는 'email' 앞부분만 추출."""
+    if not raw:
+        return ""
+    import re
+    m = re.match(r'^"?([^"<]+)"?\s*<', raw)
+    if m:
+        return m.group(1).strip()
+    m = re.match(r'^([^@<\s]+)', raw)
+    return m.group(1).strip() if m else raw.strip()
+
+
+def _clean_summary(raw: str) -> str:
+    """'[메일] 제목 (from ...)' → '제목'만 추출."""
+    import re
+    s = re.sub(r"^\[.*?\]\s*", "", raw)   # 앞의 [메일] 태그 제거
+    s = re.sub(r"\s*\(from .*\)$", "", s) # 끝의 (from ...) 제거
+    return s.strip()[:80]
+
+
 def _format_briefing(items: list[dict]) -> str:
     urgent    = [i for i in items if (i.get("urgency_level") or 1) >= 4]
     important = [i for i in items if (i.get("urgency_level") or 1) == 3]
     normal    = [i for i in items if (i.get("urgency_level") or 1) <= 2]
 
     def row(item: dict) -> str:
-        src     = _SOURCE_LABEL.get(item.get("source", ""), item.get("source", ""))
-        summary = (item.get("summary") or "")[:80]
-        person  = item.get("from_person") or ""
-        date    = str(item.get("created_at") or "")[:10]
-        return f"- [{src}] {person} | {summary} | {date}"
+        src    = _SOURCE_LABEL.get(item.get("source", ""), item.get("source", ""))
+        title  = _clean_summary(item.get("summary") or "")
+        person = _clean_name(item.get("from_person") or "")
+        date   = str(item.get("created_at") or "")[:10]
+        return f"- [{src}] {person} | {title} | {date}"
 
     lines = ["## 📋 업무 브리핑\n"]
     for emoji, label, group in [
