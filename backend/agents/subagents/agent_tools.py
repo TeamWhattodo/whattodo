@@ -68,10 +68,9 @@ def fetch_agent(request: str) -> str:
         if not isinstance(items, list):
             items = []
 
-        briefing = _format_briefing(items)
-        return _wrap("fetch", "success", briefing)
+        return _format_briefing(items)
     except Exception as e:
-        return _wrap("fetch", "error", f"수집 실패: {e}")
+        return f"수집 실패: {e}"
 
 
 @tool
