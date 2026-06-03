@@ -20,6 +20,7 @@ def init_db() -> None:
     _enable_vector()
     Base.metadata.create_all(bind=engine)
     _seed_sync_log()
+    _auto_ingest_policies()
 
 
 def _enable_vector() -> None:
@@ -46,6 +47,46 @@ def _seed_sync_log() -> None:
                 text("INSERT INTO sync_log (source, status, items_count) VALUES (:s, 'idle', 0) ON CONFLICT (source) DO NOTHING"),
                 {"s": src},
             )
+
+
+def _auto_ingest_policies() -> None:
+    """docs/policy/ 폴더의 PDF를 자동 임베딩. 이미 등록된 파일은 스킵."""
+    import logging
+    from pathlib import Path
+
+    policy_dir = Path(__file__).parent.parent.parent / "docs" / "policy"
+    if not policy_dir.exists():
+        return
+
+    pdfs = list(policy_dir.glob("*.pdf"))
+    if not pdfs:
+        return
+
+    # policy_embeddings 테이블이 없으면(pgvector 미설치) 스킵
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1 FROM policy_embeddings LIMIT 1"))
+    except Exception:
+        return
+
+    # 이미 등록된 파일명 조회
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT DISTINCT metadata->>'source' FROM policy_embeddings"
+        )).fetchall()
+    already_ingested = {r[0] for r in rows if r[0]}
+
+    for pdf in pdfs:
+        if pdf.name in already_ingested:
+            logging.info(f"[policy] 이미 등록됨, 스킵: {pdf.name}")
+            continue
+        try:
+            from backend.scripts.ingest_policy import ingest
+            logging.info(f"[policy] 임베딩 시작: {pdf.name}")
+            count = ingest(str(pdf))
+            logging.info(f"[policy] 완료: {pdf.name} ({count}청크)")
+        except Exception as e:
+            logging.error(f"[policy] 임베딩 실패: {pdf.name} — {e}")
 
 
 @contextmanager
