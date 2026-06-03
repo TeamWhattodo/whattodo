@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from backend.config import settings
 from backend.db.store import get_session, init_db
@@ -71,13 +72,14 @@ def ingest(file_path: str) -> int:
             chunk_id = hashlib.md5(
                 f"{chunk['source']}_{chunk['content'][:50]}".encode()
             ).hexdigest()
-            db.merge(PolicyEmbeddingORM(
+            stmt = pg_insert(PolicyEmbeddingORM).values(
                 id          = chunk_id,
                 content     = chunk["content"],
                 parent_text = chunk["parent_text"],
                 metadata_   = {"source": chunk["source"], "parent_id": chunk["parent_id"]},
                 embedding   = vector,
-            ))
+            ).on_conflict_do_nothing(index_elements=["id"])
+            db.execute(stmt)
 
     return len(chunks)
 
