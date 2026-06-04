@@ -82,12 +82,24 @@ CREATE TABLE sessions (
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
--- OAuth 토큰 (파일 → DB 이관 예정)
+-- 사용자 계정 (신규)
+CREATE TABLE users (
+    id             SERIAL PRIMARY KEY,
+    username       TEXT UNIQUE NOT NULL,
+    password_hash  TEXT NOT NULL,
+    access_token   TEXT,
+    refresh_token  TEXT,
+    created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- OAuth 토큰 (다중 사용자 및 암호화 지원)
 CREATE TABLE oauth_tokens (
-    source        TEXT PRIMARY KEY,
+    user_id       INTEGER REFERENCES users(id),
+    source        TEXT,
     access_token  TEXT,
     refresh_token TEXT,
-    expires_at    TIMESTAMPTZ
+    expires_at    TIMESTAMPTZ,
+    PRIMARY KEY (user_id, source)
 );
 
 -- 싱크 상태 로그 (신규)
@@ -141,4 +153,21 @@ frontend (nginx:80) ←→ backend (FastAPI:8000) ←→ db (PostgreSQL:5432)
 ```
 apscheduler          # 백그라운드 워커
 langgraph-checkpoint-postgres  # AsyncPostgresSaver
+cryptography         # 토큰 암/복호화 (Fernet)
 ```
+
+---
+
+## 인증 및 보안 플로우 (JWT & OAuth)
+
+1. **앱 자체 로그인 (`/login`)**
+   - 액세스 토큰 및 리프레시 토큰(만료기간 김) 발급.
+   - 발급된 토큰들은 브라우저 `HttpOnly Cookie`에 저장되며, DB `users` 테이블에도 저장되어 세션 관리.
+2. **토큰 갱신 로직 (`/refresh`)**
+   - 액세스 토큰 만료로 인한 401 발생 시, 프론트엔드가 `/refresh` 호출.
+   - 쿠키에 있는 리프레시 토큰을 읽어 DB의 값과 대조 후 새 액세스 토큰 발급.
+   - 리프레시 토큰마저 만료된 경우 재로그인(ID/PW 입력) 화면으로 강제 이동.
+3. **외부 연동 토큰 암호화**
+   - `.env`에 등록된 `OAUTH_ENCRYPTION_KEY`를 이용해 `oauth_tokens` 테이블에 저장 시 양방향 암호화 적용.
+   - 프론트엔드로는 토큰 값이 아닌 연동 여부(`status: connected`) 상태만 전달.
+   - 백엔드 내부 로직 동작 시에만 실시간 복호화하여 사용.

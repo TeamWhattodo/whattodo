@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.db.store import init_db
 from backend.db.database import init_db as auth_init_db
-from backend.routers import chat
+from backend.routers import chat, integrations
 from backend.auth import router as auth_router
 from backend.workers import sync_gmail, sync_slack, sync_calendar, sync_jira, sync_notion
 
@@ -42,3 +42,4 @@ app.add_middleware(
 
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(integrations.router, prefix="/api")

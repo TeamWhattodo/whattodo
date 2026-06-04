@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth import security
-from backend.auth.deps import COOKIE_NAME, get_current_user
+from backend.auth.deps import ACCESS_TOKEN_NAME, REFRESH_TOKEN_NAME, get_current_user
 from backend.auth.models import User
 from backend.auth.schemas import LoginReq, RegisterReq, UserOut
 from backend.config import settings
@@ -20,15 +20,32 @@ def _invalid_credentials() -> HTTPException:
                          detail="아이디 또는 비밀번호가 올바르지 않습니다")
 
 
-def _set_token_cookie(response: Response, user_id: int) -> None:
+async def _set_tokens_and_cookies(response: Response, user: User, db: AsyncSession) -> None:
+    access_token = security.create_access_token(user.id)
+    refresh_token = security.create_refresh_token(user.id)
+    
+    # DB 업데이트
+    user.access_token = access_token
+    user.refresh_token = refresh_token
+    await db.commit()
+
     response.set_cookie(
-        key=COOKIE_NAME,
-        value=security.create_access_token(user_id),
+        key=ACCESS_TOKEN_NAME,
+        value=access_token,
         httponly=True,
         samesite="lax",
         path="/",
         secure=settings.cookie_secure,
         max_age=settings.jwt_expire_days * 24 * 3600,
+    )
+    response.set_cookie(
+        key=REFRESH_TOKEN_NAME,
+        value=refresh_token,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=settings.cookie_secure,
+        max_age=settings.jwt_refresh_expire_days * 24 * 3600,
     )
 
 
@@ -48,7 +65,7 @@ async def register(req: RegisterReq, response: Response,
         await db.rollback()
         raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
     await db.refresh(user)
-    _set_token_cookie(response, user.id)
+    await _set_tokens_and_cookies(response, user, db)
     return user
 
 
@@ -60,13 +77,45 @@ async def login(req: LoginReq, response: Response,
     ).scalar_one_or_none()
     if user is None or not security.verify_password(req.password, user.password_hash):
         raise _invalid_credentials()
-    _set_token_cookie(response, user.id)
+    await _set_tokens_and_cookies(response, user, db)
     return user
 
 
+from fastapi import Request
+
+@router.post("/refresh")
+async def refresh_token(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    refresh_token = request.cookies.get(REFRESH_TOKEN_NAME)
+    if not refresh_token:
+        raise _invalid_credentials()
+    
+    user_id = security.decode_refresh_token(refresh_token)
+    if user_id is None:
+        raise _invalid_credentials()
+        
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None or user.refresh_token != refresh_token:
+        raise _invalid_credentials()
+        
+    await _set_tokens_and_cookies(response, user, db)
+    return {"ok": True}
+
+
 @router.post("/logout")
-async def logout(response: Response) -> dict:
-    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True,
+async def logout(response: Response, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    refresh_token = request.cookies.get(REFRESH_TOKEN_NAME)
+    if refresh_token:
+        user_id = security.decode_refresh_token(refresh_token)
+        if user_id:
+            user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+            if user:
+                user.access_token = None
+                user.refresh_token = None
+                await db.commit()
+
+    response.delete_cookie(key=ACCESS_TOKEN_NAME, path="/", httponly=True,
+                           samesite="lax", secure=settings.cookie_secure)
+    response.delete_cookie(key=REFRESH_TOKEN_NAME, path="/", httponly=True,
                            samesite="lax", secure=settings.cookie_secure)
     return {"ok": True}
 
