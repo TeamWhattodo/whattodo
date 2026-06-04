@@ -37,6 +37,7 @@ export default function App() {
   const [attachedFile, setAttachedFile]       = useState(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -123,6 +124,7 @@ export default function App() {
     const displayContent = attachedFile ? `📎 ${attachedFile.name}\n${query}` : query;
     setMessages(prev => [...prev, { role: "user", content: displayContent }]);
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "44px";
 
     let filePayload = {};
     if (attachedFile) {
@@ -232,8 +234,10 @@ export default function App() {
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 300) + "px";
+    e.target.style.height = "44px";
+    if (e.target.scrollHeight > 44) {
+      e.target.style.height = Math.min(e.target.scrollHeight, 300) + "px";
+    }
   };
 
   const currentMenu = MENUS.find(m => m.id === activeMenu);
@@ -387,6 +391,7 @@ export default function App() {
               📎
             </button>
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
