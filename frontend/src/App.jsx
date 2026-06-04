@@ -232,8 +232,10 @@ export default function App() {
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 300) + "px";
+    e.target.style.height = "44px";
+    if (e.target.scrollHeight > 44) {
+      e.target.style.height = Math.min(e.target.scrollHeight, 300) + "px";
+    }
   };
 
   const currentMenu = MENUS.find(m => m.id === activeMenu);
