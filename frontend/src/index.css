@@ -179,8 +179,12 @@ body {
 }
 .msg-row.user .msg-avatar { background: #E2E8F0; color: #555; }
 
+.msg-row > div:not(.msg-avatar) {
+  max-width: 75%;
+}
+
 .msg-bubble {
-  max-width: 90%;
+  max-width: 100%;
   min-width: fit-content;
   background: #FFFFFF;
   border: 1px solid #EBEBEB;
