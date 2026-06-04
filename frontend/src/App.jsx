@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "./index.css";
 import LoginModal from "./LoginModal";
 import { useAuth } from "./context/AuthContext";
@@ -127,6 +129,11 @@ export default function App() {
             } else if (event.type === "done") {
               responseText = event.text;
               newHistory   = event.history;
+              if (event.files?.length) {
+                setMessages(prev => [...prev, { role: "assistant", content: responseText, files: event.files }]);
+                setChatHistory(newHistory);
+                return;
+              }
             }
           } catch (e) {
             console.error("SSE JSON 파싱 오류:", e, "Line:", line);
@@ -146,7 +153,7 @@ export default function App() {
     }
   };
 
-  const ALLOWED_EXTS = ["txt", "md", "csv", "json", "pdf"];
+  const ALLOWED_EXTS = ["txt", "md", "csv", "json", "pdf", "jpg", "jpeg", "png", "gif", "webp"];
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -173,7 +180,7 @@ export default function App() {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       sendMessage(input);
     }
@@ -273,7 +280,20 @@ export default function App() {
               <div key={i} className={`msg-row ${isUser ? "user" : ""}`}>
                 <div className="msg-avatar">{isUser ? "나" : "W"}</div>
                 <div>
-                  <div className="msg-bubble">{msg.content}</div>
+                  <div className="msg-bubble">
+                    {isUser ? msg.content : (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    )}
+                  </div>
+                  {msg.files?.length > 0 && (
+                    <div className="msg-files">
+                      {msg.files.map((f, fi) => (
+                        <a key={fi} href={`${API}${f.url.replace("/api","")}`} download={f.name} className="msg-file-btn">
+                          ⬇ {f.name}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -302,6 +322,7 @@ export default function App() {
               type="file"
               ref={fileInputRef}
               style={{ display: "none" }}
+              accept=".txt,.md,.csv,.json,.pdf,.jpg,.jpeg,.png,.gif,.webp"
               onChange={handleFileChange}
             />
             <button

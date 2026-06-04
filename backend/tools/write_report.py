@@ -166,7 +166,7 @@ def write_report(report_type: str, data: dict | list) -> dict:
         items = data.get("items", []) if isinstance(data, dict) else data
         total = sum(i.get("amount", 0) for i in items if isinstance(i.get("amount"), (int, float)))
         os.makedirs(_EXPENSE_OUTPUT_DIR, exist_ok=True)
-        report_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        report_id = f"경비정산서_{datetime.now().strftime('%Y%m%d')}"
         xlsx_path = _write_expense_xlsx(items, total, report_id)
         return {
             "report_type":  "expense_report",
@@ -290,7 +290,7 @@ def _setup_fonts() -> tuple[str, str]:
 def _generate_gov_style_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"gov_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"기안서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2.5*cm, bottomMargin=2*cm)
@@ -343,7 +343,7 @@ def _generate_gov_style_pdf(data: dict, report_type: str) -> str:
 def _generate_daily_report_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"daily_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"일일보고서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
@@ -416,7 +416,7 @@ def _generate_daily_report_pdf(data: dict, report_type: str) -> str:
 def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"weekly_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"주간보고서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
@@ -498,7 +498,7 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
 def _generate_monthly_report_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"monthly_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"월간보고서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
