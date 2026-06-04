@@ -6,13 +6,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.db.store import init_db
+from backend.db.database import init_db as auth_init_db
 from backend.routers import chat
+from backend.auth import router as auth_router
 from backend.workers import sync_gmail, sync_slack, sync_calendar, sync_jira, sync_notion
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    await auth_init_db()
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(sync_gmail,    "interval", minutes=5,  id="sync_gmail",    next_run_time=datetime.now())
@@ -37,4 +40,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")

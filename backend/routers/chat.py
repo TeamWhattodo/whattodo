@@ -1,13 +1,16 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Any
+from typing import List, Any, Optional
 import json
+import base64
 
 from backend.agents.graph import stream_graph_events, get_graph_state
 from backend.agents.sessions import (
     save_session, load_session, list_sessions, delete_session, rename_session,
 )
+from backend.auth.deps import get_current_user
+from backend.auth.models import User
 from langchain_core.messages import HumanMessage, AIMessage
 
 router = APIRouter()
@@ -17,6 +20,29 @@ class ChatRequest(BaseModel):
     query: str
     session_id: str
     chat_history: List[Any] = []
+    file_name: Optional[str] = None
+    file_data: Optional[str] = None  # base64 encoded
+
+
+def _extract_file_text(file_name: str, file_data: str) -> str:
+    raw = base64.b64decode(file_data)
+    ext = file_name.rsplit(".", 1)[-1].lower()
+    if ext == "pdf":
+        import fitz
+        doc = fitz.open(stream=raw, filetype="pdf")
+        return "\n".join(page.get_text() for page in doc)
+    return raw.decode("utf-8", errors="ignore")
+
+
+def _build_query(req: "ChatRequest") -> str:
+    if not req.file_name or not req.file_data:
+        return req.query
+    try:
+        text = _extract_file_text(req.file_name, req.file_data)
+        text = text[:8000]
+        return f"[첨부 파일: {req.file_name}]\n{text}\n\n{req.query}"
+    except Exception as e:
+        return f"[첨부 파일 파싱 실패: {e}]\n\n{req.query}"
 
 
 class SessionRenameRequest(BaseModel):
@@ -47,12 +73,15 @@ def _translate_event(event: dict) -> dict | None:
 
 
 @router.post("/chat")
-async def chat_stream(req: ChatRequest):
+async def chat_stream(req: ChatRequest, user: User = Depends(get_current_user)):
     history = _deserialize_history(req.chat_history)
+    uid = str(user.id)
+    thread_id = f"{uid}:{req.session_id}"
+    effective_query = _build_query(req)
 
     def generate():
         try:
-            for event in stream_graph_events(req.query, req.session_id, history or None):
+            for event in stream_graph_events(effective_query, thread_id, history or None):
                 translated = _translate_event(event)
                 if translated:
                     yield f"data: {json.dumps(translated, ensure_ascii=False)}\n\n"
@@ -60,9 +89,8 @@ async def chat_stream(req: ChatRequest):
             yield f"data: {json.dumps({'type': 'error', 'text': str(e)}, ensure_ascii=False)}\n\n"
             return
 
-        # 그래프 최종 상태에서 AI 응답 텍스트 추출
         try:
-            state = get_graph_state(req.session_id)
+            state = get_graph_state(thread_id)
             msgs = state.values.get("messages", [])
             last_ai = next(
                 (m for m in reversed(msgs)
@@ -73,11 +101,10 @@ async def chat_stream(req: ChatRequest):
         except Exception:
             final_text = ""
 
-        # display 메시지 누적 저장 (세션 목록·복원용)
         try:
-            existing_display, _ = load_session(req.session_id)
+            existing_display, _ = load_session(uid, req.session_id)
             new_display = existing_display + [
-                {"role": "user", "content": req.query},
+                {"role": "user", "content": f"📎 {req.file_name}\n{req.query}" if req.file_name else req.query},
                 {"role": "assistant", "content": final_text},
             ]
             history_msgs = [
@@ -85,7 +112,7 @@ async def chat_stream(req: ChatRequest):
                 else AIMessage(content=m["content"])
                 for m in new_display
             ]
-            save_session(req.session_id, new_display, history_msgs)
+            save_session(uid, req.session_id, new_display, history_msgs)
         except Exception as e:
             import logging
             logging.warning(f"세션 저장 실패 (무시): {e}")
@@ -97,13 +124,13 @@ async def chat_stream(req: ChatRequest):
 
 
 @router.get("/sessions")
-def get_sessions():
-    return list_sessions()
+def get_sessions(user: User = Depends(get_current_user)):
+    return list_sessions(str(user.id))
 
 
 @router.get("/sessions/{session_id}")
-def get_session(session_id: str):
-    display, history = load_session(session_id)
+def get_session(session_id: str, user: User = Depends(get_current_user)):
+    display, history = load_session(str(user.id), session_id)
     history_data = []
     for m in history:
         if isinstance(m, HumanMessage):
@@ -114,14 +141,15 @@ def get_session(session_id: str):
 
 
 @router.patch("/sessions/{session_id}")
-def patch_session(session_id: str, req: SessionRenameRequest):
-    rename_session(session_id, req.name)
+def patch_session(session_id: str, req: SessionRenameRequest,
+                  user: User = Depends(get_current_user)):
+    rename_session(str(user.id), session_id, req.name)
     return {"ok": True}
 
 
 @router.delete("/sessions/{session_id}")
-def del_session(session_id: str):
-    delete_session(session_id)
+def del_session(session_id: str, user: User = Depends(get_current_user)):
+    delete_session(str(user.id), session_id)
     return {"ok": True}
 
 

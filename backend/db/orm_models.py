@@ -46,6 +46,7 @@ class ExpenseReportORM(Base):
 class SessionORM(Base):
     __tablename__ = "sessions"
 
+    user_id          = Column(String(255), primary_key=True, nullable=False)
     session_id       = Column(String(255), primary_key=True)
     name             = Column(String(255), nullable=True)
     display_messages = Column(JSONB,       nullable=False, default=list)

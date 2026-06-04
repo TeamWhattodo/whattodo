@@ -89,6 +89,26 @@ NOTION_API_TOKEN=
 
 전체 환경 변수 목록은 `.env.example`을 참고하세요.
 
+#### 로그인(인증) 설정
+
+앱 레벨 로그인을 위해 PostgreSQL과 아래 환경 변수가 필요합니다.
+
+```bash
+createdb whattodo
+```
+
+`.env`에 추가:
+
+```
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost/whattodo
+JWT_SECRET=<32바이트 이상 랜덤 문자열>
+JWT_EXPIRE_DAYS=7
+COOKIE_SECURE=false   # HTTPS 배포 시 true
+```
+
+> `JWT_SECRET`이 비어 있으면 인증 기능이 런타임에 거부됩니다. `users` 테이블은 백엔드 기동 시 자동 생성됩니다.
+JWT_SECRET 생성: python -c "import secrets; print(secrets.token_hex(32))"
+
 ### 2. 백엔드 실행
 
 ```bash

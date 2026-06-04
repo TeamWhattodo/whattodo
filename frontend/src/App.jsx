@@ -1,20 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./index.css";
+import LoginModal from "./LoginModal";
+import { useAuth } from "./context/AuthContext";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: null },
-  { id: "briefing",  icon: "📋", label: "브리핑",      query: "긴급한 업무 정리해줘" },
-  { id: "schedule",  icon: "📅", label: "일정",         query: "오늘 일정 정리해줘" },
-  { id: "summary",   icon: "📄", label: "문서 요약",    query: "최근 문서 요약해줘" },
-  { id: "expense",   icon: "🧾", label: "정산 리포트",  query: "정산 현황 알려줘" },
 ];
 
-
-
 export default function App() {
+  const { user: authUser, logout } = useAuth();
   const [sessionId] = useState(() => {
     const key = "wt_session_id";
     let id = sessionStorage.getItem(key);
@@ -28,13 +25,24 @@ export default function App() {
   const [loading, setLoading]             = useState(false);
   const [toolLogs, setToolLogs]           = useState([]);
   const [integrations, setIntegrations]   = useState({ slack: false, jira: false });
-  const [briefingBadge, setBriefingBadge] = useState(3);
-  const [policyStatus, setPolicyStatus]   = useState(null);
+  const [briefingBadge, setBriefingBadge]     = useState(3);
+  const [policyStatus, setPolicyStatus]       = useState(null);
+  const [policyBannerDismissed, setPolicyBannerDismissed] = useState(false);
+  const [showLoginModal, setShowLoginModal]   = useState(false);
+  const [attachedFile, setAttachedFile]       = useState(null);
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, toolLogs]);
+
+  useEffect(() => {
+    if (!authUser) {
+      setMessages([]);
+      setChatHistory([]);
+    }
+  }, [authUser]);
 
   useEffect(() => {
     axios.get(`${API}/integrations`).then(res => {
@@ -66,18 +74,33 @@ export default function App() {
     setLoading(true);
     setToolLogs([]);
 
-    setMessages(prev => [...prev, { role: "user", content: query }]);
+    const displayContent = attachedFile ? `📎 ${attachedFile.name}\n${query}` : query;
+    setMessages(prev => [...prev, { role: "user", content: displayContent }]);
     setInput("");
+
+    let filePayload = {};
+    if (attachedFile) {
+      try {
+        filePayload = { file_name: attachedFile.name, file_data: await readFileAsBase64(attachedFile) };
+      } catch {
+        filePayload = {};
+      }
+      clearAttachment();
+    }
 
     try {
       const res = await fetch(`${API}/chat`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory }),
+        body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory, ...filePayload }),
       });
 
+      if (res.status === 401) {
+        throw new Error("로그인이 필요합니다. 사이드바에서 로그인해주세요.");
+      }
       if (!res.ok) {
-        throw new Error(`API 오류: ${res.status}`);
+        throw new Error(`서버 오류: ${res.status}`);
       }
 
       const reader  = res.body.getReader();
@@ -91,7 +114,7 @@ export default function App() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop(); // 마지막 불완전한 줄은 버퍼에 남겨둠
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (!line.trim() || !line.startsWith("data: ")) continue;
@@ -116,11 +139,37 @@ export default function App() {
       if (activeMenu === "briefing") setBriefingBadge(0);
     } catch (error) {
       console.error("채팅 요청 실패:", error);
-      setMessages(prev => [...prev, { role: "assistant", content: "네트워크 오류 또는 서버 오류가 발생했습니다." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: error.message || "네트워크 오류가 발생했습니다." }]);
     } finally {
       setToolLogs([]);
       setLoading(false);
     }
+  };
+
+  const ALLOWED_EXTS = ["txt", "md", "csv", "json", "pdf"];
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.rsplit ? file.name.split(".").pop().toLowerCase() : file.name.split(".").pop().toLowerCase();
+    if (!ALLOWED_EXTS.includes(ext)) {
+      alert(`지원 파일: ${ALLOWED_EXTS.join(", ")}`);
+      e.target.value = "";
+      return;
+    }
+    setAttachedFile(file);
+  };
+
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const clearAttachment = () => {
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleKeyDown = (e) => {
@@ -128,6 +177,12 @@ export default function App() {
       e.preventDefault();
       sendMessage(input);
     }
+  };
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
+    e.target.style.height = "44px";
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
   };
 
   const currentMenu = MENUS.find(m => m.id === activeMenu);
@@ -144,9 +199,6 @@ export default function App() {
           >
             <span>{menu.icon}</span>
             <span>{menu.label}</span>
-            {menu.id === "briefing" && briefingBadge > 0 && (
-              <span className="badge">{briefingBadge}</span>
-            )}
           </button>
         ))}
 
@@ -172,13 +224,25 @@ export default function App() {
             {integrations.jira ? "연결됨" : "미연결"}
           </span>
         </div>
+
+        {!authUser && (
+          <button className="sidebar-login-btn" onClick={() => setShowLoginModal(true)}>
+            <span>🔑</span>
+            <span>로그인</span>
+          </button>
+        )}
       </div>
 
       <div className="main">
         <div className="main-header">
           <span className="main-header-icon">{currentMenu?.icon}</span>
           <span className="main-header-title">{currentMenu?.label}</span>
-          <span className="main-header-pill">✅ 준비 완료</span>
+          {authUser && (
+            <div className="main-header-user">
+              <span className="main-header-username">{authUser.username}</span>
+              <button className="main-header-logout" onClick={logout}>로그아웃</button>
+            </div>
+          )}
         </div>
 
         {policyStatus?.status === "running" && (
@@ -189,14 +253,16 @@ export default function App() {
             )}
           </div>
         )}
-        {policyStatus?.status === "done" && policyStatus.done_files?.length > 0 && (
+        {policyStatus?.status === "done" && policyStatus.done_files?.length > 0 && !policyBannerDismissed && (
           <div className="policy-banner policy-banner--done">
             ✅ 사내 규정 문서 임베딩 완료
+            <button className="policy-banner-close" onClick={() => setPolicyBannerDismissed(true)}>×</button>
           </div>
         )}
-        {policyStatus?.status === "error" && (
+        {policyStatus?.status === "error" && !policyBannerDismissed && (
           <div className="policy-banner policy-banner--error">
             ❌ 임베딩 실패: {policyStatus.error}
+            <button className="policy-banner-close" onClick={() => setPolicyBannerDismissed(true)}>×</button>
           </div>
         )}
 
@@ -225,10 +291,31 @@ export default function App() {
         </div>
 
         <div className="input-area">
+          {attachedFile && (
+            <div className="attach-chip">
+              <span className="attach-chip-name">📎 {attachedFile.name}</span>
+              <button className="attach-chip-remove" onClick={clearAttachment} aria-label="첨부 제거">×</button>
+            </div>
+          )}
           <div className="input-row">
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
+            <button
+              className="btn-attach"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="파일 첨부"
+              aria-label="파일 첨부"
+            >
+              📎
+            </button>
             <textarea
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder="업무 명령을 입력하세요 (Shift+Enter 줄바꿈)"
               disabled={loading}
@@ -239,6 +326,10 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {showLoginModal && (
+        <LoginModal onClose={() => setShowLoginModal(false)} />
+      )}
     </>
   );
 }
