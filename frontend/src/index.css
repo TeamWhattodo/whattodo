@@ -537,6 +537,47 @@ body {
 }
 .login-register-link:hover { text-decoration: underline; }
 
+/* ── 사이드바 세션 목록 ── */
+.sidebar-new-chat-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.sidebar-new-chat-btn:hover { color: #3b5bdb; }
+
+.sidebar-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.sidebar-session-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.sidebar-session-item:hover { background: #F0F4FF; color: #185FA5; }
+.sidebar-session-item.active { background: #EEF4FF; color: #185FA5; font-weight: 500; }
+
 /* ── 사이드바 로그인 버튼 ── */
 .sidebar-login-btn {
   margin-top: 4px;

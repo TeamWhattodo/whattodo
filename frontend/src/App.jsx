@@ -16,12 +16,8 @@ const MENUS = [
 
 export default function App() {
   const { user: authUser, logout } = useAuth();
-  const [sessionId] = useState(() => {
-    const key = "wt_session_id";
-    let id = sessionStorage.getItem(key);
-    if (!id) { id = crypto.randomUUID(); sessionStorage.setItem(key, id); }
-    return id;
-  });
+  const [sessionId, setSessionId]         = useState(() => crypto.randomUUID());
+  const [sessions, setSessions]           = useState([]);
   const [activeMenu, setActiveMenu]       = useState("assistant");
   const [messages, setMessages]           = useState([]);
   const [chatHistory, setChatHistory]     = useState([]);
@@ -43,10 +39,41 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, toolLogs]);
 
+  const fetchSessions = async () => {
+    if (!authUser) { setSessions([]); return; }
+    try {
+      const res = await fetch(`${API}/sessions`, { credentials: "include" });
+      if (res.ok) setSessions(await res.json());
+    } catch {}
+  };
+
+  const switchSession = async (id) => {
+    try {
+      const res = await fetch(`${API}/chat/sessions/${id}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.display_messages || []);
+        setChatHistory(data.history || []);
+        setSessionId(id);
+        setToolLogs([]);
+      }
+    } catch {}
+  };
+
+  const newSession = () => {
+    setSessionId(crypto.randomUUID());
+    setMessages([]);
+    setChatHistory([]);
+    setToolLogs([]);
+  };
+
   useEffect(() => {
     if (!authUser) {
       setMessages([]);
       setChatHistory([]);
+      setSessions([]);
+    } else {
+      fetchSessions();
     }
   }, [authUser]);
 
@@ -190,6 +217,7 @@ export default function App() {
       setChatHistory(newHistory);
       setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
       if (activeMenu === "briefing") setBriefingBadge(0);
+      fetchSessions();
     } catch (error) {
       console.error("채팅 요청 실패:", error);
       setMessages(prev => [...prev, { role: "assistant", content: error.message || "네트워크 오류가 발생했습니다." }]);
@@ -256,6 +284,27 @@ export default function App() {
             <span>{menu.label}</span>
           </button>
         ))}
+
+        {authUser && (
+          <>
+            <div className="sidebar-section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>대화</span>
+              <button className="sidebar-new-chat-btn" onClick={newSession} title="새 채팅">＋</button>
+            </div>
+            <div className="sidebar-sessions">
+              {sessions.map(s => (
+                <button
+                  key={s.id}
+                  className={`sidebar-session-item ${sessionId === s.id ? "active" : ""}`}
+                  onClick={() => switchSession(s.id)}
+                  title={s.name}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="sidebar-section-label">연동</div>
         <div className="sidebar-integration">
