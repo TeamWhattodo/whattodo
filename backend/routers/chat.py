@@ -153,14 +153,6 @@ def del_session(session_id: str, user: User = Depends(get_current_user)):
     return {"ok": True}
 
 
-@router.get("/integrations")
-def get_integrations():
-    from backend.config import settings
-    return {
-        "slack": bool(settings.slack_bot_token),
-        "jira":  bool(settings.jira_api_token),
-        "gmail": bool(settings.gmail_client_id),
-    }
 
 
 @router.get("/policy/status")

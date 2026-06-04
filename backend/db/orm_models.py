@@ -12,6 +12,7 @@ class WorkItemORM(Base):
     __tablename__ = "work_items"
 
     id                = Column(String(255), primary_key=True)
+    user_id           = Column(Integer,     nullable=False, default=1)
     source            = Column(String(50),  nullable=False)
     raw_content       = Column(Text,        nullable=True,  default="")
     summary           = Column(Text,        nullable=True,  default="")
@@ -35,6 +36,7 @@ class ExpenseReportORM(Base):
     __tablename__ = "expense_reports"
 
     id           = Column(String(255), primary_key=True)
+    user_id      = Column(Integer,     nullable=False, default=1)
     created_at   = Column(DateTime,    nullable=False)
     report_type  = Column(String(100), nullable=False)
     items        = Column(JSON,        nullable=False, default=list)
@@ -58,6 +60,7 @@ class SessionORM(Base):
 class SyncLogORM(Base):
     __tablename__ = "sync_log"
 
+    user_id        = Column(Integer,     primary_key=True)
     source         = Column(String(50),  primary_key=True)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     status         = Column(String(20),  nullable=False, default="idle")
@@ -65,14 +68,12 @@ class SyncLogORM(Base):
     error_message  = Column(Text,        nullable=True)
 
 
-class OAuthTokenORM(Base):
-    __tablename__ = "oauth_tokens"
+class IntegrationCredentialORM(Base):
+    __tablename__ = "integration_credentials"
 
-    user_id       = Column(Integer,     primary_key=True, nullable=False)
-    source        = Column(String(50),  primary_key=True, nullable=False)
-    access_token  = Column(Text,        nullable=True)
-    refresh_token = Column(Text,        nullable=True)
-    expires_at    = Column(DateTime(timezone=True), nullable=True)
+    user_id          = Column(Integer,     primary_key=True, nullable=False)
+    source           = Column(String(50),  primary_key=True, nullable=False)
+    credentials_data = Column(Text,        nullable=True)
 
 
 class PolicyEmbeddingORM(Base):

@@ -10,7 +10,7 @@ from backend.google_auth import get_credentials
 from backend.models import WorkItem
 
 
-def fetch_gmail(max_results: int = 20, query: str = "") -> list[WorkItem]:
+def fetch_gmail(user_id: int, max_results: int = 20, query: str = "") -> list[WorkItem]:
     """
     query 예시:
       "is:unread"        → 읽지 않은 메일만
@@ -18,9 +18,9 @@ def fetch_gmail(max_results: int = 20, query: str = "") -> list[WorkItem]:
       ""                 → 읽은 + 읽지 않은 전체
       "is:unread from:boss@company.com" → 특정 발신자의 읽지 않은 메일
     """
-    creds = get_credentials()
+    creds = get_credentials(user_id)
     if not creds:
-        raise RuntimeError("Gmail 인증이 필요합니다. Google 계정을 먼저 연결해주세요.")
+        raise RuntimeError("Google 계정 연동이 필요합니다.")
 
     service = build("gmail", "v1", credentials=creds)
     msgs = (
@@ -86,9 +86,9 @@ def _parse_message(msg: dict) -> WorkItem | None:
     )
 
 
-def send_gmail(to: str, subject: str, body: str, thread_id: str = "") -> dict:
+def send_gmail(user_id: int, to: str, subject: str, body: str, thread_id: str = "") -> dict:
     """Gmail로 이메일을 발송한다. thread_id 제공 시 해당 스레드의 답장으로 전송."""
-    creds = get_credentials()
+    creds = get_credentials(user_id)
     if not creds or not creds.valid:
         return {"success": False, "error": "Google 계정이 연결되지 않았습니다."}
 
@@ -109,9 +109,9 @@ def send_gmail(to: str, subject: str, body: str, thread_id: str = "") -> dict:
         return {"success": False, "error": str(e)}
 
 
-def trash_gmail(message_id: str) -> dict:
+def trash_gmail(user_id: int, message_id: str) -> dict:
     """Gmail 메시지를 휴지통으로 이동한다. message_id: Gmail 메시지 ID."""
-    creds = get_credentials()
+    creds = get_credentials(user_id)
     if not creds or not creds.valid:
         return {"success": False, "error": "Google 계정이 연결되지 않았습니다."}
 
