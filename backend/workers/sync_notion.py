@@ -3,11 +3,10 @@ from datetime import datetime
 from backend.workers.base import run_sync
 
 
-def _fetch() -> list[dict]:
+def _fetch(user_id: int) -> list[dict]:
     try:
-        from notion_client import Client
-        from backend.config import settings
-        client = Client(auth=settings.notion_api_token)
+        from backend.tools.notion_fetch import _client
+        client = _client(user_id=user_id)
         response = client.search(query="", page_size=30)
         pages = response.get("results", [])
     except Exception:
@@ -28,6 +27,7 @@ def _fetch() -> list[dict]:
 
         items.append({
             "id": f"notion_{page_id}",
+            "user_id": user_id,
             "source": "notion",
             "source_id": page_id,
             "raw_content": json.dumps(page, ensure_ascii=False, default=str),
@@ -41,4 +41,16 @@ def _fetch() -> list[dict]:
 
 
 def sync_notion():
-    run_sync("notion", _fetch)
+    from backend.db.store import get_session
+    from backend.db.orm_models import IntegrationCredentialORM
+    from sqlalchemy import select
+    
+    # 기본 글로벌 연동(1번 유저 취급)
+    run_sync("notion", _fetch, user_id=1)
+    
+    # DB에 저장된 다른 유저들 토큰 기반 연동
+    with get_session() as db:
+        users = db.execute(select(IntegrationCredentialORM.user_id).where(IntegrationCredentialORM.source == "notion")).scalars().all()
+        for uid in users:
+            if uid == 1: continue # 1번은 위에서 처리함
+            run_sync(f"notion_{uid}", _fetch, user_id=uid)

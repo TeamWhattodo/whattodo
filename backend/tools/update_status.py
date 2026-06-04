@@ -1,20 +1,20 @@
 from backend.tools.storage import update_item_status as _update_status
 
 
-def update_item_status(item_id: str, status: str) -> dict:
+def update_item_status(user_id: int, item_id: str, status: str) -> dict:
     """
     WorkItem 상태를 변경한다.
     status: done | snoozed | pending
     """
-    return _update_status(item_id, status)
+    return _update_status(item_id, user_id, status)
 
 
-def create_calendar_block(title: str, start: str, end: str) -> dict:
+def create_calendar_block(user_id: int, title: str, start: str, end: str) -> dict:
     """Google Calendar에 이벤트를 생성한다. Google 미인증 시 mock 반환."""
     from backend.google_auth import get_credentials
     from googleapiclient.discovery import build
 
-    creds = get_credentials()
+    creds = get_credentials(user_id=user_id)
     if not creds or not creds.valid:
         return {
             "success": False,
@@ -60,12 +60,12 @@ def create_calendar_block(title: str, start: str, end: str) -> dict:
     }
 
 
-def delete_calendar_block(event_id: str) -> dict:
+def delete_calendar_block(user_id: int, event_id: str) -> dict:
     """Google Calendar 이벤트를 삭제한다. Google 미인증 시 에러 반환."""
     from backend.google_auth import get_credentials
     from googleapiclient.discovery import build
 
-    creds = get_credentials()
+    creds = get_credentials(user_id=user_id)
     if not creds or not creds.valid:
         return {
             "success": False,
@@ -87,4 +87,4 @@ def update_jira_issue(issue_key: str, status: str) -> dict:
 
 
 if __name__ == "__main__":
-    print(update_item_status("test_001", "done"))
+    print(update_item_status(1, "test_001", "done"))

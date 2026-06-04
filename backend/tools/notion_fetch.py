@@ -3,10 +3,39 @@ from langchain_core.tools import tool
 from backend.config import settings
 
 
-def _client():
-    from notion_client import Client
-    return Client(auth=settings.notion_api_token)
+from langchain_core.runnables import RunnableConfig
+from backend.db.store import get_session
+from backend.db.orm_models import IntegrationCredentialORM
+from backend.utils.encryption import decrypt_token
+from sqlalchemy import select
 
+def _client(config: RunnableConfig = None, user_id: int = None):
+    from notion_client import Client
+    
+    uid = user_id
+    if config:
+        thread_id = config.get("configurable", {}).get("thread_id", "")
+        if ":" in thread_id:
+            try:
+                uid = int(thread_id.split(":")[0])
+            except ValueError:
+                pass
+
+    if uid:
+        with get_session() as db:
+            token_obj = db.execute(
+                select(IntegrationCredentialORM).where(IntegrationCredentialORM.user_id == uid, IntegrationCredentialORM.source == "notion")
+            ).scalar_one_or_none()
+            
+            if token_obj and token_obj.credentials_data:
+                try:
+                    decrypted = decrypt_token(token_obj.credentials_data)
+                    return Client(auth=decrypted)
+                except Exception as e:
+                    import logging
+                    logging.error(f"Notion DB 토큰 로드 실패: {e}")
+
+    raise RuntimeError("Notion 계정 연동이 필요합니다.")
 
 def _safe(fn):
     try:
@@ -27,9 +56,9 @@ def _extract_title(obj: dict) -> str:
 
 # ── 페이지 계층 구조 헬퍼 (list_notion_pages 전용) ────────────────────────────
 
-def _get_all_pages() -> list[dict]:
+def _get_all_pages(config: RunnableConfig = None, user_id: int = None) -> list[dict]:
     try:
-        client = _client()
+        client = _client(config=config, user_id=user_id)
         results = client.search(query="", filter={"property": "object", "value": "page"}).get("results", [])
         return results
     except Exception:
@@ -97,9 +126,9 @@ def _format_tree(nodes: list[dict], depth: int = 0) -> list[dict]:
 # ── @tool 정의 ────────────────────────────────────────────────────────────────
 
 @tool
-def list_notion_pages() -> str:
+def list_notion_pages(config: RunnableConfig) -> str:
     """Notion 워크스페이스의 전체 페이지를 계층 구조로 반환합니다. 페이지 생성 위치 선택 시 사용."""
-    pages = _get_all_pages()
+    pages = _get_all_pages(config=config)
     if not pages:
         return json.dumps({"error": "Notion 페이지를 가져올 수 없습니다. 인증을 확인해주세요."}, ensure_ascii=False)
     tree = _build_tree(pages)
@@ -108,10 +137,10 @@ def list_notion_pages() -> str:
 
 
 @tool
-def notion_search(query: str, page_size: int = 20) -> str:
+def notion_search(query: str, config: RunnableConfig, page_size: int = 20) -> str:
     """Notion에서 페이지와 데이터베이스를 키워드로 검색합니다."""
     try:
-        result = _client().search(query=query, page_size=page_size)
+        result = _client(config).search(query=query, page_size=page_size)
         data = {
             "ok": True,
             "has_more": result.get("has_more", False),
@@ -132,19 +161,19 @@ def notion_search(query: str, page_size: int = 20) -> str:
 
 
 @tool
-def notion_get_page(page_id: str) -> str:
+def notion_get_page(page_id: str, config: RunnableConfig) -> str:
     """Notion 페이지 속성을 조회합니다."""
     def _fn():
-        page = _client().pages.retrieve(page_id=page_id)
+        page = _client(config).pages.retrieve(page_id=page_id)
         return {"ok": True, "id": page["id"], "url": page.get("url"), "properties": page.get("properties")}
     return _safe(_fn)
 
 
 @tool
-def notion_get_page_content(page_id: str) -> str:
+def notion_get_page_content(page_id: str, config: RunnableConfig) -> str:
     """Notion 페이지 본문 블록을 조회합니다."""
     def _fn():
-        blocks = _client().blocks.children.list(block_id=page_id)
+        blocks = _client(config).blocks.children.list(block_id=page_id)
         simplified = [
             {
                 "id": b["id"],
@@ -161,7 +190,7 @@ def notion_get_page_content(page_id: str) -> str:
 
 
 @tool
-def notion_create_page(parent_id: str, title: str, content: str = "", parent_type: str = "page") -> str:
+def notion_create_page(parent_id: str, title: str, config: RunnableConfig, content: str = "", parent_type: str = "page") -> str:
     """Notion 페이지를 생성합니다. parent_type은 'page' 또는 'database'. 반드시 사용자 확인 후 실행."""
     def _fn():
         parent = {"database_id": parent_id} if parent_type == "database" else {"page_id": parent_id}
@@ -172,7 +201,7 @@ def notion_create_page(parent_id: str, title: str, content: str = "", parent_typ
                 "type": "paragraph",
                 "paragraph": {"rich_text": [{"text": {"content": content}}]},
             })
-        page = _client().pages.create(
+        page = _client(config).pages.create(
             parent=parent,
             properties={"title": {"title": [{"text": {"content": title}}]}},
             children=children,
@@ -182,10 +211,10 @@ def notion_create_page(parent_id: str, title: str, content: str = "", parent_typ
 
 
 @tool
-def notion_update_page(page_id: str, title: str) -> str:
+def notion_update_page(page_id: str, title: str, config: RunnableConfig) -> str:
     """Notion 페이지 제목을 수정합니다. 반드시 사용자 확인 후 실행."""
     def _fn():
-        page = _client().pages.update(
+        page = _client(config).pages.update(
             page_id=page_id,
             properties={"title": {"title": [{"text": {"content": title}}]}},
         )
@@ -194,19 +223,19 @@ def notion_update_page(page_id: str, title: str) -> str:
 
 
 @tool
-def notion_delete_block(block_id: str) -> str:
+def notion_delete_block(block_id: str, config: RunnableConfig) -> str:
     """Notion 블록(페이지 포함)을 보관함으로 이동합니다. 반드시 사용자 확인 후 실행."""
     def _fn():
-        _client().blocks.delete(block_id=block_id)
+        _client(config).blocks.delete(block_id=block_id)
         return {"ok": True, "block_id": block_id}
     return _safe(_fn)
 
 
 @tool
-def notion_query_database(database_id: str, page_size: int = 50) -> str:
+def notion_query_database(database_id: str, config: RunnableConfig, page_size: int = 50) -> str:
     """Notion 데이터베이스 항목을 조회합니다."""
     def _fn():
-        result = _client().databases.query(database_id=database_id, page_size=page_size)
+        result = _client(config).databases.query(database_id=database_id, page_size=page_size)
         return {
             "ok": True,
             "has_more": result.get("has_more", False),

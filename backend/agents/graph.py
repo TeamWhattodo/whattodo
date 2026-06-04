@@ -4,7 +4,7 @@ import asyncio
 import queue
 import threading
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.types import Command
 
 from backend.agents.orchestrator import build_supervisor
@@ -30,7 +30,7 @@ def get_graph_state(thread_id: str):
 
 
 def stream_graph_events(
-    user_input: str,
+    user_input: str | list,
     thread_id: str,
     history: list[BaseMessage] | None = None,
 ):

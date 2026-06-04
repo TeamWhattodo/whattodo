@@ -21,6 +21,10 @@ node_modules/
 # macOS
 .DS_Store
 
+# IDE Settings
+.claude/
+.gemini/
+
 # 런타임 데이터 (토큰, 세션, DB)
 data/
 backend/db/data/work_items.json

@@ -1,9 +1,14 @@
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+import re
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Any, Optional
 import json
 import base64
+
+OUTPUTS_DIR = Path("outputs")
 
 from backend.agents.graph import stream_graph_events, get_graph_state
 from backend.agents.sessions import (
@@ -24,6 +29,11 @@ class ChatRequest(BaseModel):
     file_data: Optional[str] = None  # base64 encoded
 
 
+IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp"}
+IMAGE_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+              "gif": "image/gif", "webp": "image/webp"}
+
+
 def _extract_file_text(file_name: str, file_data: str) -> str:
     raw = base64.b64decode(file_data)
     ext = file_name.rsplit(".", 1)[-1].lower()
@@ -34,9 +44,26 @@ def _extract_file_text(file_name: str, file_data: str) -> str:
     return raw.decode("utf-8", errors="ignore")
 
 
-def _build_query(req: "ChatRequest") -> str:
+def _extract_files(text: str) -> list[dict]:
+    paths = re.findall(r"outputs/[\w\-\.가-힣]+\.(?:pdf|xlsx|csv|txt)", text)
+    result = []
+    for p in dict.fromkeys(paths):
+        fp = OUTPUTS_DIR / Path(p).name
+        if fp.exists():
+            result.append({"name": fp.name, "url": f"/api/files/{fp.name}"})
+    return result
+
+
+def _build_query(req: "ChatRequest") -> "str | list":
     if not req.file_name or not req.file_data:
         return req.query
+    ext = req.file_name.rsplit(".", 1)[-1].lower()
+    if ext in IMAGE_EXTS:
+        mime = IMAGE_MIME.get(ext, "image/jpeg")
+        return [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{req.file_data}"}},
+            {"type": "text", "text": req.query},
+        ]
     try:
         text = _extract_file_text(req.file_name, req.file_data)
         text = text[:8000]
@@ -74,10 +101,12 @@ def _translate_event(event: dict) -> dict | None:
 
 @router.post("/chat")
 async def chat_stream(req: ChatRequest, user: User = Depends(get_current_user)):
+    import asyncio, functools
     history = _deserialize_history(req.chat_history)
     uid = str(user.id)
     thread_id = f"{uid}:{req.session_id}"
-    effective_query = _build_query(req)
+    loop = asyncio.get_event_loop()
+    effective_query = await loop.run_in_executor(None, functools.partial(_build_query, req))
 
     def generate():
         try:
@@ -117,7 +146,8 @@ async def chat_stream(req: ChatRequest, user: User = Depends(get_current_user)):
             import logging
             logging.warning(f"세션 저장 실패 (무시): {e}")
 
-        done_payload = {"type": "done", "text": final_text}
+        files = _extract_files(final_text)
+        done_payload = {"type": "done", "text": final_text, "files": files}
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -153,20 +183,22 @@ def del_session(session_id: str, user: User = Depends(get_current_user)):
     return {"ok": True}
 
 
-@router.get("/integrations")
-def get_integrations():
-    from backend.config import settings
-    return {
-        "slack": bool(settings.slack_bot_token),
-        "jira":  bool(settings.jira_api_token),
-        "gmail": bool(settings.gmail_client_id),
-    }
 
 
 @router.get("/policy/status")
 def get_policy_status():
     from backend.db.store import policy_ingest_status
     return policy_ingest_status
+
+
+@router.get("/files/{filename}")
+def download_file(filename: str, user: User = Depends(get_current_user)):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="잘못된 파일명")
+    path = OUTPUTS_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="파일 없음")
+    return FileResponse(path, filename=filename)
 
 
 @router.get("/sync/status")

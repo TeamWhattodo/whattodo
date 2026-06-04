@@ -1,19 +1,24 @@
 """
-Google OAuth2 토큰 관리.
+Google OAuth2 토큰 관리 (DB 연동 버전).
 - 최초 인증: get_auth_url() → redirect → handle_callback()
 - 이후 사용: get_credentials() (자동 갱신)
 """
 import json
 import threading
-from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import Flow
 from backend.config import settings
+from backend.db.store import get_session
+from backend.db.orm_models import IntegrationCredentialORM
+from backend.utils.encryption import encrypt_token, decrypt_token
+from sqlalchemy import select
 
 _TOKEN_LOCK = threading.Lock()
 
-_PKCE_PATH = Path("data/.oauth_state.json")
+# 간단한 인메모리 세션 관리 (다중 유저용)
+# 프로덕션에서는 Redis나 DB를 사용하는 것이 좋습니다.
+_OAUTH_STATES = {}
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -23,7 +28,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
 ]
 
-_TOKEN_PATH = Path("data/google_token.json")
 _REDIRECT_URI = "http://localhost:8501"
 
 
@@ -39,7 +43,7 @@ def _client_config() -> dict:
     }
 
 
-def get_auth_url() -> str:
+def get_auth_url(user_id: int) -> str:
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES)
     flow.redirect_uri = _REDIRECT_URI
     auth_url, state = flow.authorization_url(
@@ -47,51 +51,68 @@ def get_auth_url() -> str:
         include_granted_scopes="true",
         prompt="consent",
     )
-    # PKCE code_verifier를 파일에 저장해 콜백 시 재사용
-    _PKCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _PKCE_PATH.write_text(json.dumps({
-        "code_verifier": getattr(flow, "code_verifier", None),
-        "state": state,
-    }))
+    _OAUTH_STATES[state] = {
+        "user_id": user_id,
+        "code_verifier": getattr(flow, "code_verifier", None)
+    }
     return auth_url
 
 
-def handle_callback(code: str) -> None:
+def handle_callback(state: str, code: str) -> None:
+    if state not in _OAUTH_STATES:
+        raise ValueError("Invalid state parameter or session expired.")
+        
+    session_data = _OAUTH_STATES.pop(state)
+    user_id = session_data["user_id"]
+    code_verifier = session_data["code_verifier"]
+
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES)
     flow.redirect_uri = _REDIRECT_URI
-
-    code_verifier = None
-    if _PKCE_PATH.exists():
-        try:
-            saved = json.loads(_PKCE_PATH.read_text())
-            code_verifier = saved.get("code_verifier")
-        except Exception:
-            pass
-        finally:
-            _PKCE_PATH.unlink(missing_ok=True)
-
     flow.fetch_token(code=code, code_verifier=code_verifier)
-    _save_token(flow.credentials)
+    
+    _save_token(user_id, flow.credentials)
 
 
-def get_credentials() -> Credentials | None:
-    if not _TOKEN_PATH.exists():
-        return None
+def get_credentials(user_id: int) -> Credentials | None:
+    with get_session() as db:
+        token_obj = db.execute(
+            select(IntegrationCredentialORM).where(IntegrationCredentialORM.user_id == user_id, IntegrationCredentialORM.source == "google")
+        ).scalar_one_or_none()
+        
+        if not token_obj or not token_obj.credentials_data:
+            return None
+            
+        try:
+            creds_json = decrypt_token(token_obj.credentials_data)
+            creds_dict = json.loads(creds_json)
+        except Exception:
+            return None
+
     with _TOKEN_LOCK:
-        creds = Credentials.from_authorized_user_info(
-            json.loads(_TOKEN_PATH.read_text()), SCOPES
-        )
+        creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            _save_token(creds)
+            _save_token(user_id, creds)
+            
     return creds
 
 
-def is_authenticated() -> bool:
-    creds = get_credentials()
+def is_authenticated(user_id: int) -> bool:
+    creds = get_credentials(user_id)
     return creds is not None and creds.valid
 
 
-def _save_token(creds: Credentials) -> None:
-    _TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _TOKEN_PATH.write_text(creds.to_json())
+def _save_token(user_id: int, creds: Credentials) -> None:
+    creds_json = creds.to_json()
+    encrypted_creds = encrypt_token(creds_json)
+    
+    with get_session() as db:
+        token_obj = db.execute(
+            select(IntegrationCredentialORM).where(IntegrationCredentialORM.user_id == user_id, IntegrationCredentialORM.source == "google")
+        ).scalar_one_or_none()
+        
+        if not token_obj:
+            token_obj = IntegrationCredentialORM(user_id=user_id, source="google")
+            db.add(token_obj)
+            
+        token_obj.credentials_data = encrypted_creds

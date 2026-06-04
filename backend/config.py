@@ -30,9 +30,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://whattodo:whattodo@localhost:5432/whattodo"
 
     # ── 인증 ──
-    jwt_secret: str = ""
+    jwt_access_secret: str = ""
     jwt_expire_days: int = 7
+    jwt_refresh_secret: str = ""
+    jwt_refresh_expire_days: int = 30
     cookie_secure: bool = False
+    
+    # ── 보안 ──
+    oauth_encryption_key: str = ""
 
     class Config:
         env_file = ".env"
