@@ -42,19 +42,27 @@ export default function LoginModal({ onClose }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
     try {
       if (mode === "login") {
         await login(username, password);
+        onClose();
       } else {
         await register(username, password);
+        setSuccess("회원가입이 완료되었습니다! 로그인해 주세요.");
+        setPassword("");
+        setTimeout(() => {
+          setMode("login");
+          setSuccess("");
+        }, 2000);
       }
-      onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -102,6 +110,7 @@ export default function LoginModal({ onClose }) {
           </div>
 
           {error && <div style={{ color: "#C53030", fontSize: 13 }}>{error}</div>}
+          {success && <div style={{ color: "#276749", fontSize: 13, fontWeight: 600 }}>{success}</div>}
 
           <button type="submit" className="login-submit-btn" disabled={loading}>
             {loading ? "처리 중..." : mode === "login" ? "로그인" : "회원가입"}
