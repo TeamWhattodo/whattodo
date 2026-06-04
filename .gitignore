@@ -42,3 +42,5 @@ outputs/
 
 # ChromaDB
 chroma/
+
+*.db
