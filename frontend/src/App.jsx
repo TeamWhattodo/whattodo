@@ -7,7 +7,7 @@ import { useAuth } from "./context/AuthContext";
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
 const MENUS = [
-  { id: "assistant", icon: "🖥️", label: "업무 도우미", query: null },
+  { id: "assistant", icon: "🖥️", label: "업무 도우미", query: "긴급도 순으로 오늘 처리해야 할 업무 정리해줘" },
 ];
 
 export default function App() {
@@ -151,7 +151,7 @@ export default function App() {
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const ext = file.name.rsplit ? file.name.split(".").pop().toLowerCase() : file.name.split(".").pop().toLowerCase();
+    const ext = file.name.split(".").pop().toLowerCase();
     if (!ALLOWED_EXTS.includes(ext)) {
       alert(`지원 파일: ${ALLOWED_EXTS.join(", ")}`);
       e.target.value = "";
@@ -181,8 +181,8 @@ export default function App() {
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
-    e.target.style.height = "44px";
-    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 300) + "px";
   };
 
   const currentMenu = MENUS.find(m => m.id === activeMenu);

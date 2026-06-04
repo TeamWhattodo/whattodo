@@ -274,7 +274,8 @@ body {
   resize: none;
   outline: none;
   height: 44px;
-  max-height: 120px;
+  min-height: 44px;
+  max-height: 300px;
   transition: border 0.15s, box-shadow 0.15s;
 }
 .input-row textarea:focus {
