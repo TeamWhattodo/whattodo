@@ -9,7 +9,8 @@ from backend.auth import security
 from backend.auth.models import User
 from backend.db.database import get_db
 
-COOKIE_NAME = "token"
+ACCESS_TOKEN_NAME = "access_token"
+REFRESH_TOKEN_NAME = "refresh_token"
 
 def _unauthorized() -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="인증이 필요합니다")
@@ -17,7 +18,7 @@ def _unauthorized() -> HTTPException:
 
 def extract_user_id(request: Request) -> int:
     """쿠키에서 JWT를 읽어 user_id 반환. 실패 시 401."""
-    token = request.cookies.get(COOKIE_NAME)
+    token = request.cookies.get(ACCESS_TOKEN_NAME)
     if not token:
         raise _unauthorized()
     user_id = security.decode_access_token(token)

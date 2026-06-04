@@ -10,6 +10,7 @@ from backend.db.orm_models import WorkItemORM, ExpenseReportORM
 def _row_to_dict(row: WorkItemORM) -> dict:
     return {
         "id":                row.id,
+        "user_id":           row.user_id,
         "source":            row.source,
         "raw_content":       row.raw_content,
         "summary":           row.summary,
@@ -42,6 +43,7 @@ def save_items(items: list[dict]) -> None:
         for item in items:
             values = dict(
                 id                = item["id"],
+                user_id           = item.get("user_id", 1),
                 source            = item.get("source", ""),
                 raw_content       = item.get("raw_content", ""),
                 summary           = item.get("summary", ""),
@@ -63,25 +65,25 @@ def save_items(items: list[dict]) -> None:
             db.execute(stmt)
 
 
-def get_pending_items() -> list[dict]:
+def get_pending_items(user_id: int) -> list[dict]:
     with get_session() as db:
         rows = db.execute(
-            select(WorkItemORM).where(WorkItemORM.status == "pending")
+            select(WorkItemORM).where(WorkItemORM.status == "pending", WorkItemORM.user_id == user_id)
         ).scalars().all()
         return [_row_to_dict(r) for r in rows]
 
 
-def get_item_by_id(item_id: str) -> dict | None:
+def get_item_by_id(item_id: str, user_id: int) -> dict | None:
     with get_session() as db:
         row = db.execute(
-            select(WorkItemORM).where(WorkItemORM.id == item_id)
+            select(WorkItemORM).where(WorkItemORM.id == item_id, WorkItemORM.user_id == user_id)
         ).scalar_one_or_none()
         return _row_to_dict(row) if row else None
 
 
-def search_items(query: str = "", status: str = None, source: str = None) -> list[dict]:
+def search_items(user_id: int, query: str = "", status: str = None, source: str = None) -> list[dict]:
     with get_session() as db:
-        stmt = select(WorkItemORM)
+        stmt = select(WorkItemORM).where(WorkItemORM.user_id == user_id)
         if status:
             stmt = stmt.where(WorkItemORM.status == status)
         if source:
@@ -99,11 +101,11 @@ def search_items(query: str = "", status: str = None, source: str = None) -> lis
         return [_row_to_dict(r) for r in rows]
 
 
-def update_item_status(item_id: str, status: str) -> dict:
+def update_item_status(item_id: str, user_id: int, status: str) -> dict:
     with get_session() as db:
         db.execute(
             update(WorkItemORM)
-            .where(WorkItemORM.id == item_id)
+            .where(WorkItemORM.id == item_id, WorkItemORM.user_id == user_id)
             .values(status=status)
         )
     return {"success": True, "item_id": item_id, "status": status}
@@ -113,6 +115,7 @@ def save_expense_report(report: dict) -> None:
     with get_session() as db:
         db.add(ExpenseReportORM(
             id           = report["id"],
+            user_id      = report.get("user_id", 1),
             created_at   = _parse_dt(report.get("created_at")) or datetime.now(),
             report_type  = report.get("report_type", ""),
             items        = report.get("items", []),

@@ -6,8 +6,8 @@ from backend.google_auth import get_credentials
 from backend.models import WorkItem
 
 
-def fetch_calendar(days: int = 7) -> list[WorkItem]:
-    creds = get_credentials()
+def fetch_calendar(user_id: int, days: int = 7) -> list[WorkItem]:
+    creds = get_credentials(user_id)
     if not creds:
         return []
 
@@ -37,9 +37,9 @@ def fetch_calendar(days: int = 7) -> list[WorkItem]:
     return items
 
 
-def search_calendar_events(query: str = "", days: int = 30) -> list[dict]:
+def search_calendar_events(user_id: int, query: str = "", days: int = 30) -> list[dict]:
     """제목 키워드로 Google Calendar 이벤트를 검색해 event_id 포함 목록 반환."""
-    creds = get_credentials()
+    creds = get_credentials(user_id)
     if not creds or not creds.valid:
         return []
 

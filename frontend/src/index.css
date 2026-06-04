@@ -556,3 +556,47 @@ body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #DEDEDE; border-radius: 4px; }
+
+/* ── 연동 모달 UI ── */
+.modal-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.modal-btn-primary {
+  border: none;
+  background: #3b5bdb;
+  color: #FFFFFF;
+}
+.modal-btn-primary:hover { background: #3450c5; }
+.modal-btn-outline {
+  border: 1px solid #DEDEDE;
+  background: #FFFFFF;
+  color: #555;
+}
+.modal-btn-outline:hover { background: #F5F5F5; border-color: #CCC; }
+.modal-btn-danger {
+  border: 1px solid #FED7D7;
+  background: #FFF5F5;
+  color: #C53030;
+}
+.modal-btn-danger:hover { background: #FEE2E2; }
+
+.modal-input {
+  border: 1px solid #DEDEDE;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  transition: border 0.15s, box-shadow 0.15s;
+}
+.modal-input:focus {
+  border-color: #3b5bdb;
+  box-shadow: 0 0 0 2px #E6EAFB;
+}

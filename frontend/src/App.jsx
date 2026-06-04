@@ -4,7 +4,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./index.css";
 import LoginModal from "./LoginModal";
+import IntegrationsModal from "./components/IntegrationsModal";
 import { useAuth } from "./context/AuthContext";
+import { getIntegrations } from "./api/integrations";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -31,6 +33,7 @@ export default function App() {
   const [policyStatus, setPolicyStatus]       = useState(null);
   const [policyBannerDismissed, setPolicyBannerDismissed] = useState(false);
   const [showLoginModal, setShowLoginModal]   = useState(false);
+  const [showIntegrationsModal, setShowIntegrationsModal] = useState(false);
   const [attachedFile, setAttachedFile]       = useState(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -46,10 +49,51 @@ export default function App() {
     }
   }, [authUser]);
 
+  const fetchIntegrations = async () => {
+    if (!authUser) {
+      setIntegrations({ slack: false, jira: false, notion: false, gmail: false, calendar: false });
+      return;
+    }
+    try {
+      const data = await getIntegrations();
+      const map = {};
+      data.forEach(item => map[item.source] = item.connected);
+      setIntegrations(map);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
-    axios.get(`${API}/integrations`).then(res => {
-      setIntegrations(res.data);
-    }).catch(() => {});
+    fetchIntegrations();
+  }, [authUser]);
+
+  useEffect(() => {
+    // Handle Google OAuth callback if redirected to frontend with code and state
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const state = urlParams.get("state");
+
+    if (code && state) {
+      setLoading(true);
+      // React StrictMode 더블 호출 방지를 위해 파라미터 즉시 제거
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      axios.get(`${API}/integrations/google/callback?state=${encodeURIComponent(state)}&code=${encodeURIComponent(code)}`, {
+        withCredentials: true // needed if we depend on cookies for user identification though state is used here
+      })
+      .then(() => {
+        alert("Google 계정 연동이 완료되었습니다!");
+        fetchIntegrations();
+      })
+      .catch((err) => {
+        console.error("Google OAuth Error:", err);
+        alert("구글 연동 실패: " + (err.response?.data?.detail || err.message));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -212,9 +256,9 @@ export default function App() {
         <div className="sidebar-section-label">연동</div>
         <div className="sidebar-integration">
           <span>✉️</span>
-          <span>Gmail</span>
-          <span className={`int-status ${integrations.gmail ? "" : "disconnected"}`}>
-            {integrations.gmail ? "연결됨" : "미연결"}
+          <span>Google</span>
+          <span className={`int-status ${integrations.google ? "" : "disconnected"}`}>
+            {integrations.google ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -229,6 +273,13 @@ export default function App() {
           <span>Jira</span>
           <span className={`int-status ${integrations.jira ? "" : "disconnected"}`}>
             {integrations.jira ? "연결됨" : "미연결"}
+          </span>
+        </div>
+        <div className="sidebar-integration">
+          <span>📝</span>
+          <span>Notion</span>
+          <span className={`int-status ${integrations.notion ? "" : "disconnected"}`}>
+            {integrations.notion ? "연결됨" : "미연결"}
           </span>
         </div>
 
@@ -247,6 +298,7 @@ export default function App() {
           {authUser && (
             <div className="main-header-user">
               <span className="main-header-username">{authUser.username}</span>
+              <button className="main-header-logout" onClick={() => setShowIntegrationsModal(true)} style={{ marginRight: '8px' }}>⚙️ 연동 관리</button>
               <button className="main-header-logout" onClick={logout}>로그아웃</button>
             </div>
           )}
@@ -350,6 +402,12 @@ export default function App() {
 
       {showLoginModal && (
         <LoginModal onClose={() => setShowLoginModal(false)} />
+      )}
+      {showIntegrationsModal && (
+        <IntegrationsModal 
+          onClose={() => setShowIntegrationsModal(false)} 
+          onIntegrationsChange={fetchIntegrations} 
+        />
       )}
     </>
   );
