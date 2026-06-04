@@ -1,3 +1,6 @@
+# Policy ingestion marker (로컬 전용)
+docs/policy/.ingested.json
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -18,6 +21,10 @@ node_modules/
 # macOS
 .DS_Store
 
+# IDE Settings
+.claude/
+.gemini/
+
 # 런타임 데이터 (토큰, 세션, DB)
 data/
 backend/db/data/work_items.json
@@ -35,3 +42,5 @@ outputs/
 
 # ChromaDB
 chroma/
+
+*.db

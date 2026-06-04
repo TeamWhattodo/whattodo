@@ -29,18 +29,8 @@ def get_graph_state(thread_id: str):
     return get_graph().get_state(config)
 
 
-def _build_messages(user_input: str, thread_id: str, history: list[BaseMessage] | None) -> list:
-    """MemorySaver 상태에 따라 주입할 messages를 결정한다."""
-    if history:
-        config = {"configurable": {"thread_id": thread_id}}
-        existing = get_graph().get_state(config)
-        if not existing.values.get("messages"):
-            return history + [HumanMessage(content=user_input)]
-    return [HumanMessage(content=user_input)]
-
-
 def stream_graph_events(
-    user_input: str,
+    user_input: str | list,
     thread_id: str,
     history: list[BaseMessage] | None = None,
 ):
@@ -51,7 +41,7 @@ def stream_graph_events(
     서브에이전트가 사용하는 _bg_loop와 분리되어 데드락이 없다.
     """
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
-    messages = _build_messages(user_input, thread_id, history)
+    messages = [HumanMessage(content=user_input)]
 
     event_queue: queue.Queue = queue.Queue()
     _DONE = object()

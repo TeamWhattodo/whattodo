@@ -72,6 +72,13 @@ def evaluate_scenario(scenario: dict) -> dict:
 
     try:
         state = run_graph(scenario["query"], thread_id=thread_id)
+
+        # HitL interrupt 감지 시 자동 confirm
+        if state.get("__interrupt__"):
+            from backend.agents.graph import resume_graph
+            print(f"  ⚡ HitL interrupt 감지 — eval 모드에서 자동 확인")
+            state = resume_graph(thread_id, "yes")
+
         response_text = extract_response(state)
         print(f"응답 미리보기: {response_text[:150]}...")
     except Exception as e:
@@ -136,7 +143,12 @@ def run_all(scenario_ids: list[str] | None = None, model_name: str | None = None
     print(f"시작 시각: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}")
 
-    results = [evaluate_scenario(s) for s in scenarios]
+    import time
+    results = []
+    for i, s in enumerate(scenarios):
+        results.append(evaluate_scenario(s))
+        if i < len(scenarios) - 1:
+            time.sleep(2)  # Google API 연속 호출 충돌 방지
 
     # 요약
     valid = [r for r in results if "error" not in r]
@@ -205,11 +217,15 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default=None, help="사용할 모델 이름 (예: gpt-4o, gpt-4o-mini, claude-sonnet-4-6)")
     args = parser.parse_args()
 
-    # 모델 오버라이드
+    # 모델 오버라이드 + provider 자동 감지
     if args.model:
         from backend.config import settings
         settings.smart_model = args.model
         settings.fast_model = args.model
-        print(f"모델 오버라이드: {args.model}")
+        if args.model.startswith("claude"):
+            settings.llm_provider = "anthropic"
+        else:
+            settings.llm_provider = "openai"
+        print(f"모델 오버라이드: {args.model} (provider: {settings.llm_provider})")
 
     run_all(args.scenarios or None, model_name=args.model)

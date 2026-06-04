@@ -10,16 +10,23 @@ from backend.google_auth import get_credentials
 from backend.models import WorkItem
 
 
-def fetch_gmail(max_results: int = 20) -> list[WorkItem]:
-    creds = get_credentials()
+def fetch_gmail(user_id: int, max_results: int = 20, query: str = "") -> list[WorkItem]:
+    """
+    query 예시:
+      "is:unread"        → 읽지 않은 메일만
+      "is:read"          → 읽은 메일만
+      ""                 → 읽은 + 읽지 않은 전체
+      "is:unread from:boss@company.com" → 특정 발신자의 읽지 않은 메일
+    """
+    creds = get_credentials(user_id)
     if not creds:
-        return []
+        raise RuntimeError("Google 계정 연동이 필요합니다.")
 
     service = build("gmail", "v1", credentials=creds)
     msgs = (
         service.users()
         .messages()
-        .list(userId="me", maxResults=max_results, q="is:unread")
+        .list(userId="me", maxResults=max_results, q=query)
         .execute()
         .get("messages", [])
     )
@@ -28,20 +35,27 @@ def fetch_gmail(max_results: int = 20) -> list[WorkItem]:
         return []
 
     def _fetch_detail(msg_id: str) -> dict:
-        return service.users().messages().get(
-            userId="me", id=msg_id, format="full"
+        # 스레드마다 독립적인 service 객체 생성 (SSL 공유 방지)
+        svc = build("gmail", "v1", credentials=creds)
+        return svc.users().messages().get(
+            userId="me",
+            id=msg_id,
+            format="metadata",
+            metadataHeaders=["Subject", "From", "Date", "Message-ID"],
         ).execute()
 
     items: list[WorkItem] = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(_fetch_detail, m["id"]): m for m in msgs}
         for future in as_completed(futures):
             try:
                 item = _parse_message(future.result())
                 if item:
                     items.append(item)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.warning(f"Gmail 메시지 파싱 실패: {e}")
+    items.sort(key=lambda x: x.created_at, reverse=True)
     return items
 
 
@@ -56,8 +70,8 @@ def _parse_message(msg: dict) -> WorkItem | None:
     except Exception:
         created_at = datetime.utcnow()
 
-    body = _extract_body(msg["payload"])
-    raw = f"From: {sender}\nSubject: {subject}\n\n{body[:500]}"
+    body = _extract_body(msg.get("payload", {}))
+    raw = f"From: {sender}\nSubject: {subject}\n\n{body[:500]}" if body else f"From: {sender}\nSubject: {subject}"
 
     return WorkItem(
         id=hashlib.md5(msg["id"].encode()).hexdigest(),
@@ -72,9 +86,9 @@ def _parse_message(msg: dict) -> WorkItem | None:
     )
 
 
-def send_gmail(to: str, subject: str, body: str, thread_id: str = "") -> dict:
+def send_gmail(user_id: int, to: str, subject: str, body: str, thread_id: str = "") -> dict:
     """Gmail로 이메일을 발송한다. thread_id 제공 시 해당 스레드의 답장으로 전송."""
-    creds = get_credentials()
+    creds = get_credentials(user_id)
     if not creds or not creds.valid:
         return {"success": False, "error": "Google 계정이 연결되지 않았습니다."}
 
@@ -95,9 +109,9 @@ def send_gmail(to: str, subject: str, body: str, thread_id: str = "") -> dict:
         return {"success": False, "error": str(e)}
 
 
-def trash_gmail(message_id: str) -> dict:
+def trash_gmail(user_id: int, message_id: str) -> dict:
     """Gmail 메시지를 휴지통으로 이동한다. message_id: Gmail 메시지 ID."""
-    creds = get_credentials()
+    creds = get_credentials(user_id)
     if not creds or not creds.valid:
         return {"success": False, "error": "Google 계정이 연결되지 않았습니다."}
 

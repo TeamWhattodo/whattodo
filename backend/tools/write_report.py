@@ -2,7 +2,11 @@ import os
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 from backend.agents.llm_client import complete
+
+from openpyxl import load_workbook
+
 
 try:
     from reportlab.pdfbase import pdfmetrics
@@ -66,21 +70,19 @@ WEEKLY_REPORT_SYSTEM = """
 반드시 아래 JSON 스키마를 엄격하게 지켜서 출력하세요. 다른 텍스트는 절대 포함하지 마세요.
 
 * 작성 가이드 *
-- 'past_week_tasks'(추진사항)와 'next_week_plans'(계획사항) 항목은 아주 구체적이고 길게 서술형으로 작성해도 좋습니다.
-- 'past_week_results'(실적/목표)와 'next_week_goals'(목표) 항목은 서술형 문장으로 길게 적지 마세요.
-- 명확한 수치, 결과, 또는 핵심 내용만 개조식(단답형 또는 핵심 키워드 중심)으로 매우 간결하게 작성하되, **내용이 여러 개이거나 한 문장이 끝날 때마다 반드시 줄바꿈(\\n)을 기입하여 줄을 나누어 주세요.**
+- 모든 내용은 배열(리스트) 형태로 항목별로 분리해서 작성한다.
+- 각 항목은 간결하게 핵심만 한 줄로 작성한다. 서술형 금지.
+- 항목이 없으면 빈 배열([])로 작성한다.
 
 {
   "date": "2024년 9월 4일",
   "department": "기획팀",
   "position": "대리",
   "author": "홍길동",
-  "past_week_tasks": "전주 실행 (추진사항) 내용 (길고 구체적인 서술 가능)",
-  "past_week_results": "전주 실행 (실적/목표) 핵심 내용 요약 (길게 서술 금지)",
-  "next_week_plans": "차주 계획 (계획사항) 내용 (길고 구체적인 서술 가능)",
-  "next_week_goals": "차주 계획 (목표) 핵심 내용 요약 (길게 서술 금지)",
-  "special_notes": "특기 사항 내용",
-  "instructions": "지시 사항 내용"
+  "past_week_tasks": ["전주 추진사항 항목1", "항목2"],
+  "next_week_plans": ["차주 계획사항 항목1", "항목2"],
+  "special_notes": ["특이사항 항목1"],
+  "instructions": ["지시사항 항목1"]
 }
 """
 
@@ -107,12 +109,72 @@ MONTHLY_REPORT_SYSTEM = """
 }
 """
 
+_EXPENSE_OUTPUT_DIR    = "outputs"
+_EXPENSE_TEMPLATE_PATH = str(Path(__file__).resolve().parents[2] / "backend/db/data/Form/경비정산서 양식.xlsx")
+_EXPENSE_CATEGORY_MAP  = {
+    "식비":   "식비",
+    "숙박비": "숙박비",
+    "유류비": "교통비",
+    "출장비": "기타",
+    "기타":   "기타",
+}
+
+
+def _write_expense_xlsx(items: list[dict], total: int | float, report_id: str) -> str:
+    path = f"{_EXPENSE_OUTPUT_DIR}/{report_id}.xlsx"
+    wb = load_workbook(_EXPENSE_TEMPLATE_PATH)
+    ws = wb.active
+    if ws is None:
+        raise ValueError(f"활성 시트 없음: {_EXPENSE_TEMPLATE_PATH}")
+
+    data_start_row = None
+    total_row      = None
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value == "내역":
+                data_start_row = cell.row
+            elif cell.value == "경비 총액":
+                total_row = cell.row
+
+    if data_start_row is None or total_row is None:
+        raise ValueError("템플릿에서 '내역' 또는 '경비 총액' 행을 찾지 못함")
+
+    for i, item in enumerate(items):
+        row = data_start_row + i
+        ws[f"C{row}"] = item["date"]
+        ws[f"E{row}"] = _EXPENSE_CATEGORY_MAP.get(item["category"], "기타")
+        ws[f"G{row}"] = item["amount"]
+        memo = item.get("memo")
+        ws[f"I{row}"] = "" if not memo or memo == "null" else memo
+
+    ws[f"D{total_row}"] = total
+    wb.save(path)
+    return path
+
 def write_report(report_type: str, data: dict | list) -> dict:
     """
-    report_type: "briefing" | "daily_summary" | "kpi_weekly" | "monthly_summary" | "billing"
+    report_type: "expense_report" | "briefing" | "daily_summary" | "kpi_weekly" | "monthly_summary" | "billing"
     data: 보고서에 포함할 항목들
-    반환: {"report_type": ..., "content": str, "pdf_path": str}
+    반환: {"report_type": ..., "content": str, "pdf_path"/"xlsx_path": str}
     """
+    if report_type == "expense_report":
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                data = {}
+        items = data.get("items", []) if isinstance(data, dict) else data
+        total = sum(i.get("amount", 0) for i in items if isinstance(i.get("amount"), (int, float)))
+        os.makedirs(_EXPENSE_OUTPUT_DIR, exist_ok=True)
+        report_id = f"경비정산서_{datetime.now().strftime('%Y%m%d')}"
+        xlsx_path = _write_expense_xlsx(items, total, report_id)
+        return {
+            "report_type":  "expense_report",
+            "total_amount": total,
+            "items":        items,
+            "xlsx_path":    xlsx_path,
+        }
+
     if isinstance(data, str):
         data_str = data
     else:
@@ -120,11 +182,11 @@ def write_report(report_type: str, data: dict | list) -> dict:
             data_str = json.dumps(data, ensure_ascii=False, default=str)
         except Exception:
             data_str = str(data)
-            
+
     is_daily = (report_type == "daily_summary")
     is_weekly = (report_type == "kpi_weekly")
     is_monthly = (report_type == "monthly_summary")
-    
+
     if is_monthly:
         system = MONTHLY_REPORT_SYSTEM
     elif is_weekly:
@@ -157,12 +219,16 @@ def write_report(report_type: str, data: dict | list) -> dict:
                 md_content += f"- **{t.get('task', '')}** (예정일자: {t.get('date', '')}, 이슈: {t.get('issue', '')}, 비고: {t.get('note', '')})\n"
             md_content += f"\n### ■ 기타 의견\n{parsed_data.get('opinions', '')}"
         elif is_weekly:
+            def _md_list(val) -> str:
+                if isinstance(val, list):
+                    return "\n".join(f"- {item}" for item in val) if val else "-"
+                return str(val) if val else "-"
             md_content = f"# 주간 업무보고서\n"
             md_content += f"**부서:** {parsed_data.get('department', '')} | **직책:** {parsed_data.get('position', '')} | **작성자:** {parsed_data.get('author', '')} | **작성일:** {parsed_data.get('date', '')}\n\n"
-            md_content += f"### ▶ 전주 실행 사항\n**추진사항:** {parsed_data.get('past_week_tasks', '')}\n**실적/목표:** {parsed_data.get('past_week_results', '')}\n\n"
-            md_content += f"### ▶ 차주 계획\n**계획사항:** {parsed_data.get('next_week_plans', '')}\n**목표:** {parsed_data.get('next_week_goals', '')}\n\n"
-            md_content += f"### ▶ 특기 사항\n{parsed_data.get('special_notes', '')}\n\n"
-            md_content += f"### ▶ 지시 사항\n{parsed_data.get('instructions', '')}"
+            md_content += f"### ▶ 전주 추진사항\n{_md_list(parsed_data.get('past_week_tasks', []))}\n\n"
+            md_content += f"### ▶ 차주 계획사항\n{_md_list(parsed_data.get('next_week_plans', []))}\n\n"
+            md_content += f"### ▶ 특이사항\n{_md_list(parsed_data.get('special_notes', []))}\n\n"
+            md_content += f"### ▶ 지시사항\n{_md_list(parsed_data.get('instructions', []))}"
         elif is_daily:
             md_content = f"# 일일 업무보고서\n"
             md_content += f"**작성자:** {parsed_data.get('department', '')} {parsed_data.get('position', '')} {parsed_data.get('author', '')} ({parsed_data.get('date', '')})\n\n"
@@ -200,18 +266,31 @@ def write_report(report_type: str, data: dict | list) -> dict:
     except Exception as e:
         return {"report_type": report_type, "content": f"보고서 생성 실패: {str(e)}", "error": str(e)}
 
-def _setup_fonts():
-    try:
-        pdfmetrics.registerFont(TTFont("Malgun", "C:/Windows/Fonts/malgun.ttf"))
-        pdfmetrics.registerFont(TTFont("Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"))
-        return "Malgun", "Malgun-Bold"
-    except Exception:
-        return "Helvetica", "Helvetica-Bold"
+_FONT_CANDIDATES = [
+    ("Malgun",      "C:/Windows/Fonts/malgun.ttf",
+     "Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"),
+    ("AppleGothic", "/Library/Fonts/AppleGothic.ttf",
+     "AppleGothic", "/Library/Fonts/AppleGothic.ttf"),
+    ("AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+     "AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf"),
+]
+
+def _setup_fonts() -> tuple[str, str]:
+    for reg_name, reg_path, bold_name, bold_path in _FONT_CANDIDATES:
+        if os.path.exists(reg_path):
+            try:
+                pdfmetrics.registerFont(TTFont(reg_name, reg_path))
+                if bold_name != reg_name and os.path.exists(bold_path):
+                    pdfmetrics.registerFont(TTFont(bold_name, bold_path))
+                return reg_name, bold_name
+            except Exception:
+                continue
+    return "Helvetica", "Helvetica-Bold"
 
 def _generate_gov_style_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"gov_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"기안서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2.5*cm, bottomMargin=2*cm)
@@ -264,7 +343,7 @@ def _generate_gov_style_pdf(data: dict, report_type: str) -> str:
 def _generate_daily_report_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"daily_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"일일보고서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
@@ -337,7 +416,7 @@ def _generate_daily_report_pdf(data: dict, report_type: str) -> str:
 def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"weekly_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"주간보고서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
@@ -373,60 +452,40 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
         story.append(Spacer(1, 0.2*cm))
         
         col1_w = cw * 0.1
-        col2_w = cw * 0.65
-        col3_w = cw * 0.25
-        
-        safe_past_tasks = data.get("past_week_tasks", "").replace("\n", "<br/>")
-        safe_past_res = data.get("past_week_results", "").replace("\n", "<br/>")
-        safe_next_plans = data.get("next_week_plans", "").replace("\n", "<br/>")
-        safe_next_goals = data.get("next_week_goals", "").replace("\n", "<br/>")
-        safe_spec = data.get("special_notes", "").replace("\n", "<br/>")
-        safe_inst = data.get("instructions", "").replace("\n", "<br/>")
-        
-        t_data = [
-            [Paragraph("추진사항", col_header), Paragraph("실적/목표", col_header)],
-            [Paragraph(safe_past_tasks, body_style), Paragraph(safe_past_res, body_style)],
-            [Paragraph("계획사항", col_header), Paragraph("목표", col_header)],
-            [Paragraph(safe_next_plans, body_style), Paragraph(safe_next_goals, body_style)],
-            [Paragraph(safe_spec, body_style), ''],
-            [Paragraph(safe_inst, body_style), '']
-        ]
-        
+        col2_w = cw * 0.9
+
+        def _to_bullets(val) -> str:
+            if isinstance(val, list):
+                return "<br/>".join(f"• {item}" for item in val) if val else "-"
+            return str(val).replace("\n", "<br/>") if val else "-"
+
+        safe_past_tasks = _to_bullets(data.get("past_week_tasks", []))
+        safe_next_plans = _to_bullets(data.get("next_week_plans", []))
+        safe_spec       = _to_bullets(data.get("special_notes", []))
+        safe_inst       = _to_bullets(data.get("instructions", []))
+
         t_main_data = [
-            [Paragraph("전주<br/>실행<br/>사항", left_menu), t_data[0][0], t_data[0][1], Spacer(1, 0)],
-            ['', t_data[1][0], t_data[1][1], Spacer(1, 5.5*cm)],
-            [Paragraph("차주<br/>계획", left_menu), t_data[2][0], t_data[2][1], Spacer(1, 0)],
-            ['', t_data[3][0], t_data[3][1], Spacer(1, 5.5*cm)],
-            [Paragraph("특기<br/>사항", left_menu), t_data[4][0], t_data[4][1], Spacer(1, 3.5*cm)],
-            [Paragraph("지시<br/>사항", left_menu), t_data[5][0], t_data[5][1], Spacer(1, 3.5*cm)],
+            [Paragraph("전주<br/>실행<br/>사항", left_menu), Paragraph(safe_past_tasks, body_style), Spacer(1, 5.5*cm)],
+            [Paragraph("차주<br/>계획", left_menu),          Paragraph(safe_next_plans, body_style), Spacer(1, 5.5*cm)],
+            [Paragraph("특이<br/>사항", left_menu),          Paragraph(safe_spec, body_style),       Spacer(1, 3.5*cm)],
+            [Paragraph("지시<br/>사항", left_menu),          Paragraph(safe_inst, body_style),       Spacer(1, 3.5*cm)],
         ]
-        
-        t_main = Table(t_main_data, colWidths=[col1_w, col2_w, col3_w, 0], rowHeights=[0.8*cm, None, 0.8*cm, None, None, None])
+
+        t_main = Table(t_main_data, colWidths=[col1_w, col2_w, 0], rowHeights=[None, None, None, None])
         t_main.setStyle(TableStyle([
-            ('GRID', (0,0), (2,5), 0.5, colors.grey),
-            ('LINEABOVE', (0,0), (2,0), 1, colors.black),
-            ('BACKGROUND', (0,0), (0,5), colors.whitesmoke), 
-            ('BACKGROUND', (1,0), (2,0), colors.whitesmoke), 
-            ('BACKGROUND', (1,2), (2,2), colors.whitesmoke), 
-            ('SPAN', (0,0), (0,1)), 
-            ('SPAN', (0,2), (0,3)), 
-            ('SPAN', (1,4), (2,4)), 
-            ('SPAN', (1,5), (2,5)), 
-            ('VALIGN', (0,0), (0,5), 'MIDDLE'), 
-            ('ALIGN', (0,0), (0,5), 'CENTER'),
-            ('VALIGN', (1,0), (2,0), 'MIDDLE'), 
-            ('ALIGN', (1,0), (2,0), 'CENTER'),
-            ('VALIGN', (1,2), (2,2), 'MIDDLE'), 
-            ('ALIGN', (1,2), (2,2), 'CENTER'),
-            ('VALIGN', (1,1), (2,1), 'TOP'), 
-            ('VALIGN', (1,3), (2,3), 'TOP'), 
+            ('GRID', (0,0), (1,3), 0.5, colors.grey),
+            ('LINEABOVE', (0,0), (1,0), 1, colors.black),
+            ('BACKGROUND', (0,0), (0,3), colors.whitesmoke),
+            ('VALIGN', (0,0), (0,3), 'MIDDLE'),
+            ('ALIGN', (0,0), (0,3), 'CENTER'),
+            ('VALIGN', (1,0), (1,3), 'TOP'),
             ('VALIGN', (1,4), (2,5), 'TOP'), 
-            ('LEFTPADDING', (1,1), (2,5), 10),
-            ('RIGHTPADDING', (1,1), (2,5), 10),
-            ('TOPPADDING', (1,1), (2,5), 10),
-            ('BOTTOMPADDING', (1,1), (2,5), 10),
-            ('LEFTPADDING', (3,0), (3,-1), 0),
-            ('RIGHTPADDING', (3,0), (3,-1), 0),
+            ('LEFTPADDING', (1,0), (1,3), 10),
+            ('RIGHTPADDING', (1,0), (1,3), 10),
+            ('TOPPADDING', (1,0), (1,3), 10),
+            ('BOTTOMPADDING', (1,0), (1,3), 10),
+            ('LEFTPADDING', (2,0), (2,-1), 0),
+            ('RIGHTPADDING', (2,0), (2,-1), 0),
         ]))
         story.append(t_main)
         
@@ -439,7 +498,7 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
 def _generate_monthly_report_pdf(data: dict, report_type: str) -> str:
     try:
         os.makedirs("outputs", exist_ok=True)
-        filename = f"monthly_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"월간보고서_{datetime.now().strftime('%Y%m%d')}.pdf"
         pdf_path = os.path.join("outputs", filename)
         font_normal, font_bold = _setup_fonts()
         doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)

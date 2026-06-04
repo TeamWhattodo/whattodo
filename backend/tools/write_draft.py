@@ -7,12 +7,12 @@ DRAFT_SYSTEM = """
 """
 
 
-def write_draft(item_id: str, tone: str = "formal") -> dict:
+def write_draft(user_id: int, item_id: str, tone: str = "formal") -> dict:
     """
     item_id로 WorkItem 조회 후 답장 초안을 생성한다.
     tone: formal | casual
     """
-    item = get_item_by_id(item_id) or {}
+    item = get_item_by_id(item_id, user_id=user_id) or {}
     prompt = f"""
 항목: {item.get('summary', item.get('raw_content', item_id))}
 발신자: {item.get('from_person', '알 수 없음')}
