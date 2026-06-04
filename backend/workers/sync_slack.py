@@ -3,11 +3,11 @@ from backend.workers.base import run_sync
 from backend.tools.slack_fetch import fetch_slack_all_items
 
 
-def _fetch(user_id: int) -> list[dict]:
+def _fetch(user_id: int, days: int = 14) -> list[dict]:
     # We directly use the client logic to fetch all items for the user
     from backend.tools.slack_fetch import _client
     import hashlib
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     client = _client(user_id=user_id)
     try:
@@ -17,11 +17,13 @@ def _fetch(user_id: int) -> list[dict]:
         return []
 
     all_items = []
+    oldest = (datetime.utcnow() - timedelta(days=days)).timestamp()
+    
     for ch in channels:
         channel_id = ch["id"]
         channel_name = ch.get("name", channel_id)
         try:
-            msgs = client.conversations_history(channel=channel_id, limit=30).data.get("messages", [])
+            msgs = client.conversations_history(channel=channel_id, limit=100, oldest=oldest).data.get("messages", [])
         except Exception:
             continue
 
@@ -52,14 +54,16 @@ def _fetch(user_id: int) -> list[dict]:
 def sync_slack():
     from backend.db.store import get_session
     from backend.db.orm_models import IntegrationCredentialORM
+    from backend.auth.models import User
     from sqlalchemy import select
     
-    # 기본 글로벌 연동(1번 유저 취급)
-    run_sync("slack", _fetch, user_id=1)
-    
-    # DB에 저장된 다른 유저들 토큰 기반 연동
     with get_session() as db:
-        users = db.execute(select(IntegrationCredentialORM.user_id).where(IntegrationCredentialORM.source == "slack")).scalars().all()
-        for uid in users:
-            if uid == 1: continue # 1번은 위에서 처리함
-            run_sync(f"slack_{uid}", _fetch, user_id=uid)
+        stmt = (
+            select(IntegrationCredentialORM.user_id, User.sync_settings)
+            .join(User, User.id == IntegrationCredentialORM.user_id)
+            .where(IntegrationCredentialORM.source == "slack")
+        )
+        users = db.execute(stmt).all()
+        for uid, settings in users:
+            days = (settings or {}).get("slack", 14)
+            run_sync(f"slack_{uid}", _fetch, user_id=uid, days=days)

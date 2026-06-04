@@ -4,15 +4,16 @@ from backend.workers.base import run_sync
 from backend.tools.jira_fetch import jira_search_issues
 
 
-def _fetch(user_id: int) -> list[dict]:
+def _fetch(user_id: int, days: int = 14) -> list[dict]:
     # Pass user_id directly to _client or tools, but tools require RunnableConfig.
     # We can craft a mock config or directly call the underlying fetch logic.
     # The simplest way is to call _client directly:
     from backend.tools.jira_fetch import _client
     
     client = _client(user_id=user_id)
+    jql = f"statusCategory not in (Done) AND updated >= -{days}d ORDER BY updated DESC"
     raw = client.search_issues(
-        "statusCategory not in (Done) ORDER BY updated DESC",
+        jql,
         maxResults=50,
         fields="summary,status,assignee,priority,created,updated,description",
     )
@@ -41,14 +42,16 @@ def _fetch(user_id: int) -> list[dict]:
 def sync_jira():
     from backend.db.store import get_session
     from backend.db.orm_models import IntegrationCredentialORM
+    from backend.auth.models import User
     from sqlalchemy import select
     
-    # 기본 글로벌 연동(1번 유저 취급)
-    run_sync("jira", _fetch, user_id=1)
-    
-    # DB에 저장된 다른 유저들 토큰 기반 연동
     with get_session() as db:
-        users = db.execute(select(IntegrationCredentialORM.user_id).where(IntegrationCredentialORM.source == "jira")).scalars().all()
-        for uid in users:
-            if uid == 1: continue # 1번은 위에서 처리함
-            run_sync(f"jira_{uid}", _fetch, user_id=uid)
+        stmt = (
+            select(IntegrationCredentialORM.user_id, User.sync_settings)
+            .join(User, User.id == IntegrationCredentialORM.user_id)
+            .where(IntegrationCredentialORM.source == "jira")
+        )
+        users = db.execute(stmt).all()
+        for uid, settings in users:
+            days = (settings or {}).get("jira", 14)
+            run_sync(f"jira_{uid}", _fetch, user_id=uid, days=days)

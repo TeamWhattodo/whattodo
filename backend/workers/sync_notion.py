@@ -3,17 +3,33 @@ from datetime import datetime
 from backend.workers.base import run_sync
 
 
-def _fetch(user_id: int) -> list[dict]:
+def _fetch(user_id: int, days: int = 14) -> list[dict]:
     try:
         from backend.tools.notion_fetch import _client
+        from datetime import datetime, timedelta, timezone
         client = _client(user_id=user_id)
-        response = client.search(query="", page_size=30)
+        response = client.search(
+            query="",
+            sort={"direction": "descending", "timestamp": "last_edited_time"},
+            page_size=50
+        )
         pages = response.get("results", [])
     except Exception:
         return []
 
     items = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    
     for page in pages:
+        edited_time = page.get("last_edited_time")
+        if edited_time:
+            try:
+                page_time = datetime.fromisoformat(edited_time.replace("Z", "+00:00"))
+                if page_time < cutoff:
+                    continue
+            except ValueError:
+                pass
+                
         page_id = page.get("id", "")
         title = ""
         for prop in page.get("properties", {}).values():
@@ -43,14 +59,16 @@ def _fetch(user_id: int) -> list[dict]:
 def sync_notion():
     from backend.db.store import get_session
     from backend.db.orm_models import IntegrationCredentialORM
+    from backend.auth.models import User
     from sqlalchemy import select
     
-    # 기본 글로벌 연동(1번 유저 취급)
-    run_sync("notion", _fetch, user_id=1)
-    
-    # DB에 저장된 다른 유저들 토큰 기반 연동
     with get_session() as db:
-        users = db.execute(select(IntegrationCredentialORM.user_id).where(IntegrationCredentialORM.source == "notion")).scalars().all()
-        for uid in users:
-            if uid == 1: continue # 1번은 위에서 처리함
-            run_sync(f"notion_{uid}", _fetch, user_id=uid)
+        stmt = (
+            select(IntegrationCredentialORM.user_id, User.sync_settings)
+            .join(User, User.id == IntegrationCredentialORM.user_id)
+            .where(IntegrationCredentialORM.source == "notion")
+        )
+        users = db.execute(stmt).all()
+        for uid, settings in users:
+            days = (settings or {}).get("notion", 14)
+            run_sync(f"notion_{uid}", _fetch, user_id=uid, days=days)

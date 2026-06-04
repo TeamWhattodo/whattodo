@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -27,7 +27,7 @@ EMBEDDING_MODEL  = "text-embedding-3-small"
 INGESTED_MARKER  = Path(__file__).parent.parent.parent / "docs" / "policy" / ".ingested.json"
 
 SUPPORTED_LOADERS = {
-    ".pdf": PyPDFLoader,
+    ".pdf": PyMuPDFLoader,
 }
 
 
