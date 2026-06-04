@@ -14,8 +14,8 @@ async function request(path, options = {}) {
   return res.status === 200 || res.status === 201 ? res.json() : null;
 }
 
-export const register = (username, password) =>
-  request("/register", { method: "POST", body: JSON.stringify({ username, password }) });
+export const register = (username, password, name, department, position) =>
+  request("/register", { method: "POST", body: JSON.stringify({ username, password, name, department, position }) });
 
 export const login = (username, password) =>
   request("/login", { method: "POST", body: JSON.stringify({ username, password }) });

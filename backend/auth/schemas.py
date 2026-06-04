@@ -10,6 +10,9 @@ _USERNAME_RE = re.compile(r"^[A-Za-z0-9]{3,30}$")
 class RegisterReq(BaseModel):
     username: str
     password: str
+    name: str | None = None
+    department: str | None = None
+    position: str | None = None
 
     @field_validator("username")
     @classmethod
@@ -34,3 +37,6 @@ class LoginReq(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    name: str | None = None
+    department: str | None = None
+    position: str | None = None

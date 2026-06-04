@@ -24,7 +24,6 @@ async def _set_tokens_and_cookies(response: Response, user: User, db: AsyncSessi
     access_token = security.create_access_token(user.id)
     refresh_token = security.create_refresh_token(user.id)
     
-    # DB 업데이트
     user.access_token = access_token
     user.refresh_token = refresh_token
     await db.commit()
@@ -49,6 +48,16 @@ async def _set_tokens_and_cookies(response: Response, user: User, db: AsyncSessi
     )
 
 
+@router.get("/check-username")
+async def check_username(username: str, db: AsyncSession = Depends(get_db)):
+    exists = (
+        await db.execute(select(User).where(User.username == username))
+    ).scalar_one_or_none()
+    if exists:
+        raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+    return {"ok": True}
+
+
 @router.post("/register", response_model=UserOut, status_code=201)
 async def register(req: RegisterReq, response: Response,
                    db: AsyncSession = Depends(get_db)) -> User:
@@ -57,7 +66,13 @@ async def register(req: RegisterReq, response: Response,
     ).scalar_one_or_none()
     if exists is not None:
         raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
-    user = User(username=req.username, password_hash=security.hash_password(req.password))
+    user = User(
+        username=req.username,
+        password_hash=security.hash_password(req.password),
+        name=req.name,
+        department=req.department,
+        position=req.position,
+    )
     db.add(user)
     try:
         await db.commit()
