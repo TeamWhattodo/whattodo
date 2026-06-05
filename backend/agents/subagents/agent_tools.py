@@ -20,7 +20,7 @@ def _wrap(agent: str, status: str, content: str, **extra) -> str:
 @tool
 def fetch_agent(request: str) -> str:
     """Gmail·Calendar·Slack·Jira·Notion에서 업무 데이터를 수집합니다.
-    브리핑·복귀 정리·소스별 현황 파악 시 사용. 수집 결과의 content를 report_agent에 context로 전달하세요."""
+    브리핑·복귀 정리·소스별 현황 파악 시 사용."""
     from backend.agents.subagents.fetch_agent import run
     try:
         text, _ = _run(run(request))

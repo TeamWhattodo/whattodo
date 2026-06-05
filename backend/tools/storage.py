@@ -24,6 +24,8 @@ def _row_to_dict(row: WorkItemORM) -> dict:
         "created_at":        row.created_at.isoformat() if row.created_at else None,
         "completed_at":      row.completed_at.isoformat() if row.completed_at else None,
         "actual_minutes":    row.actual_minutes,
+        "deadline":          row.deadline.isoformat() if row.deadline else None,
+        "urgency_reason":    row.urgency_reason,
     }
 
 
@@ -49,9 +51,11 @@ def save_items(items: list[dict]) -> None:
                 summary           = item.get("summary", ""),
                 urgency_level     = item.get("urgency_level", 0),
                 urgency_breakdown = item.get("urgency_breakdown", {}),
+                urgency_reason    = item.get("urgency_reason"),
                 action_type       = item.get("action_type", "none"),
                 from_person       = item.get("from_person"),
                 due_at            = _parse_dt(item.get("due_at")),
+                deadline          = _parse_dt(item.get("deadline")),
                 source_id         = item.get("source_id"),
                 status            = item.get("status", "pending"),
                 created_at        = _parse_dt(item.get("created_at")) or datetime.now(),

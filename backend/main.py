@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
@@ -17,12 +17,14 @@ async def lifespan(app: FastAPI):
     init_db()
     await auth_init_db()
 
+    now = datetime.now()
     scheduler = BackgroundScheduler()
-    scheduler.add_job(sync_gmail,    "interval", minutes=5,  id="sync_gmail",    next_run_time=datetime.now())
-    scheduler.add_job(sync_slack,    "interval", minutes=2,  id="sync_slack",    next_run_time=datetime.now())
-    scheduler.add_job(sync_calendar, "interval", minutes=5,  id="sync_calendar", next_run_time=datetime.now())
-    scheduler.add_job(sync_jira,     "interval", minutes=10, id="sync_jira",     next_run_time=datetime.now())
-    scheduler.add_job(sync_notion,   "interval", minutes=15, id="sync_notion",   next_run_time=datetime.now())
+    # 워커 시작을 분산해 LLM 동시 호출 방지 (10초 간격)
+    scheduler.add_job(sync_gmail,    "interval", minutes=5,  id="sync_gmail",    next_run_time=now)
+    scheduler.add_job(sync_slack,    "interval", minutes=2,  id="sync_slack",    next_run_time=now + timedelta(seconds=10))
+    scheduler.add_job(sync_calendar, "interval", minutes=5,  id="sync_calendar", next_run_time=now + timedelta(seconds=20))
+    scheduler.add_job(sync_jira,     "interval", minutes=10, id="sync_jira",     next_run_time=now + timedelta(seconds=30))
+    scheduler.add_job(sync_notion,   "interval", minutes=15, id="sync_notion",   next_run_time=now + timedelta(seconds=40))
     scheduler.start()
 
     yield
