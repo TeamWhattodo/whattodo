@@ -334,8 +334,10 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
-      alert("PDF 파일만 업로드 가능합니다.");
+    const ext = file.name.split('.').pop().toLowerCase();
+    const allowed = ['pdf', 'hwp', 'hwpx', 'docx', 'doc'];
+    if (!allowed.includes(ext)) {
+      alert("PDF, HWP, DOCX, DOC 파일만 업로드 가능합니다.");
       return;
     }
     setUploading(true);
@@ -640,10 +642,10 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "16px" }}>
                 <p style={{ fontSize: "14px", color: "#666", margin: 0, wordBreak: "keep-all" }}>
-                  문서를 업로드하면 백그라운드에서 자동으로 AI 임베딩이 진행됩니다.
+                  사내 규정 문서(PDF, 워드, 한글)를 업로드하면 백그라운드에서 자동으로 AI 임베딩이 진행됩니다.
                 </p>
                 <div style={{ flexShrink: 0 }}>
-                  <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".pdf" style={{ display: "none" }} />
+                  <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".pdf,.hwp,.hwpx,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/x-hwp,application/haansofthwp" style={{ display: "none" }} />
                   <button className="modal-btn modal-btn-primary" onClick={() => fileInputRef.current.click()} disabled={uploading} style={{ fontSize: "13px", padding: "6px 12px", whiteSpace: "nowrap" }}>
                     {uploading ? "업로드 중..." : "+ 파일 추가"}
                   </button>
@@ -677,6 +679,8 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
                                 <span style={{ fontSize: "12px", color: "#276749", background: "#C6F6D5", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }}>임베딩 완료</span>
                               ) : isRunning ? (
                                 <span style={{ fontSize: "12px", color: "#B7791F", background: "#FEEBC8", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }}>임베딩 중</span>
+                              ) : policyStatus?.status === "error" && policyStatus?.current_file === file.name ? (
+                                <span style={{ fontSize: "12px", color: "#C53030", background: "#FED7D7", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }} title={policyStatus?.error || ""}>임베딩 실패 ⚠</span>
                               ) : (
                                 <span style={{ fontSize: "12px", color: "#C53030", background: "#FED7D7", padding: "2px 6px", borderRadius: "4px", fontWeight: "600" }}>임베딩 필요</span>
                               )}
@@ -688,7 +692,7 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                                   <polygon points="5 3 19 12 5 21 5 3" />
                                 </svg>
-                                임베딩 시작
+                                {policyStatus?.status === "error" && policyStatus?.current_file === file.name ? "재시도" : "임베딩 시작"}
                               </button>
                             )}
                             <button className="modal-btn modal-btn-outline" style={{ color: "#E53E3E", borderColor: "#E53E3E", padding: "6px 10px" }} onClick={() => handleDeletePolicy(file.name)}>
@@ -704,6 +708,11 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
                               <div style={{ width: `${progress}%`, height: "100%", background: "#3b5bdb", transition: "width 0.3s ease" }}></div>
                             </div>
                             <span style={{ fontSize: "12px", fontWeight: "600", color: "#3b5bdb", width: "32px", textAlign: "right" }}>{progress}%</span>
+                          </div>
+                        )}
+                        {policyStatus?.status === "error" && policyStatus?.current_file === file.name && policyStatus?.error && (
+                          <div style={{ marginTop: "4px", padding: "6px 10px", background: "#FFF5F5", border: "1px solid #FEB2B2", borderRadius: "6px", fontSize: "12px", color: "#C53030", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: "80px", overflowY: "auto" }}>
+                            {policyStatus.error}
                           </div>
                         )}
                       </div>

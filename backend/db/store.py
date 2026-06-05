@@ -1,5 +1,5 @@
 import logging
-import threading
+import threading  # fallback용으로 유지
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine, text
@@ -58,13 +58,19 @@ def _seed_sync_log() -> None:
             )
 
 
-def _run_ingest_policy(filename: str) -> None:
-    global policy_ingest_status
+async def _run_ingest_policy_async(filename: str) -> None:
+    """asyncio 기반 비동기 임베딩 실행 — 이벤트 루프를 블로킹하지 않음"""
+    import asyncio
+    import sys
+    import json
+    import tempfile
     from pathlib import Path
 
+    global policy_ingest_status
+
     policy_dir = Path(__file__).parent.parent.parent / "docs" / "policy"
-    pdf = policy_dir / filename
-    if not pdf.exists():
+    target_file = policy_dir / filename
+    if not target_file.exists():
         return
 
     try:
@@ -73,30 +79,93 @@ def _run_ingest_policy(filename: str) -> None:
     except Exception:
         return
 
-    policy_ingest_status["status"] = "running"
-    policy_ingest_status["files"] = [filename]
-    policy_ingest_status["done_files"] = []
-    policy_ingest_status["current_file"] = filename
-    policy_ingest_status["progress"] = 0
+    policy_ingest_status.update({
+        "status": "running",
+        "files": [filename],
+        "done_files": [],
+        "current_file": filename,
+        "progress": 0,
+        "error": None,
+    })
 
-    def progress_cb(current, total):
-        if total > 0:
-            policy_ingest_status["progress"] = int((current / total) * 100)
+    script_path = Path(__file__).parent.parent / "scripts" / "ingest_policy.py"
+    project_root = Path(__file__).parent.parent.parent
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", prefix="ingest_", delete=False
+    ) as pf:
+        progress_file = Path(pf.name)
 
     try:
-        from backend.scripts.ingest_policy import ingest
-        logging.info(f"[policy] 임베딩 시작: {filename}")
-        count = ingest(str(pdf), progress_cb=progress_cb)
-        logging.info(f"[policy] 완료: {filename} ({count}청크)")
-        policy_ingest_status["done_files"].append(filename)
+        # stderr는 PIPE로 받아 버퍼 overflow 없이 비동기 수집
+        # stdout은 DEVNULL (디버그 print가 많아 버퍼 블로킹 위험)
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, str(script_path), str(target_file),
+            "--progress-file", str(progress_file),
+            cwd=str(project_root),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stderr_lines: list[str] = []
+
+        async def _drain_stderr() -> None:
+            try:
+                async for line in proc.stderr:
+                    stderr_lines.append(line.decode("utf-8", errors="replace"))
+            except asyncio.CancelledError:
+                pass
+
+        async def _update_progress() -> None:
+            try:
+                while True:
+                    await asyncio.sleep(0.5)
+                    if progress_file.exists():
+                        try:
+                            data = json.loads(progress_file.read_text(encoding="utf-8"))
+                            policy_ingest_status["progress"] = data.get("progress", 0)
+                        except Exception:
+                            pass
+            except asyncio.CancelledError:
+                pass
+
+        drain_task = asyncio.create_task(_drain_stderr())
+        progress_task = asyncio.create_task(_update_progress())
+
+        try:
+            await proc.wait()
+        finally:
+            progress_task.cancel()
+            await drain_task  # stderr 마저 읽기
+
+        if proc.returncode == 0:
+            count = 0
+            if progress_file.exists():
+                try:
+                    data = json.loads(progress_file.read_text(encoding="utf-8"))
+                    count = data.get("count", 0)
+                except Exception:
+                    pass
+            logging.info(f"[policy] 완료: {filename} ({count}청크)")
+            policy_ingest_status["done_files"].append(filename)
+            policy_ingest_status["status"] = "done"
+            policy_ingest_status["progress"] = 100
+        else:
+            error_msg = "".join(stderr_lines)[-500:] or "Unknown error"
+            logging.error(f"[policy] 임베딩 실패: {filename} — {error_msg}")
+            policy_ingest_status["status"] = "error"
+            policy_ingest_status["error"] = error_msg
+
     except Exception as e:
         logging.error(f"[policy] 임베딩 실패: {filename} — {e}")
         policy_ingest_status["status"] = "error"
         policy_ingest_status["error"] = str(e)
-        return
-
-    policy_ingest_status["status"] = "done"
-    policy_ingest_status["progress"] = 100
+    finally:
+        try:
+            if progress_file.exists():
+                progress_file.unlink()
+        except Exception:
+            pass
 
 
 @contextmanager
@@ -113,10 +182,20 @@ def get_session():
 
 
 def trigger_policy_ingest(filename: str) -> None:
+    """동기 컨텍스트용 — 현재 이벤트 루프에 async 태스크를 예약한다."""
+    import asyncio
     global policy_ingest_status
     if policy_ingest_status["status"] == "running":
         return
-    threading.Thread(target=_run_ingest_policy, args=(filename,), daemon=True).start()
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_run_ingest_policy_async(filename))
+    except RuntimeError:
+        # 이벤트 루프가 없는 컨텍스트(테스트 등)에서는 새 루프로 실행
+        threading.Thread(
+            target=lambda: asyncio.run(_run_ingest_policy_async(filename)),
+            daemon=True,
+        ).start()
 
 
 def get_policy_list() -> list:
@@ -127,7 +206,10 @@ def get_policy_list() -> list:
     if not policy_dir.exists():
         return []
         
-    pdfs = list(policy_dir.glob("*.pdf"))
+    files_paths = []
+    for ext in ("*.pdf", "*.hwp", "*.hwpx", "*.docx", "*.doc"):
+        files_paths.extend(policy_dir.glob(ext))
+    
     files = []
     
     marker_path = policy_dir / ".ingested.json"
@@ -138,11 +220,11 @@ def get_policy_list() -> list:
         except Exception:
             pass
 
-    for pdf in pdfs:
-        is_done = pdf.name in marker
+    for file_path in files_paths:
+        is_done = file_path.name in marker
         files.append({
-            "name": pdf.name,
-            "size": pdf.stat().st_size,
+            "name": file_path.name,
+            "size": file_path.stat().st_size,
             "embedded": is_done,
         })
     return files

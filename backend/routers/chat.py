@@ -216,8 +216,11 @@ import shutil
 
 @router.post("/policy/upload")
 async def upload_policy(file: UploadFile = File(...), user: User = Depends(get_current_user)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    filename_lower = file.filename.lower()
+    print(f"[DEBUG] Uploaded file: {file.filename}, lower: {filename_lower}")
+    if not filename_lower.endswith((".pdf", ".hwp", ".hwpx", ".docx", ".doc")):
+        print(f"[DEBUG] Rejected file: {file.filename}")
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.filename}")
     
     policy_dir = Path(__file__).parent.parent.parent / "docs" / "policy"
     policy_dir.mkdir(parents=True, exist_ok=True)
@@ -229,9 +232,12 @@ async def upload_policy(file: UploadFile = File(...), user: User = Depends(get_c
     return {"ok": True, "filename": file.filename}
 
 @router.post("/policy/ingest/{filename}")
-def ingest_policy(filename: str, user: User = Depends(get_current_user)):
-    from backend.db.store import trigger_policy_ingest
-    trigger_policy_ingest(filename)
+async def ingest_policy(filename: str, user: User = Depends(get_current_user)):
+    from backend.db.store import policy_ingest_status, _run_ingest_policy_async
+    import asyncio
+    if policy_ingest_status["status"] == "running":
+        return {"ok": True, "filename": filename}
+    asyncio.create_task(_run_ingest_policy_async(filename))
     return {"ok": True, "filename": filename}
 
 
