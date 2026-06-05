@@ -1,7 +1,7 @@
 """인증 라우터 — register / login / logout / me."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth import security
 from backend.auth.deps import ACCESS_TOKEN_NAME, REFRESH_TOKEN_NAME, get_current_user
 from backend.auth.models import User
-from backend.auth.schemas import LoginReq, RegisterReq, UserOut
+from backend.auth.schemas import LoginReq, RegisterReq, UserOut, UpdateUserReq
 from backend.config import settings
 from backend.db.database import get_db
 
@@ -24,7 +24,6 @@ async def _set_tokens_and_cookies(response: Response, user: User, db: AsyncSessi
     access_token = security.create_access_token(user.id)
     refresh_token = security.create_refresh_token(user.id)
     
-    # DB 업데이트
     user.access_token = access_token
     user.refresh_token = refresh_token
     await db.commit()
@@ -49,6 +48,16 @@ async def _set_tokens_and_cookies(response: Response, user: User, db: AsyncSessi
     )
 
 
+@router.get("/check-username")
+async def check_username(username: str, db: AsyncSession = Depends(get_db)):
+    exists = (
+        await db.execute(select(User).where(User.username == username))
+    ).scalar_one_or_none()
+    if exists:
+        raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
+    return {"ok": True}
+
+
 @router.post("/register", response_model=UserOut, status_code=201)
 async def register(req: RegisterReq, response: Response,
                    db: AsyncSession = Depends(get_db)) -> User:
@@ -57,7 +66,13 @@ async def register(req: RegisterReq, response: Response,
     ).scalar_one_or_none()
     if exists is not None:
         raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다")
-    user = User(username=req.username, password_hash=security.hash_password(req.password))
+    user = User(
+        username=req.username,
+        password_hash=security.hash_password(req.password),
+        name=req.name,
+        department=req.department,
+        position=req.position,
+    )
     db.add(user)
     try:
         await db.commit()
@@ -80,8 +95,6 @@ async def login(req: LoginReq, response: Response,
     await _set_tokens_and_cookies(response, user, db)
     return user
 
-
-from fastapi import Request
 
 @router.post("/refresh")
 async def refresh_token(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
@@ -123,3 +136,54 @@ async def logout(response: Response, request: Request, db: AsyncSession = Depend
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+@router.put("/me", response_model=UserOut)
+async def update_me(
+    req: UpdateUserReq,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    if req.password:
+        user.password_hash = security.hash_password(req.password)
+    
+    if req.sync_settings is not None:
+        user.sync_settings = req.sync_settings
+
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.delete("/me")
+async def delete_me(
+    response: Response,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    from backend.db.orm_models import (
+        IntegrationCredentialORM,
+        SyncLogORM,
+        WorkItemORM,
+        SessionORM,
+        ExpenseReportORM
+    )
+    from sqlalchemy import delete
+
+    # 연관 데이터 삭제 (CASCADE 효과)
+    await db.execute(delete(IntegrationCredentialORM).where(IntegrationCredentialORM.user_id == user.id))
+    await db.execute(delete(SyncLogORM).where(SyncLogORM.user_id == user.id))
+    await db.execute(delete(WorkItemORM).where(WorkItemORM.user_id == user.id))
+    await db.execute(delete(SessionORM).where(SessionORM.user_id == str(user.id)))
+    await db.execute(delete(ExpenseReportORM).where(ExpenseReportORM.user_id == user.id))
+    
+    # 유저 삭제
+    await db.execute(delete(User).where(User.id == user.id))
+    await db.commit()
+
+    # 쿠키 제거
+    response.delete_cookie(key=ACCESS_TOKEN_NAME, path="/", httponly=True, samesite="lax", secure=settings.cookie_secure)
+    response.delete_cookie(key=REFRESH_TOKEN_NAME, path="/", httponly=True, samesite="lax", secure=settings.cookie_secure)
+
+    return {"ok": True}
