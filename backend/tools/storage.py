@@ -24,6 +24,8 @@ def _row_to_dict(row: WorkItemORM) -> dict:
         "created_at":        row.created_at.isoformat() if row.created_at else None,
         "completed_at":      row.completed_at.isoformat() if row.completed_at else None,
         "actual_minutes":    row.actual_minutes,
+        "deadline":          row.deadline.isoformat() if row.deadline else None,
+        "urgency_reason":    row.urgency_reason,
     }
 
 

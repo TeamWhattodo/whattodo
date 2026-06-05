@@ -66,9 +66,10 @@ def _to_structured(item: dict) -> dict:
         "source":           item.get("source", ""),
         "from_person":      item.get("from_person") or "",
         "summary":          item.get("summary") or item.get("raw_content", "")[:200],
-        "due_at":           item.get("due_at") or "",
+        "deadline":         item.get("deadline") or item.get("due_at") or "",
         "action_type":      item.get("action_type", "none"),
         "urgency_level":    item.get("urgency_level", 0),
         "urgency_category": _urgency_category(item.get("urgency_level", 0)),
+        "urgency_reason":   item.get("urgency_reason") or "",
         "status":           item.get("status", ""),
     }
