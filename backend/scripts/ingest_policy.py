@@ -14,10 +14,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader, Docx2txtLoader
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+import subprocess
 
 from backend.config import settings
 from backend.db.store import get_session, init_db
@@ -26,8 +28,42 @@ from backend.db.orm_models import PolicyEmbeddingORM
 EMBEDDING_MODEL  = "text-embedding-3-small"
 INGESTED_MARKER  = Path(__file__).parent.parent.parent / "docs" / "policy" / ".ingested.json"
 
+class CustomHWPLoader:
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def load(self):
+        try:
+            if self.file_path.lower().endswith(".hwpx"):
+                import zipfile
+                import re
+                with zipfile.ZipFile(self.file_path, 'r') as zf:
+                    text_parts = []
+                    for filename in zf.namelist():
+                        if filename.startswith("Contents/section") and filename.endswith(".xml"):
+                            xml_content = zf.read(filename).decode('utf-8')
+                            text = re.sub(r'<[^>]+>', '', xml_content)
+                            text_parts.append(text)
+                    full_text = "\n".join(text_parts)
+                return [Document(page_content=full_text, metadata={"source": Path(self.file_path).name})]
+            else:
+                result = subprocess.run(["hwp5txt", self.file_path], capture_output=True, text=True, encoding="utf-8")
+                if result.returncode == 0:
+                    text = result.stdout
+                    return [Document(page_content=text, metadata={"source": Path(self.file_path).name})]
+                else:
+                    print(f"HWP extraction error: {result.stderr}")
+                    return []
+        except Exception as e:
+            print(f"HWP extraction exception: {e}")
+            return []
+
 SUPPORTED_LOADERS = {
     ".pdf": PyMuPDFLoader,
+    ".docx": Docx2txtLoader,
+    ".doc": Docx2txtLoader,
+    ".hwp": CustomHWPLoader,
+    ".hwpx": CustomHWPLoader,
 }
 
 
@@ -138,11 +174,11 @@ def ingest(file_path: str, progress_cb=None) -> int:
         progress_cb(0, len(new_chunks))
         
     print(f"  PostgreSQL 저장 중...")
-    with get_session() as db:
-        for i in range(0, len(new_chunks), batch_size):
-            batch = new_chunks[i:i+batch_size]
-            vectors = embeddings_model.embed_documents([c["content"] for c in batch])
-            
+    for i in range(0, len(new_chunks), batch_size):
+        batch = new_chunks[i:i+batch_size]
+        vectors = embeddings_model.embed_documents([c["content"] for c in batch])
+        
+        with get_session() as db:
             for chunk, vector in zip(batch, vectors):
                 stmt = pg_insert(PolicyEmbeddingORM).values(
                     id          = chunk["id"],
@@ -152,9 +188,13 @@ def ingest(file_path: str, progress_cb=None) -> int:
                     embedding   = vector,
                 ).on_conflict_do_nothing(index_elements=["id"])
                 db.execute(stmt)
-                
-            if progress_cb:
-                progress_cb(min(i+batch_size, len(new_chunks)), len(new_chunks))
+            
+        if progress_cb:
+            progress_cb(min(i+batch_size, len(new_chunks)), len(new_chunks))
+        
+        # 메인 스레드가 HTTP 요청을 처리할 수 있도록 양보
+        import time
+        time.sleep(0.1)
 
     # 완료 마커 저장
     _save_marker(path.name, total)
@@ -164,11 +204,39 @@ def ingest(file_path: str, progress_cb=None) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser(description="사내 규정 문서 임베딩")
+    parser.add_argument("file_path", help="임베딩할 문서 경로")
+    parser.add_argument("--progress-file", default=None, help="진행률 JSON 파일 경로")
+    args = parser.parse_args()
 
-    file_path = sys.argv[1]
-    print(f"파일 처리 중: {file_path}")
-    count = ingest(file_path)
+    progress_file_path = args.progress_file
+
+    def write_progress(current, total):
+        if progress_file_path:
+            try:
+                progress_data = {
+                    "current": current,
+                    "total": total,
+                    "progress": int((current / total) * 100) if total > 0 else 0,
+                }
+                Path(progress_file_path).write_text(
+                    json.dumps(progress_data), encoding="utf-8"
+                )
+            except Exception:
+                pass
+
+    print(f"파일 처리 중: {args.file_path}")
+    count = ingest(args.file_path, progress_cb=write_progress)
+
+    # 최종 완료 상태 기록
+    if progress_file_path:
+        try:
+            Path(progress_file_path).write_text(
+                json.dumps({"current": count, "total": count, "progress": 100, "status": "done", "count": count}),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
     print(f"\n완료: {count}개 청크가 PostgreSQL pgvector에 저장됐습니다.")
