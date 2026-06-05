@@ -53,23 +53,36 @@ async def run(user_input: str, user_id: int = 1) -> tuple[str, dict]:
     return json.dumps({"total": len(structured), "items": structured}, ensure_ascii=False, default=str), {}
 
 
-def _urgency_category(level: int) -> str:
+_URGENT_KEYWORDS   = ["긴급", "마감 초과", "즉시", "critical", "urgent", "[긴급]"]
+_IMPORTANT_KEYWORDS = ["승인 요청", "검토 요청", "리뷰", "review", "배포", "마감"]
+
+
+def _urgency_category(level: int, summary: str = "") -> str:
     if level >= 7:
         return "urgent"
     if level >= 4:
         return "important"
+    # urgency_level이 0이면 summary 키워드로 폴백
+    if level == 0 and summary:
+        s = summary.lower()
+        if any(k in s for k in _URGENT_KEYWORDS):
+            return "urgent"
+        if any(k in s for k in _IMPORTANT_KEYWORDS):
+            return "important"
     return "normal"
 
 
 def _to_structured(item: dict) -> dict:
+    summary = item.get("summary") or item.get("raw_content", "")[:200]
+    level   = item.get("urgency_level", 0)
     return {
         "source":           item.get("source", ""),
         "from_person":      item.get("from_person") or "",
-        "summary":          item.get("summary") or item.get("raw_content", "")[:200],
+        "summary":          summary,
         "deadline":         item.get("deadline") or item.get("due_at") or "",
         "action_type":      item.get("action_type", "none"),
-        "urgency_level":    item.get("urgency_level", 0),
-        "urgency_category": _urgency_category(item.get("urgency_level", 0)),
+        "urgency_level":    level,
+        "urgency_category": _urgency_category(level, summary),
         "urgency_reason":   item.get("urgency_reason") or "",
         "status":           item.get("status", ""),
     }
