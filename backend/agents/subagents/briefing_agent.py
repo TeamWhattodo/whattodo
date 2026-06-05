@@ -1,109 +1,54 @@
 from __future__ import annotations
 
-import json
-
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.agents.llm_client import get_llm
 
-_BRIEFING_SYSTEM = """\
-아래는 Python이 urgency_category 기준으로 분류하고 필드를 매핑한 업무 브리핑 초안입니다.
-이 구조를 바탕으로 자연스러운 한국어 업무 브리핑을 작성하세요.
+BRIEFING_AGENT_SYSTEM = """\
+당신은 업무 브리핑 전담 에이전트입니다.
+fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브리핑으로 정리합니다.
+툴 호출 없이 바로 포맷팅하세요.
 
-규칙:
-- 긴급·중요·일반 섹션 구분과 마크다운 테이블 형식을 유지하세요
-- 출처·발신자·내용·마감시간 열은 빠뜨리지 마세요
-- "-"인 필드는 그대로 "-"로 표시하세요
-- 항목을 임의로 추가하거나 생략하지 마세요
-- 섹션이 없으면 헤더째 생략하세요\
+## 출력 규칙
+
+### 형식 — 반드시 아래 구조를 그대로 사용하라. 절대 변경 금지.
+
+## 📋 업무 브리핑
+
+### 🔴 긴급
+| 출처 | 내용 | 마감일 |
+|------|------|--------|
+| 값   | 값   | 값     |
+
+### 🟡 중요
+| 출처 | 내용 | 마감일 |
+|------|------|--------|
+| 값   | 값   | 값     |
+
+### 🟢 일반
+| 출처 | 내용 | 마감일 |
+|------|------|--------|
+| 값   | 값   | 값     |
+
+### 열 작성 기준
+- 출처: 플랫폼·채널 (예: Slack, Jira, Gmail)
+- 내용: 핵심만. 최대 2문장. 중복·인사말 제거
+- 마감일: deadline 값을 "MM/DD HH:MM" 형식으로 표시. 없으면 "-"
+
+### 우선순위 기준
+- 🔴 긴급(urgent): 마감 초과 · [긴급] 태그 · 즉시 처리 필요
+- 🟡 중요(important): 승인·검토·리뷰 요청 · 배포 관련
+- 🟢 일반(normal): 나머지 (FYI, 참고, 정보성)
+
+### 예외 처리
+- 해당 섹션에 항목 없으면 테이블 전체 생략 (헤더도 생략)
+- 같은 항목 중복 수집 시 1개만 기재
 """
 
 
-def _extract_items_from(data: object) -> list[dict] | None:
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        # _wrap() 포맷: {"status": ..., "content": "{\"items\": [...]}"}
-        if "content" in data:
-            try:
-                inner = json.loads(data["content"])
-                if isinstance(inner, dict):
-                    return inner.get("items", [])
-                if isinstance(inner, list):
-                    return inner
-            except Exception:
-                pass
-        if "items" in data:
-            return data["items"]
-    return None
-
-
-def _parse_items(context: str) -> list[dict]:
-    # 직접 JSON 파싱 시도
-    try:
-        result = _extract_items_from(json.loads(context))
-        if result is not None:
-            return result
-    except Exception:
-        pass
-
-    # "[수집 데이터]\n{json}\n\n[요청]\n..." 래핑 형식
-    marker, end_marker = "[수집 데이터]\n", "\n\n[요청]"
-    start = context.find(marker)
-    if start != -1:
-        start += len(marker)
-        end = context.find(end_marker, start)
-        chunk = context[start:end].strip() if end != -1 else context[start:].strip()
-        try:
-            result = _extract_items_from(json.loads(chunk))
-            if result is not None:
-                return result
-        except Exception:
-            pass
-
-    return []
-
-
-def _fmt(val: object, max_len: int = 80) -> str:
-    if not val:
-        return "-"
-    s = str(val)
-    if "T" in s:
-        s = s.replace("T", " ").split(".")[0]
-    s = s.strip()
-    return (s[:max_len] + "…") if len(s) > max_len else s or "-"
-
-
-def _format_briefing(items: list[dict]) -> str:
-    if not items:
-        return "## 📋 업무 브리핑\n\n현재 처리 중인 업무가 없습니다."
-
-    buckets: dict[str, list] = {"urgent": [], "important": [], "normal": []}
-    for item in items:
-        bucket = buckets.get(item.get("urgency_category", "normal"), buckets["normal"])
-        bucket.append(item)
-
-    header = "| 출처 | 발신자 | 내용 | 마감시간 |\n|------|--------|------|----------|"
-    sections = []
-    for emoji, label, key in [("🔴", "긴급", "urgent"), ("🟡", "중요", "important"), ("🟢", "일반", "normal")]:
-        group = buckets[key]
-        if not group:
-            continue
-        rows = "\n".join(
-            f"| {_fmt(i.get('source'))} | {_fmt(i.get('from_person'))} "
-            f"| {_fmt(i.get('summary'), 80)} | {_fmt(i.get('deadline'))} |"
-            for i in group
-        )
-        sections.append(f"### {emoji} {label}\n{header}\n{rows}")
-
-    return "## 📋 업무 브리핑\n\n" + "\n\n".join(sections)
-
-
 async def run(context: str) -> tuple[str, list[dict]]:
-    items = _parse_items(context)
-    structured = _format_briefing(items)
     text = (await get_llm("fast").ainvoke([
-        SystemMessage(content=_BRIEFING_SYSTEM),
-        HumanMessage(content=structured),
+        SystemMessage(content=BRIEFING_AGENT_SYSTEM),
+        HumanMessage(content=context),
     ])).content.strip()
     return text, []

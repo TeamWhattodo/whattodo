@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from backend.db.store import get_session
 from backend.tools.storage import save_items
+from backend.tools.deadline_extractor import extract_deadlines
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ def run_sync(source: str, fetch_fn, user_id: int = 1, *args, **kwargs) -> int:
             item["synced_at"] = datetime.now(timezone.utc).isoformat()
             item["user_id"] = user_id
 
+        items = extract_deadlines(items)
         save_items(items)
         _update_sync_log(source, user_id, "success", len(items))
         logger.info(f"[User {user_id}][{source}] sync 완료: {len(items)}건")
