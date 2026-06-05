@@ -45,6 +45,9 @@ class UserOut(BaseModel):
 class UpdateUserReq(BaseModel):
     password: str | None = None
     sync_settings: dict | None = None
+    name: str | None = None
+    department: str | None = None
+    position: str | None = None
 
     @field_validator("password")
     @classmethod

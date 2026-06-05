@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 
@@ -41,13 +42,23 @@ def briefing_agent(request: str, context: str = "") -> str:
         return _wrap("report", "error", f"브리핑 생성 실패: {e}", files=[])
 
 
+def _inject_week_dates(request: str) -> str:
+    from datetime import date, timedelta
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    date_info = f"\n[이번 주 날짜 범위: start={monday.strftime('%Y-%m-%d')}, end={sunday.strftime('%Y-%m-%d')}, today={today.strftime('%Y-%m-%d')}]"
+    return request + date_info
+
+
 @tool
-def report_agent(request: str) -> str:
+def report_agent(request: str, config: RunnableConfig) -> str:
     """정산·KPI·영수증 등 파일 기반 데이터를 분석해 보고서를 작성합니다.
     추출된 첨부 문서 내용은 request에 텍스트로 포함해 전달하세요."""
     from backend.agents.subagents.report_agent import run
     try:
-        text, reports = _run(run(request))
+        run_config = {"configurable": config.get("configurable", {})}
+        text, reports = _run(run(_inject_week_dates(request), run_config=run_config))
         return _wrap("report", "success", text, report_type="report", files=reports)
     except Exception as e:
         return _wrap("report", "error", f"리포트 생성 실패: {e}", files=[])

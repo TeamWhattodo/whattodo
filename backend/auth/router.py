@@ -146,9 +146,14 @@ async def update_me(
 ) -> User:
     if req.password:
         user.password_hash = security.hash_password(req.password)
-    
     if req.sync_settings is not None:
         user.sync_settings = req.sync_settings
+    if req.name is not None:
+        user.name = req.name
+    if req.department is not None:
+        user.department = req.department
+    if req.position is not None:
+        user.position = req.position
 
     await db.commit()
     await db.refresh(user)

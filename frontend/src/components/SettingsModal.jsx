@@ -68,7 +68,7 @@ const itemStyle = {
 };
 
 export default function SettingsModal({ onClose, onIntegrationsChange }) {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState("integration"); // integration, duration, account
   
   // Tab 1: Integration
@@ -94,6 +94,11 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
   // Tab 2: Duration
   const [syncSettings, setSyncSettings] = useState({});
   const [isSavingDuration, setIsSavingDuration] = useState(false);
+
+  // Tab 3: Profile
+  const [profile, setProfile] = useState({ name: "", department: "", position: "" });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState("");
 
   // General Modal State
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -140,6 +145,7 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
       ]);
       setIntegrations(intData);
       setSyncSettings(meData?.sync_settings || {});
+      setProfile({ name: meData?.name || "", department: meData?.department || "", position: meData?.position || "" });
     } catch (e) {
       console.error(e);
     } finally {
@@ -242,6 +248,20 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
     setDeleteAccountStatus("idle");
     setDeleteAccountError("");
     setShowDeleteConfirm(true);
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileMsg("");
+    try {
+      await updateMe(profile);
+      await refreshUser();
+      setProfileMsg("저장됨");
+    } catch (e) {
+      setProfileMsg("저장 실패");
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const confirmDeleteAccount = async () => {
@@ -459,6 +479,24 @@ export default function SettingsModal({ onClose, onIntegrationsChange }) {
           {/* TAB 3: 계정 관리 */}
           {activeTab === "account" && (
             <div>
+              <div style={{ marginBottom: "20px", padding: "16px", border: "1px solid #EBEBEB", borderRadius: "8px" }}>
+                <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "10px" }}>내 정보 (보고서 자동 입력)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <input className="modal-input" placeholder="이름" value={profile.name}
+                    onChange={e => setProfile({ ...profile, name: e.target.value })} />
+                  <input className="modal-input" placeholder="부서" value={profile.department}
+                    onChange={e => setProfile({ ...profile, department: e.target.value })} />
+                  <input className="modal-input" placeholder="직급" value={profile.position}
+                    onChange={e => setProfile({ ...profile, position: e.target.value })} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
+                  <button className="modal-btn modal-btn-primary" onClick={handleSaveProfile} disabled={profileSaving}
+                    style={{ fontSize: "13px", padding: "6px 14px" }}>
+                    {profileSaving ? "저장 중..." : "저장"}
+                  </button>
+                  {profileMsg && <span style={{ fontSize: "13px", color: profileMsg === "저장됨" ? "#276749" : "#C53030" }}>{profileMsg}</span>}
+                </div>
+              </div>
               <div style={{ marginBottom: "24px" }}>
                 <p style={{ fontSize: "14px", color: "#666" }}>현재 로그인된 계정: <strong>{user?.username}</strong></p>
               </div>

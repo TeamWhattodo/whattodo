@@ -56,27 +56,19 @@ def filter_items(items: list, min_urgency: int = 3) -> str:
 
 def _get_user_profile(user_id: int) -> dict:
     try:
-        from sqlalchemy import select, text as _text
-        from backend.db.database import SessionLocal as _SL
-        from backend.auth.models import User as _User
-        import asyncio as _asyncio
-
-        async def _fetch():
-            async with _SL() as s:
-                return (await s.execute(select(_User).where(_User.id == user_id))).scalar_one_or_none()
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                user = pool.submit(lambda: asyncio.run(_fetch())).result()
-        else:
-            user = loop.run_until_complete(_fetch())
-        if user:
+        from sqlalchemy import create_engine, text
+        from backend.config import settings
+        engine = create_engine(settings.database_url.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql"))
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT username, name, department, position FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            ).fetchone()
+        if row:
             return {
-                "author": user.name or user.username,
-                "department": user.department or "",
-                "position": user.position or "",
+                "author": row.name or row.username,
+                "department": row.department or "",
+                "position": row.position or "",
             }
     except Exception:
         pass
@@ -91,9 +83,11 @@ def write_report(config: RunnableConfig, report_type: str, data: str) -> str:
     except Exception:
         parsed = data
     if isinstance(parsed, dict):
+        from datetime import date
+        parsed["date"] = date.today().strftime("%Y. %-m. %-d")
         profile = _get_user_profile(_get_uid(config))
         for k, v in profile.items():
-            if not parsed.get(k):
+            if v:
                 parsed[k] = v
     return json.dumps(_write_report(report_type, parsed), ensure_ascii=False, default=str)
 

@@ -24,9 +24,13 @@ export function AuthProvider({ children }) {
     await authApi.logout();
     setUser(null);
   };
+  const refreshUser = async () => {
+    const u = await authApi.fetchMe();
+    setUser(u);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
