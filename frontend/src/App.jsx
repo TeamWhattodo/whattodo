@@ -183,10 +183,10 @@ export default function App() {
     const poll = () => {
       axios.get(`${API}/policy/status`).then(res => {
         setPolicyStatus(res.data);
-        if (res.data.status === "running" || res.data.status === "idle") {
-          timer = setTimeout(poll, 10000);
-        }
-      }).catch(() => {});
+        timer = setTimeout(poll, 10000);
+      }).catch(() => {
+        timer = setTimeout(poll, 10000);
+      });
     };
     poll();
     return () => clearTimeout(timer);
@@ -397,8 +397,8 @@ export default function App() {
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
           <span>Google</span>
-          <span className={`int-status ${integrations.google ? "" : "disconnected"}`}>
-            {integrations.google ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.google ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.google ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -413,8 +413,8 @@ export default function App() {
             <path d="M15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#ECB22E"/>
           </svg>
           <span>Slack</span>
-          <span className={`int-status ${integrations.slack ? "" : "disconnected"}`}>
-            {integrations.slack ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.slack ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.slack ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -424,8 +424,8 @@ export default function App() {
             <path d="M11.664 1.294L4.975 7.983a2.368 2.368 0 0 1-3.348 0 2.368 2.368 0 0 1 0-3.348l6.69-6.689a2.368 2.368 0 0 1 3.347 3.348z" fill="#0052CC"/>
           </svg>
           <span>Jira</span>
-          <span className={`int-status ${integrations.jira ? "" : "disconnected"}`}>
-            {integrations.jira ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.jira ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.jira ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -433,8 +433,21 @@ export default function App() {
             <path d="M4.12 3C3.5 3 3 3.5 3 4.12v15.76C3 20.5 3.5 21 4.12 21h15.76c.62 0 1.12-.5 1.12-1.12V4.12C21 3.5 20.5 3 19.88 3H4.12zM7.5 7.5h2v6.62l6-7.85h3v9h-2V8.62L10.5 16.5h-3v-9z" fill="#111111"/>
           </svg>
           <span>Notion</span>
-          <span className={`int-status ${integrations.notion ? "" : "disconnected"}`}>
-            {integrations.notion ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.notion ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.notion ? "연결됨" : "미연결"}
+          </span>
+        </div>
+        <div className="sidebar-integration">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span>사내 규정</span>
+          <span className={`int-status ${!authUser ? 'disconnected' : policyStatus?.status === 'error' ? 'error' : (policyStatus?.status === 'running' ? 'running' : (policyStatus?.files?.length > 0 ? '' : 'disconnected'))}`}>
+            {!authUser ? '로그인 필요' : policyStatus?.status === 'running' ? '임베딩 중' : (policyStatus?.status === 'error' ? '오류' : (policyStatus?.files?.length > 0 ? `완료됨(${policyStatus?.done_files?.length || 0}개)` : '문서 없음'))}
           </span>
         </div>
 
@@ -500,18 +513,7 @@ export default function App() {
             )}
           </div>
         )}
-        {policyStatus?.status === "done" && policyStatus.done_files?.length > 0 && !policyBannerDismissed && (
-          <div className="policy-banner policy-banner--done">
-            ✅ 사내 규정 문서 임베딩 완료
-            <button className="policy-banner-close" onClick={() => setPolicyBannerDismissed(true)}>×</button>
-          </div>
-        )}
-        {policyStatus?.status === "error" && !policyBannerDismissed && (
-          <div className="policy-banner policy-banner--error">
-            ❌ 임베딩 실패: {policyStatus.error}
-            <button className="policy-banner-close" onClick={() => setPolicyBannerDismissed(true)}>×</button>
-          </div>
-        )}
+
 
         <div className="chat-area">
           {messages.map((msg, i) => {
