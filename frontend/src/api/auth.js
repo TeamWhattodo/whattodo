@@ -38,6 +38,8 @@ export const login = (username, password) =>
 
 export const logout = () => request("/logout", { method: "POST" });
 
+export const refresh = () => request("/refresh", { method: "POST" });
+
 export async function fetchMe() {
   const res = await fetch(`${BASE}/me`, { credentials: "include" });
   return res.ok ? res.json() : null;

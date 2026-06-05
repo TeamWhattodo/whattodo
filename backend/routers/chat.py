@@ -144,7 +144,15 @@ async def chat_stream(req: ChatRequest, user: User = Depends(get_current_user)):
         done_payload = {"type": "done", "text": final_text, "files": files}
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/sessions")
@@ -181,8 +189,78 @@ def del_session(session_id: str, user: User = Depends(get_current_user)):
 
 @router.get("/policy/status")
 def get_policy_status():
-    from backend.db.store import policy_ingest_status
-    return policy_ingest_status
+    from backend.db.store import policy_ingest_status, get_policy_list
+    status = policy_ingest_status.copy()
+    
+    # 실제 존재하는 파일 목록을 조회하여 files 배열 업데이트
+    file_list = get_policy_list()
+    status["files"] = [f["name"] for f in file_list]
+    
+    # 현재 실행 중이 아니라면 완료 상태 보정
+    if status["status"] != "running":
+        status["done_files"] = [f["name"] for f in file_list if f["embedded"]]
+        if len(file_list) > 0 and len(status["done_files"]) == len(file_list):
+            status["status"] = "done"
+        elif len(file_list) > 0:
+            status["status"] = "idle"
+            
+    return status
+
+
+@router.get("/policy/list")
+def get_policies(user: User = Depends(get_current_user)):
+    from backend.db.store import get_policy_list
+    return get_policy_list()
+
+
+from fastapi import UploadFile, File
+import shutil
+
+@router.post("/policy/upload")
+async def upload_policy(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    filename_lower = file.filename.lower()
+    print(f"[DEBUG] Uploaded file: {file.filename}, lower: {filename_lower}")
+    if not filename_lower.endswith((".pdf", ".hwp", ".hwpx", ".docx", ".doc")):
+        print(f"[DEBUG] Rejected file: {file.filename}")
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.filename}")
+    
+    policy_dir = Path(__file__).parent.parent.parent / "docs" / "policy"
+    policy_dir.mkdir(parents=True, exist_ok=True)
+    
+    file_path = policy_dir / file.filename
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {"ok": True, "filename": file.filename}
+
+@router.post("/policy/ingest/{filename}")
+async def ingest_policy(filename: str, user: User = Depends(get_current_user)):
+    from backend.db.store import policy_ingest_status, _run_ingest_policy_async
+    import asyncio
+    if policy_ingest_status["status"] == "running":
+        return {"ok": True, "filename": filename}
+    asyncio.create_task(_run_ingest_policy_async(filename))
+    return {"ok": True, "filename": filename}
+
+
+@router.delete("/policy/{filename}")
+def delete_policy(filename: str, user: User = Depends(get_current_user)):
+    from backend.db.store import delete_policy_file
+    try:
+        delete_policy_file(filename)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+@router.get("/policy/files/{filename}")
+def download_policy_file(filename: str, user: User = Depends(get_current_user)):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="잘못된 파일명")
+    policy_dir = Path(__file__).parent.parent.parent / "docs" / "policy"
+    path = policy_dir / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="파일 없음")
+    return FileResponse(path, filename=filename, media_type="application/pdf")
 
 
 @router.get("/files/{filename}")

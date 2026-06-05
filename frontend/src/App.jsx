@@ -10,18 +10,36 @@ import { getIntegrations } from "./api/integrations";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, { credentials: "include", ...options });
+  if (res.status !== 401) return res;
+  const refreshRes = await fetch(`${API}/auth/refresh`, { method: "POST", credentials: "include" });
+  if (!refreshRes.ok) return res;
+  return fetch(url, { credentials: "include", ...options });
+}
+
+function relativeTime(iso) {
+  if (!iso) return "없음";
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return `${diff}초 전`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+  return `${Math.floor(diff / 86400)}일 전`;
+}
+
+const SYNC_SOURCE_LABEL = { gmail: "Gmail", slack: "Slack", jira: "Jira", notion: "Notion", calendar: "캘린더" };
+
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: "긴급도 순으로 오늘 처리해야 할 업무 정리해줘" },
 ];
 
 export default function App() {
   const { user: authUser, logout } = useAuth();
-  const [sessionId] = useState(() => {
-    const key = "wt_session_id";
-    let id = sessionStorage.getItem(key);
-    if (!id) { id = crypto.randomUUID(); sessionStorage.setItem(key, id); }
-    return id;
-  });
+  const [sessionId, setSessionId]         = useState(() => crypto.randomUUID());
+  const [sessions, setSessions]           = useState([]);
+  const [renamingId, setRenamingId]       = useState(null);
+  const [renameValue, setRenameValue]     = useState("");
+  const [syncStatus, setSyncStatus]       = useState([]);
   const [activeMenu, setActiveMenu]       = useState("assistant");
   const [messages, setMessages]           = useState([]);
   const [chatHistory, setChatHistory]     = useState([]);
@@ -44,10 +62,74 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, toolLogs]);
 
+  const fetchSessions = async () => {
+    if (!authUser) { setSessions([]); return; }
+    try {
+      const res = await apiFetch(`${API}/sessions`);
+      if (res.ok) setSessions(await res.json());
+    } catch {}
+  };
+
+  const fetchSyncStatus = async () => {
+    try {
+      const res = await apiFetch(`${API}/sync/status`);
+      if (res.ok) setSyncStatus(await res.json());
+    } catch {}
+  };
+
+  const switchSession = async (id) => {
+    try {
+      const res = await apiFetch(`${API}/sessions/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages || []);
+        setChatHistory(data.chat_history || []);
+        setSessionId(id);
+        setToolLogs([]);
+      }
+    } catch {}
+  };
+
+  const renameSession = async (id, name) => {
+    setRenamingId(null);
+    if (!name.trim()) return;
+    try {
+      await apiFetch(`${API}/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      fetchSessions();
+    } catch {}
+  };
+
+  const newSession = () => {
+    setSessionId(crypto.randomUUID());
+    setMessages([]);
+    setChatHistory([]);
+    setToolLogs([]);
+  };
+
+  const deleteSession = async (e, id) => {
+    e.stopPropagation();
+    try {
+      const res = await apiFetch(`${API}/sessions/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        if (sessionId === id) newSession();
+        fetchSessions();
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     if (!authUser) {
       setMessages([]);
       setChatHistory([]);
+      setSessions([]);
+      setSyncStatus([]);
+    } else {
+      fetchSessions();
+      fetchSyncStatus();
     }
   }, [authUser]);
 
@@ -102,10 +184,10 @@ export default function App() {
     const poll = () => {
       axios.get(`${API}/policy/status`).then(res => {
         setPolicyStatus(res.data);
-        if (res.data.status === "running" || res.data.status === "idle") {
-          timer = setTimeout(poll, 10000);
-        }
-      }).catch(() => {});
+        timer = setTimeout(poll, 10000);
+      }).catch(() => {
+        timer = setTimeout(poll, 10000);
+      });
     };
     poll();
     return () => clearTimeout(timer);
@@ -120,6 +202,8 @@ export default function App() {
     if (!query?.trim() || loading) return;
     setLoading(true);
     setToolLogs([]);
+
+    const capturedSessionId = sessionId;
 
     const displayContent = attachedFile ? `📎 ${attachedFile.name}\n${query}` : query;
     setMessages(prev => [...prev, { role: "user", content: displayContent }]);
@@ -138,15 +222,15 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API}/chat`, {
+      const res = await apiFetch(`${API}/chat`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory, ...filePayload }),
+        body: JSON.stringify({ query, session_id: capturedSessionId, chat_history: chatHistory, ...filePayload }),
       });
 
       if (res.status === 401) {
-        throw new Error("로그인이 필요합니다. 사이드바에서 로그인해주세요.");
+        logout();
+        throw new Error("로그인이 만료되었습니다. 다시 로그인해주세요.");
       }
       if (!res.ok) {
         throw new Error(`서버 오류: ${res.status}`);
@@ -179,8 +263,11 @@ export default function App() {
               responseText = event.text;
               newHistory   = event.history;
               if (event.files?.length) {
-                setMessages(prev => [...prev, { role: "assistant", content: responseText, files: event.files }]);
-                setChatHistory(newHistory);
+                if (sessionId === capturedSessionId) {
+                  setMessages(prev => [...prev, { role: "assistant", content: responseText, files: event.files }]);
+                  setChatHistory(newHistory);
+                }
+                fetchSessions();
                 return;
               }
             }
@@ -190,9 +277,12 @@ export default function App() {
         }
       }
 
-      setChatHistory(newHistory);
-      setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
-      if (activeMenu === "briefing") setBriefingBadge(0);
+      if (sessionId === capturedSessionId) {
+        setChatHistory(newHistory);
+        setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
+        if (activeMenu === "briefing") setBriefingBadge(0);
+      }
+      fetchSessions();
     } catch (error) {
       console.error("채팅 요청 실패:", error);
       setMessages(prev => [...prev, { role: "assistant", content: error.message || "네트워크 오류가 발생했습니다." }]);
@@ -261,6 +351,48 @@ export default function App() {
           </button>
         ))}
 
+        {authUser && (
+          <>
+            <div className="sidebar-section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>대화</span>
+              <button className="sidebar-new-chat-btn" onClick={newSession} title="새 채팅">＋</button>
+            </div>
+            <div className="sidebar-sessions">
+              {sessions.map(s => (
+                <div key={s.id} className={`sidebar-session-row ${sessionId === s.id ? "active" : ""}`}>
+                  {renamingId === s.id ? (
+                    <input
+                      className="sidebar-session-rename-input"
+                      value={renameValue}
+                      autoFocus
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") renameSession(s.id, renameValue);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      onBlur={() => renameSession(s.id, renameValue)}
+                    />
+                  ) : (
+                    <button className="sidebar-session-item" onClick={() => switchSession(s.id)} title={s.name}>
+                      {s.name}
+                    </button>
+                  )}
+                  {renamingId !== s.id && (
+                    <>
+                      <button
+                        className="sidebar-session-edit"
+                        onClick={(e) => { e.stopPropagation(); setRenamingId(s.id); setRenameValue(s.name); }}
+                        title="이름 변경"
+                      >✎</button>
+                      <button className="sidebar-session-delete" onClick={(e) => deleteSession(e, s.id)} title="삭제">×</button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
         <div className="sidebar-section-label">연동</div>
         <div className="sidebar-integration">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -270,8 +402,8 @@ export default function App() {
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
           <span>Google</span>
-          <span className={`int-status ${integrations.google ? "" : "disconnected"}`}>
-            {integrations.google ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.google ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.google ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -286,8 +418,8 @@ export default function App() {
             <path d="M15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#ECB22E"/>
           </svg>
           <span>Slack</span>
-          <span className={`int-status ${integrations.slack ? "" : "disconnected"}`}>
-            {integrations.slack ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.slack ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.slack ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -297,8 +429,8 @@ export default function App() {
             <path d="M11.664 1.294L4.975 7.983a2.368 2.368 0 0 1-3.348 0 2.368 2.368 0 0 1 0-3.348l6.69-6.689a2.368 2.368 0 0 1 3.347 3.348z" fill="#0052CC"/>
           </svg>
           <span>Jira</span>
-          <span className={`int-status ${integrations.jira ? "" : "disconnected"}`}>
-            {integrations.jira ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.jira ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.jira ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
@@ -306,10 +438,38 @@ export default function App() {
             <path d="M4.12 3C3.5 3 3 3.5 3 4.12v15.76C3 20.5 3.5 21 4.12 21h15.76c.62 0 1.12-.5 1.12-1.12V4.12C21 3.5 20.5 3 19.88 3H4.12zM7.5 7.5h2v6.62l6-7.85h3v9h-2V8.62L10.5 16.5h-3v-9z" fill="#111111"/>
           </svg>
           <span>Notion</span>
-          <span className={`int-status ${integrations.notion ? "" : "disconnected"}`}>
-            {integrations.notion ? "연결됨" : "미연결"}
+          <span className={`int-status ${!authUser || !integrations.notion ? "disconnected" : ""}`}>
+            {!authUser ? "로그인 필요" : integrations.notion ? "연결됨" : "미연결"}
           </span>
         </div>
+        <div className="sidebar-integration">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span>사내 규정</span>
+          <span className={`int-status ${!authUser ? 'disconnected' : policyStatus?.status === 'error' ? 'error' : (policyStatus?.status === 'running' ? 'running' : (policyStatus?.files?.length > 0 ? '' : 'disconnected'))}`}>
+            {!authUser ? '로그인 필요' : policyStatus?.status === 'running' ? '임베딩 중' : (policyStatus?.status === 'error' ? '오류' : (policyStatus?.files?.length > 0 ? `완료됨(${policyStatus?.done_files?.length || 0}개)` : '문서 없음'))}
+          </span>
+        </div>
+
+        {authUser && syncStatus.length > 0 && (
+          <>
+            <div className="sidebar-section-label">동기화 현황</div>
+            <div className="sidebar-sync-list">
+              {syncStatus.map(s => (
+                <div key={s.source} className="sidebar-sync-row">
+                  <span className="sidebar-sync-source">{SYNC_SOURCE_LABEL[s.source] ?? s.source}</span>
+                  <span className={`sidebar-sync-dot sync-${s.status}`} />
+                  <span className="sidebar-sync-time">{relativeTime(s.last_synced_at)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         {!authUser ? (
           <button className="sidebar-login-btn" onClick={() => setShowLoginModal(true)}>
@@ -358,18 +518,7 @@ export default function App() {
             )}
           </div>
         )}
-        {policyStatus?.status === "done" && policyStatus.done_files?.length > 0 && !policyBannerDismissed && (
-          <div className="policy-banner policy-banner--done">
-            ✅ 사내 규정 문서 임베딩 완료
-            <button className="policy-banner-close" onClick={() => setPolicyBannerDismissed(true)}>×</button>
-          </div>
-        )}
-        {policyStatus?.status === "error" && !policyBannerDismissed && (
-          <div className="policy-banner policy-banner--error">
-            ❌ 임베딩 실패: {policyStatus.error}
-            <button className="policy-banner-close" onClick={() => setPolicyBannerDismissed(true)}>×</button>
-          </div>
-        )}
+
 
         <div className="chat-area">
           {messages.map((msg, i) => {
