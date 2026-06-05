@@ -54,13 +54,41 @@ def filter_items(items: list, min_urgency: int = 3) -> str:
     return json.dumps(_filter(items, min_urgency), ensure_ascii=False, default=str)
 
 
+def _get_user_profile(user_id: int) -> dict:
+    try:
+        from sqlalchemy import create_engine, text
+        from backend.config import settings
+        engine = create_engine(settings.database_url.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql"))
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT username, name, department, position FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            ).fetchone()
+        if row:
+            return {
+                "author": row.name or row.username,
+                "department": row.department or "",
+                "position": row.position or "",
+            }
+    except Exception:
+        pass
+    return {}
+
+
 @tool
-def write_report(report_type: str, data: str) -> str:
+def write_report(config: RunnableConfig, report_type: str, data: str) -> str:
     """업무 보고서를 작성합니다. report_type: briefing | daily_summary | kpi_weekly | billing. data: JSON 문자열."""
     try:
         parsed = json.loads(data)
     except Exception:
         parsed = data
+    if isinstance(parsed, dict):
+        from datetime import date
+        parsed["date"] = date.today().strftime("%Y. %-m. %-d")
+        profile = _get_user_profile(_get_uid(config))
+        for k, v in profile.items():
+            if v:
+                parsed[k] = v
     return json.dumps(_write_report(report_type, parsed), ensure_ascii=False, default=str)
 
 
@@ -195,15 +223,17 @@ def fetch_calendar(config: RunnableConfig, days: int = 7) -> str:
 
 
 @tool
-def process_expense_report(receipt_text: str) -> str:
+def process_expense_report(config: RunnableConfig, receipt_text: str) -> str:
     """영수증 텍스트를 파싱해 항목 목록을 반환합니다. receipt_text: 추출된 영수증 텍스트.
     엑셀 출력은 write_report(report_type="expense_report")가 담당합니다."""
     from backend.tools.receipt import parse_receipt_from_text
     items = parse_receipt_from_text(receipt_text)
     total = sum(item.get("amount", 0) for item in items if isinstance(item.get("amount"), (int, float)))
+    profile = _get_user_profile(_get_uid(config))
     return json.dumps({
         "items": items,
         "total_amount": total,
+        **profile,
     }, ensure_ascii=False, default=str)
 
 

@@ -77,7 +77,7 @@ def _ocr_pdf(path: Path) -> str:
         for i, page in enumerate(doc):
             pix = page.get_pixmap(dpi=200)
             png_bytes = pix.tobytes("png")
-            parts.append(_vision_extract(png_bytes, "image/png"))
+            parts.append(ocr_image_bytes(png_bytes))
     finally:
         doc.close()
     return "\n".join(parts)
@@ -101,52 +101,24 @@ def _read_xlsx(path: Path) -> str:
 
 
 def _read_image(path: Path) -> str:
-    ext_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-        ".gif": "image/gif",
-    }
-    media_type = ext_map.get(path.suffix.lower(), "image/jpeg")
-
-    with path.open("rb") as f:
-        image_bytes = f.read()
-
-    return _vision_extract(image_bytes, media_type)
-
-
-def _vision_extract(image_bytes: bytes, media_type: str = "image/png") -> str:
-    """이미지 bytes → OpenAI Vision OCR 텍스트."""
     try:
-        import openai
+        import pytesseract
+        from PIL import Image
     except ImportError as e:
-        raise ImportError("openai 필요: pip install openai") from e
+        raise ImportError("pytesseract, Pillow 필요") from e
 
-    from backend.config import settings
+    img = Image.open(str(path))
+    return pytesseract.image_to_string(img, lang="kor+eng").strip()
 
-    image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
 
-    client = openai.OpenAI(api_key=settings.openai_api_key)
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{media_type};base64,{image_data}"
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": "이 이미지에서 텍스트를 모두 추출해라. 텍스트만 반환하고 다른 설명은 하지 마라.",
-                    },
-                ],
-            }
-        ],
-        max_tokens=4096,
-    )
-    return response.choices[0].message.content or ""
+def ocr_image_bytes(image_bytes: bytes) -> str:
+    """이미지 bytes → tesseract OCR 텍스트 (한글+영어)."""
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+    except ImportError as e:
+        raise ImportError("pytesseract, Pillow 필요") from e
+
+    img = Image.open(io.BytesIO(image_bytes))
+    return pytesseract.image_to_string(img, lang="kor+eng").strip()

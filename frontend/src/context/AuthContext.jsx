@@ -17,16 +17,20 @@ export function AuthProvider({ children }) {
   const login = async (username, password) => {
     setUser(await authApi.login(username, password));
   };
-  const register = async (username, password) => {
-    setUser(await authApi.register(username, password));
+  const register = async (username, password, name, department, position) => {
+    setUser(await authApi.register(username, password, name, department, position));
   };
   const logout = async () => {
     await authApi.logout();
     setUser(null);
   };
+  const refreshUser = async () => {
+    const u = await authApi.fetchMe();
+    setUser(u);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -120,7 +120,13 @@ _EXPENSE_CATEGORY_MAP  = {
 }
 
 
-def _write_expense_xlsx(items: list[dict], total: int | float, report_id: str) -> str:
+def _write_expense_xlsx(
+    items: list[dict],
+    total: int | float,
+    report_id: str,
+    author: str = "",
+    department: str = "",
+) -> str:
     path = f"{_EXPENSE_OUTPUT_DIR}/{report_id}.xlsx"
     wb = load_workbook(_EXPENSE_TEMPLATE_PATH)
     ws = wb.active
@@ -129,15 +135,26 @@ def _write_expense_xlsx(items: list[dict], total: int | float, report_id: str) -
 
     data_start_row = None
     total_row      = None
+    dept_row       = None
+    name_row       = None
     for row in ws.iter_rows():
         for cell in row:
             if cell.value == "내역":
                 data_start_row = cell.row
             elif cell.value == "경비 총액":
                 total_row = cell.row
+            elif cell.value == "소속":
+                dept_row = cell.row
+            elif cell.value == "성명":
+                name_row = cell.row
 
     if data_start_row is None or total_row is None:
         raise ValueError("템플릿에서 '내역' 또는 '경비 총액' 행을 찾지 못함")
+
+    if dept_row and department:
+        ws[f"D{dept_row}"] = department
+    if name_row and author:
+        ws[f"I{name_row}"] = author
 
     for i, item in enumerate(items):
         row = data_start_row + i
@@ -163,11 +180,13 @@ def write_report(report_type: str, data: dict | list) -> dict:
                 data = json.loads(data)
             except Exception:
                 data = {}
-        items = data.get("items", []) if isinstance(data, dict) else data
-        total = sum(i.get("amount", 0) for i in items if isinstance(i.get("amount"), (int, float)))
+        items      = data.get("items", []) if isinstance(data, dict) else data
+        total      = sum(i.get("amount", 0) for i in items if isinstance(i.get("amount"), (int, float)))
+        author     = data.get("author", "") if isinstance(data, dict) else ""
+        department = data.get("department", "") if isinstance(data, dict) else ""
         os.makedirs(_EXPENSE_OUTPUT_DIR, exist_ok=True)
         report_id = f"경비정산서_{datetime.now().strftime('%Y%m%d')}"
-        xlsx_path = _write_expense_xlsx(items, total, report_id)
+        xlsx_path = _write_expense_xlsx(items, total, report_id, author=author, department=department)
         return {
             "report_type":  "expense_report",
             "total_amount": total,
@@ -267,6 +286,8 @@ def write_report(report_type: str, data: dict | list) -> dict:
         return {"report_type": report_type, "content": f"보고서 생성 실패: {str(e)}", "error": str(e)}
 
 _FONT_CANDIDATES = [
+    ("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+     "NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
     ("Malgun",      "C:/Windows/Fonts/malgun.ttf",
      "Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"),
     ("AppleGothic", "/Library/Fonts/AppleGothic.ttf",

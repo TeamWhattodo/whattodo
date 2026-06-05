@@ -96,8 +96,9 @@ def _get_agent():
     return _agent
 
 
-async def _run_async(context: str) -> tuple[str, list[dict]]:
-    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=context)]})
+async def _run_async(context: str, run_config: dict | None = None) -> tuple[str, list[dict]]:
+    config = {**(run_config or {}), "recursion_limit": 20}
+    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=context)]}, config=config)
     messages = result["messages"]
     output_text = messages[-1].content if messages else ""
 
@@ -122,6 +123,6 @@ async def _run_async(context: str) -> tuple[str, list[dict]]:
     return output_text, reports
 
 
-async def run(context: str) -> tuple[str, list[dict]]:
+async def run(context: str, run_config: dict | None = None) -> tuple[str, list[dict]]:
     """Supervisor report_agent tool 연결용 shim."""
-    return await _run_async(context)
+    return await _run_async(context, run_config=run_config)

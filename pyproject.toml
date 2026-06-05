@@ -5,6 +5,8 @@ description = "AI 에이전트가 업무 채널을 대신 정리해 주는 복�
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "pytesseract",
+    "Pillow",
     "anthropic",
     "streamlit",
     "sqlalchemy",
@@ -42,6 +44,9 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "bcrypt>=5.0.0",
     "cryptography>=48.0.0",
+    "docx2txt>=0.9",
+    "olefile>=0.47",
+    "pyhwp>=0.1b15",
 ]
 
 [build-system]

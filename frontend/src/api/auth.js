@@ -30,15 +30,23 @@ async function request(path, options = {}) {
   return null;
 }
 
-export const register = (username, password) =>
-  request("/register", { method: "POST", body: JSON.stringify({ username, password }) });
+export const register = (username, password, name, department, position) =>
+  request("/register", { method: "POST", body: JSON.stringify({ username, password, name, department, position }) });
 
 export const login = (username, password) =>
   request("/login", { method: "POST", body: JSON.stringify({ username, password }) });
 
 export const logout = () => request("/logout", { method: "POST" });
 
+export const refresh = () => request("/refresh", { method: "POST" });
+
 export async function fetchMe() {
   const res = await fetch(`${BASE}/me`, { credentials: "include" });
   return res.ok ? res.json() : null;
 }
+
+export const updateMe = (data) =>
+  request("/me", { method: "PUT", body: JSON.stringify(data) });
+
+export const deleteMe = () =>
+  request("/me", { method: "DELETE" });
