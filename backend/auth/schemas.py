@@ -34,3 +34,12 @@ class LoginReq(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    full_name: str | None = None
+    department: str | None = None
+    position: str | None = None
+
+
+class ProfileUpdateReq(BaseModel):
+    full_name: str | None = None
+    department: str | None = None
+    position: str | None = None

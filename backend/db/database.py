@@ -24,9 +24,14 @@ class Base(DeclarativeBase):
 async def init_db() -> None:
     """기동 시 테이블 생성 (모델 import 후 호출)."""
     from backend.auth import models  # noqa: F401  (모델 등록)
+    from sqlalchemy import text
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for col in ("full_name", "department", "position"):
+            await conn.execute(
+                text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} VARCHAR")
+            )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

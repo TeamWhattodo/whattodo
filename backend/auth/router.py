@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.auth import security
 from backend.auth.deps import ACCESS_TOKEN_NAME, REFRESH_TOKEN_NAME, get_current_user
 from backend.auth.models import User
-from backend.auth.schemas import LoginReq, RegisterReq, UserOut
+from backend.auth.schemas import LoginReq, ProfileUpdateReq, RegisterReq, UserOut
 from backend.config import settings
 from backend.db.database import get_db
 
@@ -122,4 +122,21 @@ async def logout(response: Response, request: Request, db: AsyncSession = Depend
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> User:
+    return user
+
+
+@router.patch("/profile", response_model=UserOut)
+async def update_profile(
+    req: ProfileUpdateReq,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    if req.full_name is not None:
+        user.full_name = req.full_name
+    if req.department is not None:
+        user.department = req.department
+    if req.position is not None:
+        user.position = req.position
+    await db.commit()
+    await db.refresh(user)
     return user
