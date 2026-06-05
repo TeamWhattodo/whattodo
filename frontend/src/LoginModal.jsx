@@ -103,8 +103,29 @@ export default function LoginModal({ onClose }) {
 
           {error && <div style={{ color: "#C53030", fontSize: 13 }}>{error}</div>}
 
-          <button type="submit" className="login-submit-btn" disabled={loading}>
-            {loading ? "처리 중..." : mode === "login" ? "로그인" : "회원가입"}
+          <button type="submit" className="login-submit-btn" disabled={loading} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {loading ? (
+              "처리 중..."
+            ) : mode === "login" ? (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                  <polyline points="10 17 15 12 10 7"/>
+                  <line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                로그인
+              </>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="8.5" cy="7" r="4"/>
+                  <line x1="20" y1="8" x2="20" y2="14"/>
+                  <line x1="23" y1="11" x2="17" y2="11"/>
+                </svg>
+                회원가입
+              </>
+            )}
           </button>
         </form>
 

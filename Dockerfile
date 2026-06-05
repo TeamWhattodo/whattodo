@@ -4,6 +4,9 @@ WORKDIR /app
 
 RUN pip install uv
 
+# Windows 로컬 .venv와 충돌 방지: venv 경로를 /app 바깥으로 분리
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --no-dev
 

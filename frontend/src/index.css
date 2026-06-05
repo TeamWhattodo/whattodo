@@ -605,3 +605,8 @@ body {
   border-color: #3b5bdb;
   box-shadow: 0 0 0 2px #E6EAFB;
 }
+/* ── 설정 모달 탭 ── */
+.tabs { display: flex; border-bottom: 1px solid #EBEBEB; margin-bottom: 16px; }
+.tab { flex: 1; padding: 12px 0; border: none; background: transparent; font-size: 14px; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab:hover { color: #3b5bdb; }
+.tab.active { color: #3b5bdb; border-bottom-color: #3b5bdb; font-weight: 600; }

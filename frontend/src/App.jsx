@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./index.css";
 import LoginModal from "./LoginModal";
-import IntegrationsModal from "./components/IntegrationsModal";
+import SettingsModal from "./components/SettingsModal";
 import { useAuth } from "./context/AuthContext";
 import { getIntegrations } from "./api/integrations";
 
@@ -33,7 +33,7 @@ export default function App() {
   const [policyStatus, setPolicyStatus]       = useState(null);
   const [policyBannerDismissed, setPolicyBannerDismissed] = useState(false);
   const [showLoginModal, setShowLoginModal]   = useState(false);
-  const [showIntegrationsModal, setShowIntegrationsModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [attachedFile, setAttachedFile]       = useState(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -84,7 +84,6 @@ export default function App() {
         withCredentials: true // needed if we depend on cookies for user identification though state is used here
       })
       .then(() => {
-        alert("Google 계정 연동이 완료되었습니다!");
         fetchIntegrations();
       })
       .catch((err) => {
@@ -259,38 +258,71 @@ export default function App() {
 
         <div className="sidebar-section-label">연동</div>
         <div className="sidebar-integration">
-          <span>✉️</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
           <span>Google</span>
           <span className={`int-status ${integrations.google ? "" : "disconnected"}`}>
             {integrations.google ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
-          <span>#</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52z" fill="#E01E5A"/>
+            <path d="M6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" fill="#E01E5A"/>
+            <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834z" fill="#36C5F0"/>
+            <path d="M8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z" fill="#36C5F0"/>
+            <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522v-2.521z" fill="#2EB67D"/>
+            <path d="M17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312z" fill="#2EB67D"/>
+            <path d="M15.165 18.956a2.528 2.528 0 0 1 2.52 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.523-2.522v-2.522h2.523z" fill="#ECB22E"/>
+            <path d="M15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#ECB22E"/>
+          </svg>
           <span>Slack</span>
           <span className={`int-status ${integrations.slack ? "" : "disconnected"}`}>
             {integrations.slack ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
-          <span>🔷</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11.664 12.003L4.975 18.692a2.368 2.368 0 0 1-3.348 0 2.368 2.368 0 0 1 0-3.348l6.69-6.689a2.368 2.368 0 0 1 3.347 3.348z" fill="#2684FF"/>
+            <path d="M22.373 12.003l-6.689 6.689a2.368 2.368 0 0 1-3.348 0 2.368 2.368 0 0 1 0-3.348l6.689-6.689a2.368 2.368 0 0 1 3.348 3.348z" fill="#2684FF"/>
+            <path d="M11.664 1.294L4.975 7.983a2.368 2.368 0 0 1-3.348 0 2.368 2.368 0 0 1 0-3.348l6.69-6.689a2.368 2.368 0 0 1 3.347 3.348z" fill="#0052CC"/>
+          </svg>
           <span>Jira</span>
           <span className={`int-status ${integrations.jira ? "" : "disconnected"}`}>
             {integrations.jira ? "연결됨" : "미연결"}
           </span>
         </div>
         <div className="sidebar-integration">
-          <span>📝</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4.12 3C3.5 3 3 3.5 3 4.12v15.76C3 20.5 3.5 21 4.12 21h15.76c.62 0 1.12-.5 1.12-1.12V4.12C21 3.5 20.5 3 19.88 3H4.12zM7.5 7.5h2v6.62l6-7.85h3v9h-2V8.62L10.5 16.5h-3v-9z" fill="#111111"/>
+          </svg>
           <span>Notion</span>
           <span className={`int-status ${integrations.notion ? "" : "disconnected"}`}>
             {integrations.notion ? "연결됨" : "미연결"}
           </span>
         </div>
 
-        {!authUser && (
+        {!authUser ? (
           <button className="sidebar-login-btn" onClick={() => setShowLoginModal(true)}>
-            <span>🔑</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+              <polyline points="10 17 15 12 10 7"/>
+              <line x1="15" y1="12" x2="3" y2="12"/>
+            </svg>
             <span>로그인</span>
+          </button>
+        ) : (
+          <button className="sidebar-login-btn" style={{ background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" }} onClick={logout}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            <span>로그아웃</span>
           </button>
         )}
       </div>
@@ -302,8 +334,13 @@ export default function App() {
           {authUser && (
             <div className="main-header-user">
               <span className="main-header-username">{authUser.username}</span>
-              <button className="main-header-logout" onClick={() => setShowIntegrationsModal(true)} style={{ marginRight: '8px' }}>⚙️ 연동 관리</button>
-              <button className="main-header-logout" onClick={logout}>로그아웃</button>
+              <button className="main-header-logout" onClick={() => setShowSettingsModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                설정
+              </button>
             </div>
           )}
         </div>
@@ -408,9 +445,9 @@ export default function App() {
       {showLoginModal && (
         <LoginModal onClose={() => setShowLoginModal(false)} />
       )}
-      {showIntegrationsModal && (
-        <IntegrationsModal 
-          onClose={() => setShowIntegrationsModal(false)} 
+      {showSettingsModal && (
+        <SettingsModal 
+          onClose={() => setShowSettingsModal(false)} 
           onIntegrationsChange={fetchIntegrations} 
         />
       )}

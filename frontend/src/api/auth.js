@@ -26,3 +26,9 @@ export async function fetchMe() {
   const res = await fetch(`${BASE}/me`, { credentials: "include" });
   return res.ok ? res.json() : null;
 }
+
+export const updateMe = (data) =>
+  request("/me", { method: "PUT", body: JSON.stringify(data) });
+
+export const deleteMe = () =>
+  request("/me", { method: "DELETE" });
