@@ -18,16 +18,6 @@ async function apiFetch(url, options = {}) {
   return fetch(url, { credentials: "include", ...options });
 }
 
-function relativeTime(iso) {
-  if (!iso) return "없음";
-  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (diff < 60) return `${diff}초 전`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-  return `${Math.floor(diff / 86400)}일 전`;
-}
-
-const SYNC_SOURCE_LABEL = { gmail: "Gmail", slack: "Slack", jira: "Jira", notion: "Notion", calendar: "캘린더" };
 
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: "긴급도 순으로 오늘 처리해야 할 업무 정리해줘" },
@@ -39,7 +29,6 @@ export default function App() {
   const [sessions, setSessions]           = useState([]);
   const [renamingId, setRenamingId]       = useState(null);
   const [renameValue, setRenameValue]     = useState("");
-  const [syncStatus, setSyncStatus]       = useState([]);
   const [activeMenu, setActiveMenu]       = useState("assistant");
   const [messages, setMessages]           = useState([]);
   const [chatHistory, setChatHistory]     = useState([]);
@@ -66,13 +55,6 @@ export default function App() {
     try {
       const res = await apiFetch(`${API}/sessions`);
       if (res.ok) setSessions(await res.json());
-    } catch {}
-  };
-
-  const fetchSyncStatus = async () => {
-    try {
-      const res = await apiFetch(`${API}/sync/status`);
-      if (res.ok) setSyncStatus(await res.json());
     } catch {}
   };
 
@@ -125,10 +107,8 @@ export default function App() {
       setMessages([]);
       setChatHistory([]);
       setSessions([]);
-      setSyncStatus([]);
     } else {
       fetchSessions();
-      fetchSyncStatus();
     }
   }, [authUser]);
 
@@ -348,7 +328,7 @@ export default function App() {
 
         {authUser && (
           <>
-            <div className="sidebar-section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="sidebar-section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 0 }}>
               <span>대화</span>
               <button className="sidebar-new-chat-btn" onClick={newSession} title="새 채팅">＋</button>
             </div>
@@ -450,21 +430,6 @@ export default function App() {
             {!authUser ? '로그인 필요' : policyStatus?.status === 'running' ? '임베딩 중' : (policyStatus?.status === 'error' ? '오류' : (policyStatus?.files?.length > 0 ? `완료됨(${policyStatus?.done_files?.length || 0}개)` : '문서 없음'))}
           </span>
         </div>
-
-        {authUser && syncStatus.length > 0 && (
-          <>
-            <div className="sidebar-section-label">동기화 현황</div>
-            <div className="sidebar-sync-list">
-              {syncStatus.map(s => (
-                <div key={s.source} className="sidebar-sync-row">
-                  <span className="sidebar-sync-source">{SYNC_SOURCE_LABEL[s.source] ?? s.source}</span>
-                  <span className={`sidebar-sync-dot sync-${s.status}`} />
-                  <span className="sidebar-sync-time">{relativeTime(s.last_synced_at)}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
 
         {!authUser ? (
           <button className="sidebar-login-btn" onClick={() => setShowLoginModal(true)}>
