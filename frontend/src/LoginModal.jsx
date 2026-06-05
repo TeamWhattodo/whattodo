@@ -46,39 +46,42 @@ export default function LoginModal({ onClose }) {
   const [position, setPosition] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [usernameChecked, setUsernameChecked] = useState(false);
 
   const resetFields = () => {
     setUsername(""); setPassword(""); setPasswordConfirm("");
     setName(""); setDepartment(""); setPosition("");
-    setError(""); setUsernameChecked(false);
+    setError(""); setSuccess(""); setUsernameChecked(false);
   };
 
-const checkUsername = async () => {
-  if (!username) { setError("아이디를 입력해주세요."); return; }
-  try {
-    const res = await fetch(`http://localhost:8000/api/auth/check-username?username=${username}`, {
-      credentials: "include",
-      cache: "no-store"
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setUsernameChecked(true);
-      setError("✅ 사용 가능한 아이디입니다.");
-    } else {
+  const checkUsername = async () => {
+    if (!username) { setError("아이디를 입력해주세요."); return; }
+    if (username.length < 3) { setError("아이디는 3자 이상 입력해주세요."); return; }
+    try {
+      const res = await fetch(`http://localhost:8000/api/auth/check-username?username=${username}`, {
+        credentials: "include",
+        cache: "no-store"
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsernameChecked(true);
+        setError("✅ 사용 가능한 아이디입니다.");
+      } else {
+        setUsernameChecked(false);
+        setError(data.detail || "이미 사용 중인 아이디입니다.");
+      }
+    } catch {
       setUsernameChecked(false);
-      setError(data.detail || "이미 사용 중인 아이디입니다.");
+      setError("중복 확인 중 오류가 발생했습니다.");
     }
-  } catch {
-    setUsernameChecked(false);
-    setError("중복 확인 중 오류가 발생했습니다.");
-  }
-};
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     if (mode === "register") {
       if (password !== passwordConfirm) {
         setError("비밀번호가 일치하지 않습니다.");
@@ -89,12 +92,18 @@ const checkUsername = async () => {
     try {
       if (mode === "login") {
         await login(username, password);
+        onClose();
       } else {
         await register(username, password, name, department, position);
+        setSuccess("회원가입이 완료되었습니다! 로그인해 주세요.");
+        setPassword("");
+        setTimeout(() => {
+          setMode("login");
+          setSuccess("");
+        }, 2000);
       }
-      onClose();
     } catch (err) {
-      setError(err.message);
+      setError(typeof err.message === "string" ? err.message : "오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -192,6 +201,7 @@ const checkUsername = async () => {
           )}
 
           {error && <div style={{ color: error.startsWith("✅") ? "#1E8449" : "#C53030", fontSize: 13 }}>{error}</div>}
+          {success && <div style={{ color: "#276749", fontSize: 13, fontWeight: 600 }}>{success}</div>}
 
           <button type="submit" className="login-submit-btn" disabled={loading}>
             {loading ? "처리 중..." : mode === "login" ? "로그인" : "회원가입"}
