@@ -29,6 +29,7 @@ services:
       db:
         condition: service_healthy
     volumes:
+      - .:/app
       - ./outputs:/app/outputs
       - ./docs/policy:/app/docs/policy
 
@@ -39,6 +40,9 @@ services:
       - "8501:8501"
     environment:
       - VITE_API_URL=http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
 

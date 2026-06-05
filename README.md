@@ -139,6 +139,10 @@ npm run dev
 TheAgentCompany 방법론 기반 에이전트 평가 스크립트입니다.
 
 ```bash
+# ── Docker 환경 (권장 — PostgreSQL DB 필요) ───────────────────
+docker exec whattodo-backend python -m eval.run_eval
+docker exec whattodo-backend python -m eval.run_eval S1 S3
+
 # ── 모델 비교 (권장) ──────────────────────────────────────────
 # 기본 모델(gpt-4o, gpt-4o-mini, claude-sonnet-4-6) 비교: 정리 → 평가 → 차트 한방에
 uv run python -m eval.compare

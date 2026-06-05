@@ -8,10 +8,26 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     let detail = "요청 실패";
-    try { detail = (await res.json()).detail || detail; } catch {}
+    try {
+      const body = await res.json();
+      const raw = body.detail;
+      if (Array.isArray(raw)) {
+        // Pydantic validation 에러 배열 → "Value error, " 접두어 제거 후 한국어 메시지만 추출
+        detail = raw.map(e => {
+          const msg = e.msg || JSON.stringify(e);
+          return msg.replace(/^Value error,\s*/i, "");
+        }).join(", ");
+      } else if (typeof raw === "string") {
+        detail = raw.replace(/^Value error,\s*/i, "");
+      }
+    } catch {}
     throw new Error(detail);
   }
-  return res.status === 200 || res.status === 201 ? res.json() : null;
+  // 성공 응답 — JSON 파싱 실패해도 null 반환 (회원가입 성공 처리)
+  if (res.status === 200 || res.status === 201) {
+    try { return await res.json(); } catch { return null; }
+  }
+  return null;
 }
 
 export const register = (username, password, name, department, position) =>
