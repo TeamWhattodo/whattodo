@@ -20,6 +20,7 @@ class SaveIntegrationReq(BaseModel):
     access_token: str
     refresh_token: str | None = None
     expires_at: str | None = None  # ISO format string if needed
+    sync_days: int | None = None
 
 @router.get("/", response_model=List[IntegrationState])
 async def get_integrations(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -75,6 +76,11 @@ async def save_integration(
         
     token_obj.credentials_data = encrypt_token(req.access_token)
     
+    if req.sync_days is not None:
+        settings = dict(user.sync_settings or {})
+        settings[source] = req.sync_days
+        user.sync_settings = settings
+    
     await db.commit()
     
     # Trigger initial sync immediately
@@ -109,19 +115,30 @@ from fastapi.responses import RedirectResponse
 from fastapi import Request
 
 @router.get("/google/login")
-async def google_login(user: User = Depends(get_current_user)):
+async def google_login(gmail_sync_days: int | None = None, calendar_sync_days: int | None = None, user: User = Depends(get_current_user)):
     from backend.google_auth import get_auth_url
-    url = get_auth_url(user.id)
+    url = get_auth_url(user.id, gmail_sync_days=gmail_sync_days, calendar_sync_days=calendar_sync_days)
     return RedirectResponse(url)
 
 
 @router.get("/google/callback")
-async def google_callback(request: Request, state: str, code: str, background_tasks: BackgroundTasks):
+async def google_callback(request: Request, state: str, code: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     from backend.google_auth import handle_callback
     try:
-        handle_callback(state, code)
+        user_id, gmail_sync_days, calendar_sync_days = handle_callback(state, code)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+        
+    if gmail_sync_days is not None or calendar_sync_days is not None:
+        user_obj = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if user_obj:
+            settings = dict(user_obj.sync_settings or {})
+            if gmail_sync_days is not None:
+                settings["gmail"] = gmail_sync_days
+            if calendar_sync_days is not None:
+                settings["calendar"] = calendar_sync_days
+            user_obj.sync_settings = settings
+            await db.commit()
         
     from backend.workers.sync_gmail import sync_gmail
     from backend.workers.sync_calendar import sync_calendar

@@ -43,7 +43,7 @@ def _client_config() -> dict:
     }
 
 
-def get_auth_url(user_id: int) -> str:
+def get_auth_url(user_id: int, gmail_sync_days: int | None = None, calendar_sync_days: int | None = None) -> str:
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES)
     flow.redirect_uri = _REDIRECT_URI
     auth_url, state = flow.authorization_url(
@@ -53,17 +53,21 @@ def get_auth_url(user_id: int) -> str:
     )
     _OAUTH_STATES[state] = {
         "user_id": user_id,
+        "gmail_sync_days": gmail_sync_days,
+        "calendar_sync_days": calendar_sync_days,
         "code_verifier": getattr(flow, "code_verifier", None)
     }
     return auth_url
 
 
-def handle_callback(state: str, code: str) -> None:
+def handle_callback(state: str, code: str) -> tuple[int, int | None, int | None]:
     if state not in _OAUTH_STATES:
         raise ValueError("Invalid state parameter or session expired.")
         
     session_data = _OAUTH_STATES.pop(state)
     user_id = session_data["user_id"]
+    gmail_sync_days = session_data.get("gmail_sync_days")
+    calendar_sync_days = session_data.get("calendar_sync_days")
     code_verifier = session_data["code_verifier"]
 
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES)
@@ -71,6 +75,7 @@ def handle_callback(state: str, code: str) -> None:
     flow.fetch_token(code=code, code_verifier=code_verifier)
     
     _save_token(user_id, flow.credentials)
+    return user_id, gmail_sync_days, calendar_sync_days
 
 
 def get_credentials(user_id: int) -> Credentials | None:

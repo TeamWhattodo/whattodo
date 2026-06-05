@@ -30,8 +30,8 @@ async function request(path, options = {}) {
   return null;
 }
 
-export const register = (username, password) =>
-  request("/register", { method: "POST", body: JSON.stringify({ username, password }) });
+export const register = (username, password, name, department, position) =>
+  request("/register", { method: "POST", body: JSON.stringify({ username, password, name, department, position }) });
 
 export const login = (username, password) =>
   request("/login", { method: "POST", body: JSON.stringify({ username, password }) });
@@ -44,3 +44,9 @@ export async function fetchMe() {
   const res = await fetch(`${BASE}/me`, { credentials: "include" });
   return res.ok ? res.json() : null;
 }
+
+export const updateMe = (data) =>
+  request("/me", { method: "PUT", body: JSON.stringify(data) });
+
+export const deleteMe = () =>
+  request("/me", { method: "DELETE" });

@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -27,7 +27,7 @@ EMBEDDING_MODEL  = "text-embedding-3-small"
 INGESTED_MARKER  = Path(__file__).parent.parent.parent / "docs" / "policy" / ".ingested.json"
 
 SUPPORTED_LOADERS = {
-    ".pdf": PyPDFLoader,
+    ".pdf": PyMuPDFLoader,
 }
 
 
@@ -67,11 +67,26 @@ def ingest(file_path: str) -> int:
     if suffix not in SUPPORTED_LOADERS:
         raise ValueError(f"지원하지 않는 형식: {suffix}")
 
-    # 마커 파일로 완전 완료 여부 빠르게 확인 (청킹 없이)
+    # 마커 파일로 완전 완료 여부 확인하되, DB에 실제 데이터가 있는지 검증
     marker = _load_marker()
     if path.name in marker:
-        print(f"  이미 완료됨 ({marker[path.name]}청크), 스킵")
-        return marker[path.name]
+        expected_chunks = marker[path.name]
+        try:
+            with get_session() as db:
+                from sqlalchemy import text as sqlt
+                row = db.execute(
+                    sqlt("SELECT count(*) FROM policy_embeddings WHERE metadata->>'source' = :source"), 
+                    {"source": path.name}
+                ).fetchone()
+                db_count = row[0] if row else 0
+            
+            if db_count >= expected_chunks:
+                print(f"  이미 DB에 완료됨 ({db_count}청크), 스킵")
+                return db_count
+            else:
+                print(f"  마커는 존재하나 DB 청크 부족 ({db_count}/{expected_chunks}), 재임베딩 진행")
+        except Exception as e:
+            print(f"  DB 확인 실패 ({e}), 재임베딩 진행")
 
     print(f"  로더: {suffix}")
     loader = SUPPORTED_LOADERS[suffix](str(path))
@@ -95,16 +110,18 @@ def ingest(file_path: str) -> int:
     total = len(chunks)
     print(f"  부모 청크: {len(parent_docs)}개 / 자식 청크: {total}개")
 
-    # 이미 저장된 ID 조회 → 누락된 것만 임베딩
     for chunk in chunks:
         chunk["id"] = hashlib.md5(
             f"{chunk['source']}_{chunk['content'][:50]}".encode()
         ).hexdigest()
 
-    init_db()
     with get_session() as db:
         from sqlalchemy import text as sqlt
-        rows = db.execute(sqlt("SELECT id FROM policy_embeddings")).fetchall()
+        # 테이블이 없을 수도 있으므로 예외 처리
+        try:
+            rows = db.execute(sqlt("SELECT id FROM policy_embeddings")).fetchall()
+        except Exception:
+            rows = []
     existing_ids = {r[0] for r in rows}
 
     new_chunks = [c for c in chunks if c["id"] not in existing_ids]

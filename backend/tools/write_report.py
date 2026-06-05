@@ -267,6 +267,8 @@ def write_report(report_type: str, data: dict | list) -> dict:
         return {"report_type": report_type, "content": f"보고서 생성 실패: {str(e)}", "error": str(e)}
 
 _FONT_CANDIDATES = [
+    ("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+     "NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
     ("Malgun",      "C:/Windows/Fonts/malgun.ttf",
      "Malgun-Bold", "C:/Windows/Fonts/malgunbd.ttf"),
     ("AppleGothic", "/Library/Fonts/AppleGothic.ttf",

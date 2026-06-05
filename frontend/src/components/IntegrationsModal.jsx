@@ -65,11 +65,14 @@ const itemStyle = {
   padding: "12px", border: "1px solid #eee", borderRadius: "8px", marginBottom: "8px"
 };
 
+const API = import.meta.env.VITE_API_URL ?? "/api";
+
 export default function IntegrationsModal({ onClose, onIntegrationsChange }) {
   const [integrations, setIntegrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openForms, setOpenForms] = useState({}); // source -> boolean
   const [disconnectTarget, setDisconnectTarget] = useState(null);
+
 
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -257,7 +260,7 @@ export default function IntegrationsModal({ onClose, onIntegrationsChange }) {
           >✕</button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", marginBottom: "16px" }}>
+<div style={{ flex: 1, overflowY: "auto", marginBottom: "16px" }}>
           {loading ? <p>로딩 중...</p> : integrations.map((item) => (
             <div key={item.source} style={{ marginBottom: "12px" }}>
               <div style={itemStyle}>
