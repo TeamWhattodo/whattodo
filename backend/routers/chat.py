@@ -150,7 +150,15 @@ async def chat_stream(req: ChatRequest, user: User = Depends(get_current_user)):
         done_payload = {"type": "done", "text": final_text, "files": files}
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/sessions")

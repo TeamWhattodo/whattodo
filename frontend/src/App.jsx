@@ -10,6 +10,25 @@ import { getIntegrations } from "./api/integrations";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, { credentials: "include", ...options });
+  if (res.status !== 401) return res;
+  const refreshRes = await fetch(`${API}/auth/refresh`, { method: "POST", credentials: "include" });
+  if (!refreshRes.ok) return res;
+  return fetch(url, { credentials: "include", ...options });
+}
+
+function relativeTime(iso) {
+  if (!iso) return "없음";
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return `${diff}초 전`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+  return `${Math.floor(diff / 86400)}일 전`;
+}
+
+const SYNC_SOURCE_LABEL = { gmail: "Gmail", slack: "Slack", jira: "Jira", notion: "Notion", calendar: "캘린더" };
+
 const MENUS = [
   { id: "assistant", icon: "🖥️", label: "업무 도우미", query: "긴급도 순으로 오늘 처리해야 할 업무 정리해줘" },
 ];
@@ -18,6 +37,9 @@ export default function App() {
   const { user: authUser, logout } = useAuth();
   const [sessionId, setSessionId]         = useState(() => crypto.randomUUID());
   const [sessions, setSessions]           = useState([]);
+  const [renamingId, setRenamingId]       = useState(null);
+  const [renameValue, setRenameValue]     = useState("");
+  const [syncStatus, setSyncStatus]       = useState([]);
   const [activeMenu, setActiveMenu]       = useState("assistant");
   const [messages, setMessages]           = useState([]);
   const [chatHistory, setChatHistory]     = useState([]);
@@ -42,21 +64,41 @@ export default function App() {
   const fetchSessions = async () => {
     if (!authUser) { setSessions([]); return; }
     try {
-      const res = await fetch(`${API}/sessions`, { credentials: "include" });
+      const res = await apiFetch(`${API}/sessions`);
       if (res.ok) setSessions(await res.json());
+    } catch {}
+  };
+
+  const fetchSyncStatus = async () => {
+    try {
+      const res = await apiFetch(`${API}/sync/status`);
+      if (res.ok) setSyncStatus(await res.json());
     } catch {}
   };
 
   const switchSession = async (id) => {
     try {
-      const res = await fetch(`${API}/chat/sessions/${id}`, { credentials: "include" });
+      const res = await apiFetch(`${API}/sessions/${id}`);
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.display_messages || []);
-        setChatHistory(data.history || []);
+        setMessages(data.messages || []);
+        setChatHistory(data.chat_history || []);
         setSessionId(id);
         setToolLogs([]);
       }
+    } catch {}
+  };
+
+  const renameSession = async (id, name) => {
+    setRenamingId(null);
+    if (!name.trim()) return;
+    try {
+      await apiFetch(`${API}/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      fetchSessions();
     } catch {}
   };
 
@@ -67,13 +109,26 @@ export default function App() {
     setToolLogs([]);
   };
 
+  const deleteSession = async (e, id) => {
+    e.stopPropagation();
+    try {
+      const res = await apiFetch(`${API}/sessions/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        if (sessionId === id) newSession();
+        fetchSessions();
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     if (!authUser) {
       setMessages([]);
       setChatHistory([]);
       setSessions([]);
+      setSyncStatus([]);
     } else {
       fetchSessions();
+      fetchSyncStatus();
     }
   }, [authUser]);
 
@@ -148,6 +203,8 @@ export default function App() {
     setLoading(true);
     setToolLogs([]);
 
+    const capturedSessionId = sessionId;
+
     const displayContent = attachedFile ? `📎 ${attachedFile.name}\n${query}` : query;
     setMessages(prev => [...prev, { role: "user", content: displayContent }]);
     setInput("");
@@ -164,15 +221,15 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API}/chat`, {
+      const res = await apiFetch(`${API}/chat`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, session_id: sessionId, chat_history: chatHistory, ...filePayload }),
+        body: JSON.stringify({ query, session_id: capturedSessionId, chat_history: chatHistory, ...filePayload }),
       });
 
       if (res.status === 401) {
-        throw new Error("로그인이 필요합니다. 사이드바에서 로그인해주세요.");
+        logout();
+        throw new Error("로그인이 만료되었습니다. 다시 로그인해주세요.");
       }
       if (!res.ok) {
         throw new Error(`서버 오류: ${res.status}`);
@@ -203,8 +260,11 @@ export default function App() {
               responseText = event.text;
               newHistory   = event.history;
               if (event.files?.length) {
-                setMessages(prev => [...prev, { role: "assistant", content: responseText, files: event.files }]);
-                setChatHistory(newHistory);
+                if (sessionId === capturedSessionId) {
+                  setMessages(prev => [...prev, { role: "assistant", content: responseText, files: event.files }]);
+                  setChatHistory(newHistory);
+                }
+                fetchSessions();
                 return;
               }
             }
@@ -214,9 +274,11 @@ export default function App() {
         }
       }
 
-      setChatHistory(newHistory);
-      setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
-      if (activeMenu === "briefing") setBriefingBadge(0);
+      if (sessionId === capturedSessionId) {
+        setChatHistory(newHistory);
+        setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
+        if (activeMenu === "briefing") setBriefingBadge(0);
+      }
       fetchSessions();
     } catch (error) {
       console.error("채팅 요청 실패:", error);
@@ -293,14 +355,35 @@ export default function App() {
             </div>
             <div className="sidebar-sessions">
               {sessions.map(s => (
-                <button
-                  key={s.id}
-                  className={`sidebar-session-item ${sessionId === s.id ? "active" : ""}`}
-                  onClick={() => switchSession(s.id)}
-                  title={s.name}
-                >
-                  {s.name}
-                </button>
+                <div key={s.id} className={`sidebar-session-row ${sessionId === s.id ? "active" : ""}`}>
+                  {renamingId === s.id ? (
+                    <input
+                      className="sidebar-session-rename-input"
+                      value={renameValue}
+                      autoFocus
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") renameSession(s.id, renameValue);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      onBlur={() => renameSession(s.id, renameValue)}
+                    />
+                  ) : (
+                    <button className="sidebar-session-item" onClick={() => switchSession(s.id)} title={s.name}>
+                      {s.name}
+                    </button>
+                  )}
+                  {renamingId !== s.id && (
+                    <>
+                      <button
+                        className="sidebar-session-edit"
+                        onClick={(e) => { e.stopPropagation(); setRenamingId(s.id); setRenameValue(s.name); }}
+                        title="이름 변경"
+                      >✎</button>
+                      <button className="sidebar-session-delete" onClick={(e) => deleteSession(e, s.id)} title="삭제">×</button>
+                    </>
+                  )}
+                </div>
               ))}
             </div>
           </>
@@ -335,6 +418,21 @@ export default function App() {
             {integrations.notion ? "연결됨" : "미연결"}
           </span>
         </div>
+
+        {authUser && syncStatus.length > 0 && (
+          <>
+            <div className="sidebar-section-label">동기화 현황</div>
+            <div className="sidebar-sync-list">
+              {syncStatus.map(s => (
+                <div key={s.source} className="sidebar-sync-row">
+                  <span className="sidebar-sync-source">{SYNC_SOURCE_LABEL[s.source] ?? s.source}</span>
+                  <span className={`sidebar-sync-dot sync-${s.status}`} />
+                  <span className="sidebar-sync-time">{relativeTime(s.last_synced_at)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         {!authUser && (
           <button className="sidebar-login-btn" onClick={() => setShowLoginModal(true)}>

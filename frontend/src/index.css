@@ -558,9 +558,19 @@ body {
   overflow-y: auto;
 }
 
+.sidebar-session-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.sidebar-session-row:hover { background: #F0F4FF; }
+.sidebar-session-row:hover .sidebar-session-delete { opacity: 1; }
+.sidebar-session-row.active { background: #EEF4FF; }
+
 .sidebar-session-item {
-  display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   background: none;
   border: none;
@@ -573,10 +583,78 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: inherit;
-  transition: background 0.15s;
 }
-.sidebar-session-item:hover { background: #F0F4FF; color: #185FA5; }
-.sidebar-session-item.active { background: #EEF4FF; color: #185FA5; font-weight: 500; }
+.sidebar-session-row:hover .sidebar-session-item { color: #185FA5; }
+.sidebar-session-row.active .sidebar-session-item { color: #185FA5; font-weight: 500; }
+
+.sidebar-session-delete {
+  flex-shrink: 0;
+  opacity: 0;
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+  transition: opacity 0.15s, color 0.15s;
+}
+.sidebar-session-delete:hover { color: #e03131; }
+
+.sidebar-session-edit {
+  flex-shrink: 0;
+  opacity: 0;
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 5px;
+  line-height: 1;
+  transition: opacity 0.15s, color 0.15s;
+}
+.sidebar-session-row:hover .sidebar-session-edit { opacity: 1; }
+.sidebar-session-edit:hover { color: #3b5bdb; }
+
+.sidebar-session-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid #3b5bdb;
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+/* ── 동기화 현황 ── */
+.sidebar-sync-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.sidebar-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: #777;
+}
+.sidebar-sync-source { flex: 1; }
+.sidebar-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sync-success { background: #40c057; }
+.sync-error   { background: #e03131; }
+.sync-running { background: #f59f00; }
+.sidebar-sync-time { font-size: 10px; color: #aaa; }
 
 /* ── 사이드바 로그인 버튼 ── */
 .sidebar-login-btn {
