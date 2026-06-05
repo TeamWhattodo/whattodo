@@ -17,8 +17,8 @@ export function AuthProvider({ children }) {
   const login = async (username, password) => {
     setUser(await authApi.login(username, password));
   };
-  const register = async (username, password) => {
-    setUser(await authApi.register(username, password));
+  const register = async (username, password, name, department, position) => {
+  setUser(await authApi.register(username, password, name, department, position));
   };
   const logout = async () => {
     await authApi.logout();

@@ -12,8 +12,12 @@ from sqlalchemy.orm import DeclarativeBase
 
 from backend.config import settings
 
-_async_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-engine = create_async_engine(_async_url, echo=False)
+_async_url = (
+    settings.database_url
+    .replace("postgresql://", "postgresql+asyncpg://", 1)
+    .split("?")[0]  # 기존 쿼리 파라미터 제거
+)
+engine = create_async_engine(_async_url, echo=False, connect_args={"ssl": False})
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

@@ -10,6 +10,9 @@ _USERNAME_RE = re.compile(r"^[A-Za-z0-9]{3,30}$")
 class RegisterReq(BaseModel):
     username: str
     password: str
+    name: str | None = None
+    department: str | None = None
+    position: str | None = None
 
     @field_validator("username")
     @classmethod
@@ -34,15 +37,6 @@ class LoginReq(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
-    sync_settings: dict | None = None
-
-class UpdateUserReq(BaseModel):
-    password: str | None = None
-    sync_settings: dict | None = None
-
-    @field_validator("password")
-    @classmethod
-    def _validate_password(cls, v: str | None) -> str | None:
-        if v is not None and len(v) < 8:
-            raise ValueError("비밀번호는 최소 8자여야 합니다")
-        return v
+    name: str | None = None
+    department: str | None = None
+    position: str | None = None
