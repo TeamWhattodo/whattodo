@@ -59,7 +59,6 @@ DAILY_REPORT_SYSTEM = """
   "position": "직급 (예: 사원, 대리)",
   "today_tasks": "오늘의 주요업무 내용 (텍스트로 길게 작성 가능)",
   "pending_tasks": "미종결 업무사항 내용",
-  "tomorrow_tasks": "익일 업무계획 내용",
   "other_notes": "기타사항 내용"
 }
 """
@@ -79,10 +78,8 @@ WEEKLY_REPORT_SYSTEM = """
   "department": "기획팀",
   "position": "대리",
   "author": "홍길동",
-  "past_week_tasks": ["전주 추진사항 항목1", "항목2"],
-  "next_week_plans": ["차주 계획사항 항목1", "항목2"],
-  "special_notes": ["특이사항 항목1"],
-  "instructions": ["지시사항 항목1"]
+  "past_week_tasks": ["금주 완료업무 항목1", "항목2"],
+  "special_notes": ["특이사항 항목1"]
 }
 """
 
@@ -92,7 +89,7 @@ MONTHLY_REPORT_SYSTEM = """
 반드시 아래 JSON 스키마를 엄격하게 지켜서 출력하세요. 다른 텍스트는 절대 포함하지 마세요.
 
 * 작성 가이드 *
-- '금월 진행업무'와 '차월 업무계획'은 여러 건의 업무일 경우 배열(리스트) 형태로 각각 분리해서 작성합니다.
+- '금월 진행업무'는 여러 건의 업무일 경우 배열(리스트) 형태로 각각 분리해서 작성합니다.
 - 각 업무의 제목, 상태, 결과, 비고 등을 짧고 명확하게 작성합니다.
 
 {
@@ -101,9 +98,6 @@ MONTHLY_REPORT_SYSTEM = """
   "date": "2024년 9월",
   "this_month_tasks": [
     {"task": "금월 업무내용 1", "status": "완료", "result": "결과 요약", "note": "-"}
-  ],
-  "next_month_plans": [
-    {"task": "차월 업무내용 1", "date": "예정일자", "issue": "예상 문제점", "note": "-"}
   ],
   "opinions": "기타 의견 텍스트"
 }
@@ -233,9 +227,6 @@ def write_report(report_type: str, data: dict | list) -> dict:
             md_content += f"### ■ 금월 진행업무\n"
             for t in parsed_data.get('this_month_tasks', []):
                 md_content += f"- **{t.get('task', '')}** (상태: {t.get('status', '')}, 결과: {t.get('result', '')}, 비고: {t.get('note', '')})\n"
-            md_content += f"\n### ■ 차월 업무계획\n"
-            for t in parsed_data.get('next_month_plans', []):
-                md_content += f"- **{t.get('task', '')}** (예정일자: {t.get('date', '')}, 이슈: {t.get('issue', '')}, 비고: {t.get('note', '')})\n"
             md_content += f"\n### ■ 기타 의견\n{parsed_data.get('opinions', '')}"
         elif is_weekly:
             def _md_list(val) -> str:
@@ -244,16 +235,13 @@ def write_report(report_type: str, data: dict | list) -> dict:
                 return str(val) if val else "-"
             md_content = f"# 주간 업무보고서\n"
             md_content += f"**부서:** {parsed_data.get('department', '')} | **직책:** {parsed_data.get('position', '')} | **작성자:** {parsed_data.get('author', '')} | **작성일:** {parsed_data.get('date', '')}\n\n"
-            md_content += f"### ▶ 전주 추진사항\n{_md_list(parsed_data.get('past_week_tasks', []))}\n\n"
-            md_content += f"### ▶ 차주 계획사항\n{_md_list(parsed_data.get('next_week_plans', []))}\n\n"
-            md_content += f"### ▶ 특이사항\n{_md_list(parsed_data.get('special_notes', []))}\n\n"
-            md_content += f"### ▶ 지시사항\n{_md_list(parsed_data.get('instructions', []))}"
+            md_content += f"### ▶ 금주완료업무\n{_md_list(parsed_data.get('past_week_tasks', []))}\n\n"
+            md_content += f"### ▶ 특이사항\n{_md_list(parsed_data.get('special_notes', []))}"
         elif is_daily:
             md_content = f"# 일일 업무보고서\n"
             md_content += f"**작성자:** {parsed_data.get('department', '')} {parsed_data.get('position', '')} {parsed_data.get('author', '')} ({parsed_data.get('date', '')})\n\n"
             md_content += f"### ▶ 오늘의 주요업무\n{parsed_data.get('today_tasks', '')}\n\n"
             md_content += f"### ▶ 미종결 업무사항\n{parsed_data.get('pending_tasks', '')}\n\n"
-            md_content += f"### ▶ 익일 업무계획\n{parsed_data.get('tomorrow_tasks', '')}\n\n"
             md_content += f"### ▶ 기타사항\n{parsed_data.get('other_notes', '')}"
         else:
             md_content = f"# {parsed_data.get('title', '보고서')}\n"
@@ -425,7 +413,6 @@ def _generate_daily_report_pdf(data: dict, report_type: str) -> str:
             
         add_section("▶ 오늘의 주요업무", data.get("today_tasks", ""))
         add_section("▶ 미종결 업무사항", data.get("pending_tasks", ""))
-        add_section("▶ 익일 업무계획", data.get("tomorrow_tasks", ""))
         add_section("▶ 기타사항", data.get("other_notes", ""))
         
         doc.build(story)
@@ -481,32 +468,25 @@ def _generate_weekly_report_pdf(data: dict, report_type: str) -> str:
             return str(val).replace("\n", "<br/>") if val else "-"
 
         safe_past_tasks = _to_bullets(data.get("past_week_tasks", []))
-        safe_next_plans = _to_bullets(data.get("next_week_plans", []))
         safe_spec       = _to_bullets(data.get("special_notes", []))
-        safe_inst       = _to_bullets(data.get("instructions", []))
 
         t_main_data = [
-            [Paragraph("전주<br/>실행<br/>사항", left_menu), Paragraph(safe_past_tasks, body_style), Spacer(1, 5.5*cm)],
-            [Paragraph("차주<br/>계획", left_menu),          Paragraph(safe_next_plans, body_style), Spacer(1, 5.5*cm)],
-            [Paragraph("특이<br/>사항", left_menu),          Paragraph(safe_spec, body_style),       Spacer(1, 3.5*cm)],
-            [Paragraph("지시<br/>사항", left_menu),          Paragraph(safe_inst, body_style),       Spacer(1, 3.5*cm)],
+            [Paragraph("금주<br/>완료<br/>업무", left_menu), Paragraph(safe_past_tasks, body_style)],
+            [Paragraph("특이<br/>사항", left_menu),          Paragraph(safe_spec, body_style)],
         ]
 
-        t_main = Table(t_main_data, colWidths=[col1_w, col2_w, 0], rowHeights=[None, None, None, None])
+        t_main = Table(t_main_data, colWidths=[col1_w, col2_w], rowHeights=[15*cm, 7*cm])
         t_main.setStyle(TableStyle([
-            ('GRID', (0,0), (1,3), 0.5, colors.grey),
+            ('GRID', (0,0), (1,1), 0.5, colors.grey),
             ('LINEABOVE', (0,0), (1,0), 1, colors.black),
-            ('BACKGROUND', (0,0), (0,3), colors.whitesmoke),
-            ('VALIGN', (0,0), (0,3), 'MIDDLE'),
-            ('ALIGN', (0,0), (0,3), 'CENTER'),
-            ('VALIGN', (1,0), (1,3), 'TOP'),
-            ('VALIGN', (1,4), (2,5), 'TOP'), 
-            ('LEFTPADDING', (1,0), (1,3), 10),
-            ('RIGHTPADDING', (1,0), (1,3), 10),
-            ('TOPPADDING', (1,0), (1,3), 10),
-            ('BOTTOMPADDING', (1,0), (1,3), 10),
-            ('LEFTPADDING', (2,0), (2,-1), 0),
-            ('RIGHTPADDING', (2,0), (2,-1), 0),
+            ('BACKGROUND', (0,0), (0,1), colors.whitesmoke),
+            ('VALIGN', (0,0), (0,1), 'MIDDLE'),
+            ('ALIGN', (0,0), (0,1), 'CENTER'),
+            ('VALIGN', (1,0), (1,1), 'TOP'),
+            ('LEFTPADDING', (1,0), (1,1), 10),
+            ('RIGHTPADDING', (1,0), (1,1), 10),
+            ('TOPPADDING', (1,0), (1,1), 10),
+            ('BOTTOMPADDING', (1,0), (1,1), 10),
         ]))
         story.append(t_main)
         
@@ -612,18 +592,6 @@ def _generate_monthly_report_pdf(data: dict, report_type: str) -> str:
         story.append(Spacer(1, 0.8*cm))
         
         # Section 2
-        story.append(Paragraph("■ 차월 업무계획", section_title))
-        story.append(Spacer(1, 0.2*cm))
-        
-        t2 = make_section_table(
-            data.get("next_month_plans", []), 
-            ["업무내용", "예정일자", "예상 문제점", "비 고"], 
-            ["task", "date", "issue", "note"], 5
-        )
-        story.append(t2)
-        story.append(Spacer(1, 0.8*cm))
-        
-        # Section 3
         story.append(Paragraph("■ 기타 의견", section_title))
         story.append(Spacer(1, 0.2*cm))
         story.append(HRFlowable(width="100%", thickness=1, color=colors.grey, spaceAfter=0.2*cm))
