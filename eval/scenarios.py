@@ -8,10 +8,10 @@ SCENARIOS = [
         "checkpoints": [
             {
                 "id": "S1-C1",
-                "name": "Slack 수집 툴 호출",
+                "name": "데이터 수집 툴 호출",
                 "points": 2,
                 "type": "tool_call",
-                "tool": ["fetch_agent", "slack_list_channels", "slack_get_channel_history"],
+                "tool": ["fetch_agent", "read_work_items"],
             },
             {
                 "id": "S1-C2",
@@ -52,10 +52,10 @@ SCENARIOS = [
         "checkpoints": [
             {
                 "id": "S2-C1",
-                "name": "항목 검색 또는 메일 수집 시도",
+                "name": "항목 검색 또는 데이터 수집 시도",
                 "points": 2,
                 "type": "tool_call",
-                "tool": ["search_past_items", "fetch_gmail"],
+                "tool": ["search_past_items", "fetch_gmail", "fetch_agent", "read_work_items", "action_agent"],
             },
             {
                 "id": "S2-C2",
