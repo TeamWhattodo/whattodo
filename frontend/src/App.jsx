@@ -35,6 +35,7 @@ export default function App() {
   const [showLoginModal, setShowLoginModal]   = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [attachedFile, setAttachedFile]       = useState(null);
+  const [processingFile, setProcessingFile]   = useState(false);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -127,6 +128,7 @@ export default function App() {
 
     let filePayload = {};
     if (attachedFile) {
+      setProcessingFile(true);
       try {
         filePayload = { file_name: attachedFile.name, file_data: await readFileAsBase64(attachedFile) };
       } catch {
@@ -168,10 +170,12 @@ export default function App() {
           try {
             const event = JSON.parse(line.slice(6));
             if (event.type === "tool_call") {
+              setProcessingFile(false);
               setToolLogs(prev => [...prev, `🔧 ${event.tool} 호출 중...`]);
             } else if (event.type === "tool_result") {
               setToolLogs(prev => [...prev, `✅ ${event.tool} 완료`]);
             } else if (event.type === "done") {
+              setProcessingFile(false);
               responseText = event.text;
               newHistory   = event.history;
               if (event.files?.length) {
@@ -195,6 +199,7 @@ export default function App() {
     } finally {
       setToolLogs([]);
       setLoading(false);
+      setProcessingFile(false);
     }
   };
 
@@ -392,6 +397,12 @@ export default function App() {
             );
           })}
 
+          {processingFile && (
+            <div className="msg-row">
+              <div className="msg-avatar">W</div>
+              <div className="tool-status">🖼️ 이미지 분석 중...</div>
+            </div>
+          )}
           {loading && toolLogs.length > 0 && (
             <div className="msg-row">
               <div className="msg-avatar">W</div>

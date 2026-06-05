@@ -30,8 +30,6 @@ class ChatRequest(BaseModel):
 
 
 IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp"}
-IMAGE_MIME = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-              "gif": "image/gif", "webp": "image/webp"}
 
 
 def _extract_file_text(file_name: str, file_data: str) -> str:
@@ -41,6 +39,9 @@ def _extract_file_text(file_name: str, file_data: str) -> str:
         import fitz
         doc = fitz.open(stream=raw, filetype="pdf")
         return "\n".join(page.get_text() for page in doc)
+    if ext in IMAGE_EXTS:
+        from backend.tools.extract_text import ocr_image_bytes
+        return ocr_image_bytes(raw)
     return raw.decode("utf-8", errors="ignore")
 
 
@@ -57,13 +58,6 @@ def _extract_files(text: str) -> list[dict]:
 def _build_query(req: "ChatRequest") -> "str | list":
     if not req.file_name or not req.file_data:
         return req.query
-    ext = req.file_name.rsplit(".", 1)[-1].lower()
-    if ext in IMAGE_EXTS:
-        mime = IMAGE_MIME.get(ext, "image/jpeg")
-        return [
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{req.file_data}"}},
-            {"type": "text", "text": req.query},
-        ]
     try:
         text = _extract_file_text(req.file_name, req.file_data)
         text = text[:8000]
