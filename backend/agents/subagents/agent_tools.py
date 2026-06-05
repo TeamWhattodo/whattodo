@@ -18,12 +18,14 @@ def _wrap(agent: str, status: str, content: str, **extra) -> str:
 
 
 @tool
-def fetch_agent(request: str) -> str:
+def fetch_agent(request: str, config: RunnableConfig) -> str:
     """Gmail·Calendar·Slack·Jira·Notion에서 업무 데이터를 수집합니다.
-    브리핑·복귀 정리·소스별 현황 파악 시 사용. 수집 결과의 content를 report_agent에 context로 전달하세요."""
+    브리핑·복귀 정리·소스별 현황 파악 시 사용."""
     from backend.agents.subagents.fetch_agent import run
+    from backend.agents.tools_registry import _get_uid
     try:
-        text, _ = _run(run(request))
+        user_id = _get_uid(config)
+        text, _ = _run(run(request, user_id=user_id))
         return _wrap("fetch", "success", text)
     except Exception as e:
         return _wrap("fetch", "error", f"수집 실패: {e}")

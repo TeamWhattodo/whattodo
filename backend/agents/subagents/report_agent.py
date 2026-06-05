@@ -11,7 +11,6 @@ from backend.agents.tools_registry import load_all_tools
 REPORT_AGENT_LOCAL_TOOLS: list[str] = [
     "parse_receipt_from_text",
     "process_expense_report",
-    "fetch_tasks",
     "write_report",
 ]
 
@@ -24,7 +23,7 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
 
 사용 가능한 tool:
   parse_receipt_from_text, process_expense_report,
-  fetch_tasks, write_report
+  fetch_agent, write_report
 
 ─────────────────────────────────────────────
 [1] 경비정산서  (엑셀 출력)
@@ -56,7 +55,7 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
 
 실행 순서:
   1. 오늘 날짜 기준으로 이번 주 월요일(start)·일요일(end) 계산
-  2. fetch_tasks(start=<월요일>, end=<일요일>) 호출 → 업무 목록 수집
+  2. fetch_agent(request="주간 완료업무 조회 start=<월요일> end=<일요일>") 호출 → 업무 목록 수집
   3. write_report(report_type="kpi_weekly", data=<fetch 결과 JSON>)
      - fetch 없이 write_report 먼저 호출 금지
      - data에 담당자·부서·직책 정보 없으면 "-" 입력
@@ -68,9 +67,9 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
   **기간:** YYYY-MM-DD (월) ~ YYYY-MM-DD (일)
 
   ### ✅ 완료 업무
-  | 날짜 | 업무명 | 카테고리 | 담당자 | 출처 |
-  |------|--------|----------|--------|------|
-  | 값   | 값     | 값       | 값     | 값   |
+  | 업무명 | 출처 | 완료날짜 |
+  |--------|------|----------|
+  | 값     | 값   | 값       |
 
   **총 완료 업무:** N건
 """
@@ -78,8 +77,9 @@ context의 "첨부된 문서 내용" 텍스트를 직접 tool 인자로 전달�
 
 def _build_tools(all_tools: list) -> list:
     """로컬 툴(이름 매칭) 반환. MCP 없음."""
+    from backend.agents.subagents.agent_tools import fetch_agent as _fetch_agent_tool
     allowed = set(REPORT_AGENT_LOCAL_TOOLS)
-    return [t for t in all_tools if t.name in allowed]
+    return [t for t in all_tools if t.name in allowed] + [_fetch_agent_tool]
 
 
 _agent = None
