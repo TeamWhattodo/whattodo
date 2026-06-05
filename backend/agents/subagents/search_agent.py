@@ -10,7 +10,7 @@ from backend.agents.tools_registry import load_all_tools, _run
 _BASE_TOOLS     = {"search_past_items", "search_company_docs", "get_item_thread"}
 _GMAIL_TOOLS    = {"fetch_gmail"}
 _CALENDAR_TOOLS = {"fetch_calendar", "search_calendar_events"}
-_NOTION_TOOLS   = {"notion_search", "notion_get_page_content"}
+_NOTION_TOOLS   = {"notion_search", "notion_get_page_content", "list_notion_pages"}
 _SLACK_TOOLS    = {"slack_search_messages"}
 _JIRA_TOOLS     = {"jira_search_issues"}
 
@@ -21,8 +21,9 @@ SEARCH_AGENT_SYSTEM = """\
 ## 소스별 툴 선택
 - 메일·이메일 → fetch_gmail(max_results=20)
 - 캘린더·일정 → fetch_calendar(days=7) 또는 search_calendar_events
-- Notion 문서·페이지 → notion_search 후 결과가 있으면 notion_get_page_content로 내용 확인
-  ※ 사내 규정·정책은 search_company_docs 사용, Notion 내용 조회는 notion_search 사용 (혼용 금지)
+- Notion 문서·페이지 목록 보기 → list_notion_pages() 호출 (목록 조회, "문서 목록", "페이지 보여줘" 요청)
+- Notion 키워드 검색 → notion_search(query=...) 후 결과가 있으면 notion_get_page_content로 내용 확인
+  ※ 사내 규정·정책은 search_company_docs 사용, Notion 내용 조회는 notion_search/list_notion_pages 사용 (혼용 금지)
 - Slack 메시지 검색 → slack_search_messages
 - Jira 이슈 검색 → jira_search_issues(jql=...)
 - 사내 규정·정책·한도 → search_company_docs

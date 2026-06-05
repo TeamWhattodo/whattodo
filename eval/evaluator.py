@@ -74,9 +74,16 @@ def check_file_exists(state: dict, field: str) -> tuple[bool, str]:
             try:
                 data = json.loads(content)
                 if isinstance(data, dict):
+                    # 최상위 레벨 확인
                     path = data.get(field, "")
                     if path and os.path.exists(path):
                         return True, f"파일 생성됨: {path}"
+                    # files 배열 내부 확인 (supervisor 아키텍처)
+                    for file_item in data.get("files", []):
+                        if isinstance(file_item, dict):
+                            path = file_item.get(field, "")
+                            if path and os.path.exists(path):
+                                return True, f"파일 생성됨: {path}"
             except Exception:
                 pass
     return False, "파일 미생성"

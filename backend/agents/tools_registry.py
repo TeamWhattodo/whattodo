@@ -84,7 +84,8 @@ def write_report(config: RunnableConfig, report_type: str, data: str) -> str:
         parsed = data
     if isinstance(parsed, dict):
         from datetime import date
-        parsed["date"] = date.today().strftime("%Y. %-m. %-d")
+        d = date.today()
+        parsed["date"] = f"{d.year}. {d.month}. {d.day}"
         profile = _get_user_profile(_get_uid(config))
         for k, v in profile.items():
             if v:

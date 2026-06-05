@@ -85,7 +85,7 @@ SCENARIOS = [
         "id": "S3",
         "name": "사내 규정 조회",
         "category": "search",
-        "query": "출장비 식대 한도가 얼마야?",
+        "query": "국내 출장 시 여비교통비 지급 기준이 어떻게 돼?",
         "total_points": 10,
         "checkpoints": [
             {
@@ -100,7 +100,7 @@ SCENARIOS = [
                 "name": "금액 또는 규정 내용 포함",
                 "points": 4,
                 "type": "llm_judge",
-                "criterion": "응답이 식대 한도나 출장비 관련 규정 내용을 포함하는가? 구체적인 금액이나 정책 내용이 있는가?",
+                "criterion": "응답이 출장 여비교통비 지급 기준이나 금액(원 단위)을 포함하는가? 구체적인 금액이나 거리·시간 기준이 있는가?",
             },
             {
                 "id": "S3-C3",
@@ -123,15 +123,14 @@ SCENARIOS = [
                 "name": "Jira 검색 툴 호출",
                 "points": 3,
                 "type": "tool_call",
-                "tool": ["jira_search", "jira_search_issues", "search_agent"],
+                "tool": ["jira_search_issues", "search_agent"],
             },
             {
                 "id": "S4-C2",
                 "name": "이슈 키 또는 상태 포함",
                 "points": 3,
-                "type": "response_contains",
-                "keywords": ["SCRUM-", "이슈", "티켓", "진행", "해야 할 일", "In Progress"],
-                "min_match": 1,
+                "type": "llm_judge",
+                "criterion": "응답이 실제 Jira에서 조회한 이슈 정보(이슈 키, 제목, 상태 등)를 포함하는가? 단순히 '연동 필요' 또는 '조회 불가' 같은 오류 메시지만 있는 경우는 실패.",
             },
             {
                 "id": "S4-C3",
@@ -188,10 +187,10 @@ SCENARIOS = [
             },
             {
                 "id": "S7-C2",
-                "name": "보고서 파일 생성 (xlsx 또는 pdf)",
+                "name": "보고서 파일 생성 (pdf)",
                 "points": 4,
                 "type": "file_exists",
-                "field": "xlsx_path",
+                "field": "pdf_path",
             },
             {
                 "id": "S7-C3",
@@ -206,15 +205,15 @@ SCENARIOS = [
         "id": "S8",
         "name": "영수증 정산서 작성",
         "category": "report",
-        "query": "첨부된 파일:\n- eval/fixtures/test_receipt.png\n\n위 영수증으로 정산서 만들어줘",
+        "query": "아래 영수증 내용으로 정산서 만들어줘.\n\n[RECEIPT]\nStarbucks Gangnam\nAmericano x2  9,000\nSandwich x1  6,500\nTotal: 15,500 KRW\n2026-06-01 14:30",
         "total_points": 10,
         "checkpoints": [
             {
                 "id": "S8-C1",
-                "name": "parse_receipt 또는 process_expense_report 호출",
+                "name": "parse_receipt_from_text 또는 process_expense_report 호출",
                 "points": 3,
                 "type": "tool_call",
-                "tool": ["parse_receipt", "process_expense_report", "report_agent"],
+                "tool": ["parse_receipt_from_text", "process_expense_report", "report_agent"],
             },
             {
                 "id": "S8-C2",
@@ -287,9 +286,8 @@ SCENARIOS = [
                 "id": "S9-C3",
                 "name": "Notion 데이터 기반 응답",
                 "points": 3,
-                "type": "response_contains",
-                "keywords": ["notion.com", "KORA", "인사총무팀", "OKR", "정보보호", "차량", "연구용역"],
-                "min_match": 1,
+                "type": "llm_judge",
+                "criterion": "응답이 실제 Notion에서 조회한 페이지 제목이나 문서 목록을 포함하는가? 단순히 '연동 필요' 또는 '조회 불가' 같은 오류 메시지만 있는 경우는 실패.",
             },
         ],
     },
@@ -309,10 +307,10 @@ SCENARIOS = [
             },
             {
                 "id": "S10-C2",
-                "name": "update_item_status 호출",
+                "name": "완료 처리 실행 확인",
                 "points": 4,
-                "type": "tool_call",
-                "tool": ["update_item_status"],
+                "type": "llm_judge",
+                "criterion": "응답이 특정 업무 항목의 상태를 완료(done)로 변경했다고 확인하는가? action_agent가 실제로 상태 변경을 수행했다는 내용이 있으면 통과.",
             },
             {
                 "id": "S10-C3",
@@ -388,7 +386,7 @@ SCENARIOS = [
                 "name": "없는 메시지 생성 없음",
                 "points": 3,
                 "type": "llm_judge",
-                "criterion": "응답이 실제 Slack 검색 결과에만 기반하는가? 없는 메시지를 지어내지 않았는가?",
+                "criterion": "응답이 검색 결과에 기반하는가? Slack 외 다른 소스(Jira 등) 결과가 섞여 있어도 실제 DB나 API에서 조회한 데이터라면 통과. 아무 근거 없이 내용을 완전히 꾸며냈다는 명확한 증거가 있을 때만 실패.",
             },
         ],
     },
