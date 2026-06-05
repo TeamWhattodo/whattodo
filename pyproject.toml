@@ -42,6 +42,9 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "bcrypt>=5.0.0",
     "cryptography>=48.0.0",
+    "docx2txt>=0.9",
+    "olefile>=0.47",
+    "pyhwp>=0.1b15",
 ]
 
 [build-system]
