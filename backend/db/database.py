@@ -36,6 +36,9 @@ async def init_db() -> None:
             await conn.execute(
                 text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} VARCHAR")
             )
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS sync_settings JSONB")
+        )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
