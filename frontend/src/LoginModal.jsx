@@ -88,7 +88,6 @@ export default function LoginModal({ onClose }) {
         return;
       }
     }
-    setSuccess("");
     setLoading(true);
     try {
       if (mode === "login") {
@@ -96,10 +95,6 @@ export default function LoginModal({ onClose }) {
         onClose();
       } else {
         await register(username, password, name, department, position);
-<<<<<<< HEAD
-=======
-        await register(username, password);
->>>>>>> ab15300ee66eeeb9d324ab4698d88785504ad7ff
         setSuccess("회원가입이 완료되었습니다! 로그인해 주세요.");
         setPassword("");
         setTimeout(() => {
@@ -206,10 +201,6 @@ export default function LoginModal({ onClose }) {
           )}
 
           {error && <div style={{ color: error.startsWith("✅") ? "#1E8449" : "#C53030", fontSize: 13 }}>{error}</div>}
-<<<<<<< HEAD
-=======
-          {error && <div style={{ color: "#C53030", fontSize: 13 }}>{error}</div>}
->>>>>>> ab15300ee66eeeb9d324ab4698d88785504ad7ff
           {success && <div style={{ color: "#276749", fontSize: 13, fontWeight: 600 }}>{success}</div>}
 
           <button type="submit" className="login-submit-btn" disabled={loading}>
