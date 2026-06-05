@@ -32,6 +32,15 @@ query: 특정 키워드 검색 시만 입력, 없으면 ""\
 
 
 async def run(user_input: str, user_id: int = 1) -> tuple[str, dict]:
+    import re
+    m = re.search(r'start=(\d{4}-\d{2}-\d{2}).*?end=(\d{4}-\d{2}-\d{2})', user_input)
+    if m:
+        from backend.tools.tasks_fetch import fetch_tasks
+        result = fetch_tasks(start=m.group(1), end=m.group(2))
+        result["tasks"] = result["tasks"][:20]
+        result["total"] = len(result["tasks"])
+        return json.dumps(result, ensure_ascii=False, default=str), {}
+
     llm = get_llm("fast")
     raw = (await llm.ainvoke([
         SystemMessage(content=_PARAM_EXTRACT_SYSTEM),
