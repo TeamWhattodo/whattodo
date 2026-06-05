@@ -173,9 +173,9 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleMenuClick = (menu) => {
+    const handleMenuClick = (menu) => {
     setActiveMenu(menu.id);
-    if (menu.query) sendMessage(menu.query);
+    if (menu.query && authUser) sendMessage(menu.query);
   };
 
   const sendMessage = async (query) => {

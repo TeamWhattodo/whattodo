@@ -53,40 +53,41 @@ export default function LoginModal({ onClose }) {
   const resetFields = () => {
     setUsername(""); setPassword(""); setPasswordConfirm("");
     setName(""); setDepartment(""); setPosition("");
-    setError(""); setUsernameChecked(false);
+    setError(""); setSuccess(""); setUsernameChecked(false);
   };
 
-const checkUsername = async () => {
-  if (!username) { setError("아이디를 입력해주세요."); return; }
-  try {
-    const res = await fetch(`http://localhost:8000/api/auth/check-username?username=${username}`, {
-      credentials: "include",
-      cache: "no-store"
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setUsernameChecked(true);
-      setError("✅ 사용 가능한 아이디입니다.");
-    } else {
+  const checkUsername = async () => {
+    if (!username) { setError("아이디를 입력해주세요."); return; }
+    if (username.length < 3) { setError("아이디는 3자 이상 입력해주세요."); return; }
+    try {
+      const res = await fetch(`http://localhost:8000/api/auth/check-username?username=${username}`, {
+        credentials: "include",
+        cache: "no-store"
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsernameChecked(true);
+        setError("✅ 사용 가능한 아이디입니다.");
+      } else {
+        setUsernameChecked(false);
+        setError(data.detail || "이미 사용 중인 아이디입니다.");
+      }
+    } catch {
       setUsernameChecked(false);
-      setError(data.detail || "이미 사용 중인 아이디입니다.");
+      setError("중복 확인 중 오류가 발생했습니다.");
     }
-  } catch {
-    setUsernameChecked(false);
-    setError("중복 확인 중 오류가 발생했습니다.");
-  }
-};
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     if (mode === "register") {
       if (password !== passwordConfirm) {
         setError("비밀번호가 일치하지 않습니다.");
         return;
       }
     }
-    setSuccess("");
     setLoading(true);
     try {
       if (mode === "login") {
@@ -102,7 +103,7 @@ const checkUsername = async () => {
         }, 2000);
       }
     } catch (err) {
-      setError(err.message);
+      setError(typeof err.message === "string" ? err.message : "오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
