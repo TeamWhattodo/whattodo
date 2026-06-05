@@ -58,7 +58,7 @@ def is_fully_ingested(filename: str, expected_count: int | None = None) -> bool:
     return True
 
 
-def ingest(file_path: str) -> int:
+def ingest(file_path: str, progress_cb=None) -> int:
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"파일 없음: {file_path}")
@@ -132,19 +132,29 @@ def ingest(file_path: str) -> int:
 
     print(f"  누락 청크: {len(new_chunks)}개 임베딩 생성 중 ({EMBEDDING_MODEL})...")
     embeddings_model = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=settings.openai_api_key)
-    vectors = embeddings_model.embed_documents([c["content"] for c in new_chunks])
-
+    
+    batch_size = 50
+    if progress_cb:
+        progress_cb(0, len(new_chunks))
+        
     print(f"  PostgreSQL 저장 중...")
     with get_session() as db:
-        for chunk, vector in zip(new_chunks, vectors):
-            stmt = pg_insert(PolicyEmbeddingORM).values(
-                id          = chunk["id"],
-                content     = chunk["content"],
-                parent_text = chunk["parent_text"],
-                metadata_   = {"source": chunk["source"], "parent_id": chunk["parent_id"]},
-                embedding   = vector,
-            ).on_conflict_do_nothing(index_elements=["id"])
-            db.execute(stmt)
+        for i in range(0, len(new_chunks), batch_size):
+            batch = new_chunks[i:i+batch_size]
+            vectors = embeddings_model.embed_documents([c["content"] for c in batch])
+            
+            for chunk, vector in zip(batch, vectors):
+                stmt = pg_insert(PolicyEmbeddingORM).values(
+                    id          = chunk["id"],
+                    content     = chunk["content"],
+                    parent_text = chunk["parent_text"],
+                    metadata_   = {"source": chunk["source"], "parent_id": chunk["parent_id"]},
+                    embedding   = vector,
+                ).on_conflict_do_nothing(index_elements=["id"])
+                db.execute(stmt)
+                
+            if progress_cb:
+                progress_cb(min(i+batch_size, len(new_chunks)), len(new_chunks))
 
     # 완료 마커 저장
     _save_marker(path.name, total)

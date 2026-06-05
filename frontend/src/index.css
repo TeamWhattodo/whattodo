@@ -93,6 +93,16 @@ body {
   background: #F5F5F5;
   border-color: #E0E0E0;
 }
+.sidebar-integration .int-status.running {
+  color: #B7791F;
+  background: #FFF8E1;
+  border-color: #FCEFC7;
+}
+.sidebar-integration .int-status.error {
+  color: #C53030;
+  background: #FFF5F5;
+  border-color: #FED7D7;
+}
 
 /* ── 메인 ── */
 .main {

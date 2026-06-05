@@ -16,8 +16,12 @@
   - [x] `backend/db/orm_models.py` 내 `OAuthTokenORM` 모델에 `user_id` 추가 및 PK 변경
   - [x] DB 마이그레이션 안내 (또는 컨테이너 재생성 안내)
 
-- [x] **Phase 4: API 연동 상태 조회 및 해제 기능 구현**
-  - [x] 외부 토큰 연동 시 암호화 적용 및 로드 시 복호화 로직 통합 적용
+- [x] **Phase 4: Final API Integration Check 및 디버깅**
+  - [x] 프론트엔드/백엔드 통합 인증 버그(Cookie/Axios) 해결
+  - [x] 임베딩 상태 실시간 동기화 개선 (폴링 완료 후 목록 갱신)
+  - [x] UI 레이아웃, 문구 및 모달창 개선
+  - [x] WSL2 환경에서의 핫 리로딩(HMR) 지원 설정 (Vite Polling 적용)
+  - [x] 외부 토큰 암호화 적용 및 로드 시 복호화 로직 통합 적용
   - [x] 로그인 시 연동 상태(`connected`)를 내려주기 위한 로직 업데이트
   - [x] 연동 해제 API (`DELETE /auth/integrations/{source}`) 구현
 
