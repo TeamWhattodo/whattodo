@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 
@@ -35,7 +36,7 @@ fetch_agent가 수집한 원본 데이터를 받아 한국어 마크다운 브�
 - 출처: 플랫폼·채널 (예: Slack #general, Jira, 이메일)
 - 발신자: 메시지 보낸 사람 (예: 김철수, @john, 시스템). 없으면 -
 - 내용: 핵심만. 최대 2문장. 중복·인사말 제거
-- 마감시간: 명시된 날짜·시각 (예: 2026-06-03 18:00). 없으면 -
+- 마감시간: 명시된 날짜·시각 (예: 2026-06-03 18:00). "오늘/내일/이번주" 등 상대 표현은 context 첫 줄의 오늘 날짜 기준으로 절대 날짜 변환. 없으면 -
 
 ### 우선순위 기준
 - 🔴 긴급: 마감 초과 · [긴급] 태그 · High 우선순위
@@ -64,7 +65,9 @@ def _get_agent():
 
 
 async def _run_async(context: str) -> str:
-    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=context)]})
+    today = date.today().strftime("%Y-%m-%d")
+    full_context = f"오늘 날짜: {today}\n\n{context}"
+    result = await _get_agent().ainvoke({"messages": [HumanMessage(content=full_context)]})
     messages = result["messages"]
     return messages[-1].content if messages else ""
 
