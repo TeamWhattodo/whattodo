@@ -73,9 +73,6 @@ export default function IntegrationsModal({ onClose, onIntegrationsChange }) {
   const [openForms, setOpenForms] = useState({}); // source -> boolean
   const [disconnectTarget, setDisconnectTarget] = useState(null);
 
-  const [profile, setProfile] = useState({ full_name: "", department: "", position: "" });
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState("");
 
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -119,30 +116,7 @@ export default function IntegrationsModal({ onClose, onIntegrationsChange }) {
 
   useEffect(() => {
     fetchIntegrations();
-    fetch(`${API}/auth/me`, { credentials: "include" })
-      .then(r => r.json())
-      .then(u => setProfile({ full_name: u.full_name || "", department: u.department || "", position: u.position || "" }))
-      .catch(() => {});
   }, []);
-
-  const saveProfile = async () => {
-    setProfileSaving(true);
-    setProfileMsg("");
-    try {
-      const res = await fetch(`${API}/auth/profile`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(profile),
-      });
-      if (res.ok) setProfileMsg("저장됨");
-      else setProfileMsg("저장 실패");
-    } catch {
-      setProfileMsg("저장 실패");
-    } finally {
-      setProfileSaving(false);
-    }
-  };
 
   const fetchIntegrations = async () => {
     setLoading(true);
@@ -286,25 +260,7 @@ export default function IntegrationsModal({ onClose, onIntegrationsChange }) {
           >✕</button>
         </div>
 
-        <div style={{ marginBottom: "16px", padding: "12px", border: "1px solid #EBEBEB", borderRadius: "8px" }}>
-          <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "10px", color: "#333" }}>내 정보 (보고서 자동 입력)</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <input className="modal-input" placeholder="이름" value={profile.full_name}
-              onChange={e => setProfile({ ...profile, full_name: e.target.value })} />
-            <input className="modal-input" placeholder="부서" value={profile.department}
-              onChange={e => setProfile({ ...profile, department: e.target.value })} />
-            <input className="modal-input" placeholder="직급" value={profile.position}
-              onChange={e => setProfile({ ...profile, position: e.target.value })} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
-            <button className="modal-btn modal-btn-primary" onClick={saveProfile} disabled={profileSaving} style={{ fontSize: "13px", padding: "6px 14px" }}>
-              {profileSaving ? "저장 중..." : "저장"}
-            </button>
-            {profileMsg && <span style={{ fontSize: "13px", color: profileMsg === "저장됨" ? "#276749" : "#C53030" }}>{profileMsg}</span>}
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: "auto", marginBottom: "16px" }}>
+<div style={{ flex: 1, overflowY: "auto", marginBottom: "16px" }}>
           {loading ? <p>로딩 중...</p> : integrations.map((item) => (
             <div key={item.source} style={{ marginBottom: "12px" }}>
               <div style={itemStyle}>

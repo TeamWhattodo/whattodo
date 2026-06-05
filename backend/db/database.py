@@ -32,7 +32,7 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        for col in ("full_name", "department", "position"):
+        for col in ("name", "department", "position"):
             await conn.execute(
                 text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} VARCHAR")
             )

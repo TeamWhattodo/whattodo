@@ -74,7 +74,7 @@ def _get_user_profile(user_id: int) -> dict:
             user = loop.run_until_complete(_fetch())
         if user:
             return {
-                "author": user.full_name or user.username,
+                "author": user.name or user.username,
                 "department": user.department or "",
                 "position": user.position or "",
             }
