@@ -46,7 +46,7 @@ def _fetch(user_id: int, days: int = 14) -> list[dict]:
                 "from_person": user,
                 "source_id": source_id,
                 "created_at": datetime.utcfromtimestamp(float(ts)) if ts else datetime.utcnow(),
-                "status": "pending",
+                "status": None,
             })
     return all_items
 

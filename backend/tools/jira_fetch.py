@@ -150,8 +150,42 @@ def jira_update_issue(issue_key: str, config: RunnableConfig, summary: str = "",
 def jira_transition_issue(issue_key: str, transition_id: str, config: RunnableConfig) -> str:
     """Jira 이슈 상태를 전환합니다. transition_id는 jira_get_transitions로 먼저 조회. 반드시 사용자 확인 후 실행."""
     def _fn():
-        _client(config).transition_issue(issue_key, transition_id)
-        return {"ok": True, "key": issue_key, "transition_id": transition_id}
+        client = _client(config)
+        client.transition_issue(issue_key, transition_id)
+
+        # 전환 후 statusCategory로 DB status 동기화
+        updated = client.issue(issue_key, fields="status")
+        status_category = getattr(updated.fields.status, "statusCategory", None)
+        category_key = getattr(status_category, "key", "") if status_category else ""
+
+        if category_key == "done":
+            db_status = "done"
+        elif category_key == "new":
+            db_status = "todo"
+        else:
+            db_status = "pending"
+
+        thread_id = config.get("configurable", {}).get("thread_id", "")
+        try:
+            uid = int(thread_id.split(":")[0]) if ":" in thread_id else None
+        except ValueError:
+            uid = None
+
+        if uid:
+            from sqlalchemy import update as sa_update
+            from backend.db.orm_models import WorkItemORM
+            with get_session() as db:
+                db.execute(
+                    sa_update(WorkItemORM)
+                    .where(
+                        WorkItemORM.source == "jira",
+                        WorkItemORM.source_id == issue_key,
+                        WorkItemORM.user_id == uid,
+                    )
+                    .values(status=db_status)
+                )
+
+        return {"ok": True, "key": issue_key, "transition_id": transition_id, "db_status": db_status}
     return _safe(_fn)
 
 

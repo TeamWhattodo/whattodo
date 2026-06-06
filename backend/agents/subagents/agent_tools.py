@@ -4,7 +4,6 @@ import json
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
-from langgraph.types import interrupt
 
 from backend.agents.tools_registry import _run
 
@@ -79,12 +78,6 @@ def search_agent(query: str) -> str:
         return _wrap("search", "error", f"검색 실패: {e}")
 
 
-_DESTRUCTIVE_KEYWORDS = [
-    "발송", "보내", "전송", "삭제", "제거", "완료", "처리",
-    "생성", "추가", "만들어", "업데이트", "변경", "수정", "잡아",
-    "send", "delete", "create", "update",
-]
-
 _ACTION_TYPE_KEYWORDS = [
     ("send_gmail",      ["메일 보내", "답장 발송", "gmail 발송"]),
     ("trash_gmail",     ["메일 삭제", "gmail 삭제"]),
@@ -109,18 +102,7 @@ def _detect_action_type(request: str) -> str:
 @tool
 def action_agent(request: str) -> str:
     """Gmail 발송·삭제, Slack 메시지 발송·삭제, Jira 이슈 관리,
-    Notion 페이지 관리, 캘린더 일정 생성·삭제, 답장 초안 작성을 실행합니다.
-    발송·삭제·생성 등 외부 변경이 발생하는 경우 실행 전 사용자 확인을 요청합니다."""
-    needs_confirm = any(k in request for k in _DESTRUCTIVE_KEYWORDS)
-    if needs_confirm:
-        answer = interrupt({
-            "type": "action_confirmation",
-            "message": f"다음 액션을 실행하시겠습니까?\n\n**요청**: {request}",
-            "request": request,
-        })
-        if str(answer).strip().lower() in ("n", "no", "아니오", "취소", ""):
-            return _wrap("action", "cancelled", "사용자가 취소했습니다.",
-                         action_type=_detect_action_type(request))
+    Notion 페이지 관리, 캘린더 일정 생성·삭제, 답장 초안 작성을 실행합니다."""
     from backend.agents.subagents.action_agent import run
     try:
         text, has_draft = _run(run(request))

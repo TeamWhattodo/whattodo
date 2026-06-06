@@ -57,7 +57,7 @@ def save_items(items: list[dict]) -> None:
                 due_at            = _parse_dt(item.get("due_at")),
                 deadline          = _parse_dt(item.get("deadline")),
                 source_id         = item.get("source_id"),
-                status            = item.get("status", "pending"),
+                status            = item.get("status"),
                 created_at        = _parse_dt(item.get("created_at")) or datetime.now(),
                 completed_at      = _parse_dt(item.get("completed_at")),
                 actual_minutes    = item.get("actual_minutes"),

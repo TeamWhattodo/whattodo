@@ -50,7 +50,7 @@ def _fetch(user_id: int, days: int = 14) -> list[dict]:
             "summary": title,
             "action_type": "review",
             "from_person": None,
-            "status": "pending",
+            "status": None,
             "created_at": datetime.now().isoformat(),
         })
     return items

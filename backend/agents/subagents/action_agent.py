@@ -87,7 +87,12 @@ def _build_system_prompt() -> str:
 - 생성: jira_list_projects로 프로젝트 목록 먼저 조회 → 사용자에게 프로젝트 선택 요청 → jira_create_issue(project_key, summary, issue_type="Task") 호출
   ※ 프로젝트 키를 사용자에게 직접 묻지 말 것. 항상 jira_list_projects로 먼저 조회할 것
 - 조회: jira_get_issue(issue_key)
-- 상태 변경: jira_get_transitions(issue_key)로 전환 목록 확인 → jira_transition_issue(issue_key, transition_id)
+- 상태 변경 (자연어로 항목 지칭 시):
+  1. search_past_items(source="jira", query=<제목 키워드>)로 해당 항목 조회 → source_id 확보 (이것이 Jira issue_key)
+  2. jira_get_transitions(issue_key=source_id)로 전환 가능 목록 확인
+  3. 사용자가 원하는 상태(완료→Done, 진행 중→In Progress, 해야할 일→To Do)에 해당하는 transition_id 선택
+  4. jira_transition_issue(issue_key=source_id, transition_id=...) 호출
+  ※ issue_key를 모를 때 절대 사용자에게 묻지 말 것. 반드시 search_past_items로 직접 찾을 것
 - 업데이트: jira_update_issue(issue_key, ...) — 사용자 확인 후 실행
 - 삭제: jira_delete_issue(issue_key) — 사용자 확인 후 실행
 - 댓글: jira_add_comment(issue_key, comment)
