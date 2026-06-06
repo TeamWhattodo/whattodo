@@ -262,7 +262,9 @@ _SUPERVISOR_SYSTEM = """\
 
 4. 답장 초안·발송·Jira·Notion·캘린더 조작
    → action_agent(request)
-   (실행 전 사용자 확인이 자동으로 요청됩니다)
+   예) "SCRUM-1 완료로 바꿔줘", "시스템 개선 제안 상태를 완료로 변경해줘", "OOO의 상태를 진행 중으로 바꿔줘"
+   ※ "상태를 바꿔줘/변경해줘/완료로/진행 중으로/해야할 일로" 패턴은 반드시 action_agent로 라우팅할 것
+   ※ 절대 fetch_agent나 briefing_agent로 보내지 말 것
 
 5. 일반 대화·인사·단순 질문
    → 도구 없이 직접 응답

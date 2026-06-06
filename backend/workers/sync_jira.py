@@ -11,15 +11,26 @@ def _fetch(user_id: int, days: int = 14) -> list[dict]:
     from backend.tools.jira_fetch import _client
     
     client = _client(user_id=user_id)
-    jql = f"statusCategory not in (Done) AND updated >= -{days}d ORDER BY updated DESC"
+    # 미완료(해야할 일 + 진행 중)는 날짜 무관 전수 조회, 완료는 최근 N일치만
+    jql = f"(statusCategory in (new, indeterminate)) OR (statusCategory = Done AND updated >= -{days}d) ORDER BY updated DESC"
     raw = client.search_issues(
         jql,
         maxResults=50,
         fields="summary,status,assignee,priority,created,updated,description",
     )
-    
+
     items = []
     for issue in raw:
+        category_key = getattr(
+            getattr(issue.fields.status, "statusCategory", None), "key", ""
+        )
+        if category_key == "done":
+            db_status = "done"
+        elif category_key == "new":
+            db_status = "todo"
+        else:
+            db_status = "pending"
+
         items.append({
             "id": f"jira_{issue.key}",
             "user_id": user_id,
@@ -34,7 +45,7 @@ def _fetch(user_id: int, days: int = 14) -> list[dict]:
             "action_type": "review",
             "from_person": issue.fields.assignee.displayName if issue.fields.assignee else None,
             "due_at": getattr(issue.fields, "duedate", None),
-            "status": "pending",
+            "status": db_status,
             "created_at": datetime.now().isoformat(),
         })
     return items

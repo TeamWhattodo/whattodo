@@ -25,7 +25,7 @@ class WorkItemORM(Base):
     deadline          = Column(DateTime(timezone=True), nullable=True)
     source_id         = Column(String(255), nullable=True)
     contact_count     = Column(Integer,     nullable=False, default=1)
-    status            = Column(String(50),  nullable=False, default="pending")
+    status            = Column(String(50),  nullable=True)
     created_at        = Column(DateTime,    nullable=True)
     synced_at         = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
     completed_at      = Column(DateTime,    nullable=True)

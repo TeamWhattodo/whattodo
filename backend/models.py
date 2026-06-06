@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -14,7 +14,7 @@ class WorkItem(BaseModel):
     from_person: str | None = None
     due_at: datetime | None = None
     source_id: str | None = None   # Gmail: threadId, Slack: channel_id:thread_ts, Jira: issue_key
-    status: Literal["pending", "done", "snoozed"] = "pending"
+    status: str | None = None      # Jira: "pending" | "done", 그 외 플랫폼: None
     created_at: datetime
     completed_at: datetime | None = None
     actual_minutes: int | None = None
