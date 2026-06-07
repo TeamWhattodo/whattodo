@@ -24,7 +24,7 @@
 
 **복귀 브리핑** — 부재 기간 동안 쌓인 항목을 긴급도 순으로 정리해 카드로 보여줍니다.
 
-**스마트 우선순위** — "마감이 얼마나 남았는지", "누가 보냈는지", "같은 사람이 몇 번 연락했는지"를 조합해 긴급도를 계산합니다. AI의 주관적 판단이 아닌 정량 지표 기반입니다.
+**스마트 우선순위** — 저장된 deadline과 현재 시각을 비교해 긴급도를 실시간 계산합니다. AI의 주관적 판단이 아닌 정량 지표 기반입니다.
 
 **답장 초안 작성** — 메일·슬랙 항목을 선택하면 AI가 맥락에 맞는 초안을 생성합니다.
 
@@ -40,24 +40,39 @@
 
 | 레이어 | 기술 |
 |---|---|
-| 프론트엔드 | React 19 + Vite |
-| 백엔드 | FastAPI + SSE 스트리밍 |
-| AI 에이전트 | LangGraph Supervisor 패턴 |
+| 프론트엔드 | React 19 + Vite (nginx) |
+| 백엔드 | FastAPI + LangGraph Supervisor + ReAct |
+| AI 에이전트 | LangGraph `create_react_agent` · SubAgent @tool 패턴 |
 | 외부 소스 | Gmail · Google Calendar · Slack · Jira · Notion |
-| 벡터 검색 | ChromaDB |
-| 세션 저장 | 파일 기반 JSON (`data/sessions/`) |
+| 데이터베이스 | PostgreSQL + pgvector (관계형 · 벡터 · 대화 이력 통합) |
+| 백그라운드 수집 | APScheduler (FastAPI lifespan, 2~15분 주기) |
+| 배포 | Docker Compose (db · backend · frontend 3-서비스) |
 
 ---
 
 ## 시작하기
 
-### 필요한 것
+### Docker Compose (권장)
+
+```bash
+cp .env.example .env
+# .env에 필요한 API 키 입력
+docker compose up --build
+```
+
+- `http://localhost` → React 앱
+- `http://localhost:8000/docs` → FastAPI 문서
+
+### 로컬 개발
+
+#### 필요한 것
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
 - Node.js 18+
+- PostgreSQL (pgvector 익스텐션 포함)
 
-### 1. 환경 변수 설정
+#### 1. 환경 변수 설정
 
 ```bash
 cp .env.example .env
@@ -67,7 +82,12 @@ cp .env.example .env
 
 ```bash
 # 필수
-OPENAI_API_KEY=          # 또는 ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost/whattodo
+JWT_SECRET=<32바이트 이상 랜덤 문자열>
+JWT_EXPIRE_DAYS=7
+COOKIE_SECURE=false   # HTTPS 배포 시 true
 
 # Gmail · Google Calendar 사용 시
 GMAIL_CLIENT_ID=
@@ -87,40 +107,18 @@ JIRA_BASE_URL=           # 예: https://yourorg.atlassian.net
 NOTION_API_TOKEN=
 ```
 
-전체 환경 변수 목록은 `.env.example`을 참고하세요.
+> `JWT_SECRET` 생성: `python -c "import secrets; print(secrets.token_hex(32))"`
+>
+> 전체 환경 변수 목록은 `.env.example`을 참고하세요.
 
-#### 로그인(인증) 설정
-
-앱 레벨 로그인을 위해 PostgreSQL과 아래 환경 변수가 필요합니다.
-
-```bash
-createdb whattodo
-```
-
-`.env`에 추가:
-
-```
-DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost/whattodo
-JWT_SECRET=<32바이트 이상 랜덤 문자열>
-JWT_EXPIRE_DAYS=7
-COOKIE_SECURE=false   # HTTPS 배포 시 true
-```
-
-> `JWT_SECRET`이 비어 있으면 인증 기능이 런타임에 거부됩니다. `users` 테이블은 백엔드 기동 시 자동 생성됩니다.
-JWT_SECRET 생성: python -c "import secrets; print(secrets.token_hex(32))"
-
-### 2. 백엔드 실행
+#### 2. 백엔드 실행
 
 ```bash
 uv sync
 uv run uvicorn backend.main:app --reload
 ```
 
-`http://localhost:8000/docs` 에서 API 문서를 확인할 수 있습니다.
-
-### 3. 프론트엔드 실행
-
-새 터미널을 열고:
+#### 3. 프론트엔드 실행
 
 ```bash
 cd frontend
@@ -139,24 +137,9 @@ npm run dev
 TheAgentCompany 방법론 기반 에이전트 평가 스크립트입니다.
 
 ```bash
-# ── 실행 (DB는 docker compose up db -d 로 먼저 띄워야 함) ──────
-uv run python -m eval.run_eval
-uv run python -m eval.run_eval S1 S3
+# DB를 먼저 띄운 뒤 실행
+docker compose up db -d
 
-# ── 모델 비교 (권장) ──────────────────────────────────────────
-# 기본 모델(gpt-4o, gpt-4o-mini, claude-sonnet-4-6) 비교: 정리 → 평가 → 차트 한방에
-uv run python -m eval.compare
-
-# 모델당 5회 실행 후 평균 (신뢰도 높은 비교)
-uv run python -m eval.compare --runs 5
-
-# 모델 직접 지정
-uv run python -m eval.compare gpt-4o gpt-4o-mini claude-sonnet-4-6
-
-# 이전 결과 유지하면서 추가 실행
-uv run python -m eval.compare gpt-4o --no-clean
-
-# ── 개별 실행 ─────────────────────────────────────────────────
 # 전체 시나리오 실행
 uv run python -m eval.run_eval
 
@@ -166,7 +149,13 @@ uv run python -m eval.run_eval S1 S3 S6
 # 모델 지정 실행
 uv run python -m eval.run_eval --model gpt-4o-mini
 
-# 비교 차트 생성 (eval/results/ 전체 자동 비교)
+# 모델 비교 (권장) — 정리 → 평가 → 차트 한방에
+uv run python -m eval.compare
+
+# 모델당 5회 평균 (신뢰도 높은 비교)
+uv run python -m eval.compare --runs 5
+
+# 비교 차트 생성
 uv run python -m eval.visualize
 ```
 
@@ -190,3 +179,4 @@ uv run python -m eval.visualize
 | [docs/PLANNING.md](docs/PLANNING.md) | 서비스 기획, 기능 명세, 사용자 시나리오, 로드맵 |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | AI 에이전트 파이프라인 상세 흐름 |
 | [docs/SPEC.md](docs/SPEC.md) | 기술 스택, API 목록, 디렉토리 구조, 전체 환경 변수 |
+| [docs/whattodo_presentation.md](docs/whattodo_presentation.md) | 프로젝트 발표 자료 (아키텍처 진화, RAG 실험, 성능 평가) |
