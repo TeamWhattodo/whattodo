@@ -1,3 +1,6 @@
+# Policy ingestion marker (로컬 전용)
+docs/policy/.ingested.json
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -8,3 +11,36 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Node.js
+node_modules/
+
+# 환경 변수
+.env
+
+# macOS
+.DS_Store
+
+# IDE Settings
+.claude/
+.gemini/
+
+# 런타임 데이터 (토큰, 세션, DB)
+data/
+backend/db/data/work_items.json
+backend/db/data/expense_reports.json
+
+# 평가 결과 및 차트 (로컬 전용)
+eval/results/
+eval/charts/
+
+# VectorDB 바이너리 및 런타임 DB
+backend/db/data/
+
+# 생성된 파일
+outputs/
+
+# ChromaDB
+chroma/
+
+*.db

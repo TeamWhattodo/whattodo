@@ -1,0 +1,508 @@
+{
+  "timestamp": "20260605_184758",
+  "model": "gpt-4o",
+  "summary": {
+    "total_scenarios": 12,
+    "valid_scenarios": 12,
+    "success_rate": 41.7,
+    "avg_partial_score": 0.608,
+    "full_completions": 5,
+    "category_scores": {
+      "briefing": 0.4,
+      "action": 0.675,
+      "search": 0.542,
+      "report": 1.0,
+      "multi_intent": 0.3
+    }
+  },
+  "results": [
+    {
+      "scenario_id": "S1",
+      "name": "전체 업무 브리핑",
+      "category": "briefing",
+      "query": "쌓인 업무 전체 정리해줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"fetch\", \"content\": \"[{\\\"id\\\": \\\"jira_SCRUM-12\\\", \\\"user_id\\\": 1, \\\"source\\\": \\\"jira\\\", \\\"raw_content\\\": \\\"{\\\\\\\"key\\\\\\\": \\\\\\\"SCRUM-12\\\\\\\", \\\\\\\"summary\\\\\\\": \\\\\\\"시스템 개선 제안(테스트)\\\\\\\", \\\\\\\"status\\\\\\\": \\\\\\\"진행 중\\\\\\\"}\\\", \\\"summary\\\": \\\"시스템 개선 제안(테스트)\\\", \\\"urgency_level\\\": 0, \\\"urgency_breakdown\\\": {}, \\\"action_type\\\": \\\"review\\\", \\\"from_person\\\": null, \\\"due_at\\\": null, \\\"source_id\\\": \\\"SCRUM-12\\\", \\\"status\\\": \\\"done\\\", \\\"created_at\\\": \\\"2026-06-05T07:54:41.874488\\\", \\\"com",
+      "checkpoints": [
+        {
+          "id": "S1-C1",
+          "name": "데이터 수집 툴 호출",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "호출 확인: fetch_agent"
+        },
+        {
+          "id": "S1-C2",
+          "name": "Slack 또는 Jira 수집 반영",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "응답에 Jira 이슈 관련 내용이 포함되어 있음."
+        },
+        {
+          "id": "S1-C3",
+          "name": "Gmail 메일 수집 반영",
+          "points_total": 2,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "응답에 Gmail 메일 관련 내용이 포함되어 있지 않습니다."
+        },
+        {
+          "id": "S1-C4",
+          "name": "구체적 출처 명시",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "응답에 발신자, 채널명, 이슈 키 등 구체적인 출처 정보가 포함되어 있음"
+        },
+        {
+          "id": "S1-C5",
+          "name": "복수 소스 수집",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "응답에 Jira와 Notion 두 가지 서로 다른 소스의 데이터가 포함되어 있음"
+        }
+      ],
+      "earned": 8,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.4,
+      "timestamp": "2026-06-05T18:42:29.915923"
+    },
+    {
+      "scenario_id": "S2",
+      "name": "메일 답장 초안",
+      "category": "action",
+      "query": "가장 최근에 받은 메일에 답장 초안 써줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"fetch\", \"content\": \"[{\\\"id\\\": \\\"7534a0660d07f0a71c521f46db1c5c5e\\\", \\\"user_id\\\": 1, \\\"source\\\": \\\"gmail\\\", \\\"raw_content\\\": \\\"From: \\\\\\\"고도리 (Google Slides에서 공유)\\\\\\\" <drive-shares-dm-noreply@google.com>\\\\nSubject: ‘프로젝트 수행계획서_1팀(WhatToDo).pptx’ 프레젠테이션이 공유됨\\\", \\\"summary\\\": \\\"[메일] ‘프로젝트 수행계획서_1팀(WhatToDo).pptx’ 프레젠테이션이 공유됨 (from \\\\\\\"고도리 (Google Slides에서 공유)\\\\\\\" <drive-shares-dm-noreply@google.com>)\\\", \\\"urgency_level\\\": 3, \\\"urgency_breakdown\\",
+      "checkpoints": [
+        {
+          "id": "S2-C1",
+          "name": "항목 검색 또는 데이터 수집 시도",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "호출 확인: fetch_agent"
+        },
+        {
+          "id": "S2-C2",
+          "name": "초안 생성 툴 호출",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "호출 확인: action_agent"
+        },
+        {
+          "id": "S2-C3",
+          "name": "초안 텍스트 존재",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "매칭 키워드: ['Subject:']"
+        },
+        {
+          "id": "S2-C4",
+          "name": "답장 형식 갖춤",
+          "points_total": 3,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "답장 초안이 작성되지 않았습니다."
+        }
+      ],
+      "earned": 7,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.35,
+      "timestamp": "2026-06-05T18:42:39.937286"
+    },
+    {
+      "scenario_id": "S3",
+      "name": "사내 규정 조회",
+      "category": "search",
+      "query": "국내 출장 시 여비교통비 지급 기준이 어떻게 돼?",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"search\", \"content\": \"국내 출장 여비교통비 지급 기준에 대한 내용은 다음과 같습니다:\\n\\n1. **근무지 내 출장 시**:\\n   - 편도 20km 또는 3시간 미만의 업무 출장: 10,000원\\n   - 편도 40km 또는 5시간 미만의 업무 출장: 20,000원\\n   - 편도 40km 또는 5시간 이상의 경우, 여비 지급 규정에 따라 일비 지급\\n   - 법인 차량 이용 시, 여비교통비는 지급되지 않으며 통행료 및 주차비 등은 실비 정산\\n\\n2. **교육훈련 출장 시**:\\n   - 편도 40km 미만의 교육훈련 출장: 20,000원\\n   - 편도 40km 이상의 교육훈련 출장: 여비 지급 규정에 따른 일비 지급 (단, 50% 감액)\\n\\n출장을 위한 결제는 출장명령서에 따라 이루어집니다.\"}\n\n국내 출장 시 여비교통비 지급 기준은 다음과 같습니다:\n\n1. **근무지 내 출장 시**:\n   - 편도 ",
+      "checkpoints": [
+        {
+          "id": "S3-C1",
+          "name": "규정 검색 툴 호출",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "호출 확인: search_agent"
+        },
+        {
+          "id": "S3-C2",
+          "name": "금액 또는 규정 내용 포함",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "응답은 구체적인 여비교통비 금액 및 거리·시간 기준을 포함하고 있습니다."
+        },
+        {
+          "id": "S3-C3",
+          "name": "임의 정보 생성 없음",
+          "points_total": 3,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "응답이 문서에서 찾은 정보만으로 구성되어 있는지 확인할 수 없음"
+        }
+      ],
+      "earned": 7,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.35,
+      "timestamp": "2026-06-05T18:42:49.762756"
+    },
+    {
+      "scenario_id": "S4",
+      "name": "Jira 이슈 검색",
+      "category": "search",
+      "query": "현재 진행 중인 Jira 이슈 알려줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"search\", \"content\": \"Jira 계정 연동이 필요하여 현재 진행 중인 이슈를 확인할 수 없습니다.\"}\n\n현재 진행 중인 Jira 이슈를 확인하려면 Jira 계정 연동이 필요합니다. 연동 후 다시 시도해 주세요.",
+      "checkpoints": [
+        {
+          "id": "S4-C1",
+          "name": "Jira 검색 툴 호출",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "호출 확인: search_agent"
+        },
+        {
+          "id": "S4-C2",
+          "name": "이슈 키 또는 상태 포함",
+          "points_total": 3,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "The response indicates that integration is needed, without providing actual Jira issue information."
+        },
+        {
+          "id": "S4-C3",
+          "name": "없는 이슈 생성 없음",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "에이전트는 Jira 데이터를 조회할 수 없음을 명확히 밝혀, 없는 이슈를 만들어내지 않았습니다."
+        }
+      ],
+      "earned": 7,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.35,
+      "timestamp": "2026-06-05T18:42:56.062745"
+    },
+    {
+      "scenario_id": "S5",
+      "name": "캘린더 일정 조회",
+      "category": "search",
+      "query": "이번 주 일정 뭐 있어?",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"fetch\", \"content\": \"[]\"}\n\n이번 주에 예정된 일정이 없습니다. 필요한 경우 새로운 일정을 추가해 드릴까요?",
+      "checkpoints": [
+        {
+          "id": "S5-C1",
+          "name": "캘린더 데이터 조회 시도",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "일정이 없다고 정직하게 응답했음"
+        },
+        {
+          "id": "S5-C2",
+          "name": "날짜/시간 포함 또는 정직한 부재 응답",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "에이전트가 일정이 없음을 정직하게 답했다."
+        },
+        {
+          "id": "S5-C3",
+          "name": "임의 일정 생성 없음",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "일정이 없다고 정직하게 답함."
+        }
+      ],
+      "earned": 10,
+      "total": 10,
+      "full_score": 1,
+      "partial_score": 1.0,
+      "timestamp": "2026-06-05T18:43:03.844716"
+    },
+    {
+      "scenario_id": "S7",
+      "name": "주간 KPI 보고서 작성",
+      "category": "report",
+      "query": "이번 주 KPI 보고서 작성해줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"report\", \"content\": \"## 📊 주간 업무 보고서\\n\\n**기간:** 2026-06-01 (월) ~ 2026-06-07 (일)\\n\\n### ✅ 완료 업무\\n| 날짜 | 업무명 | 카테고리 | 담당자 | 출처 |\\n|------|--------|----------|--------|------|\\n| -    | -      | -        | -      | -    |\\n\\n**총 완료 업무:** 0건\\n\\n[보고서 PDF](outputs\\\\주간보고서_20260605.pdf)\", \"report_type\": \"report\", \"files\": [{\"report_type\": \"kpi_weekly\", \"content\": \"# 주간 업무보고서\\n**부서:** 개발부 | **직책:** 팀원 | **작성자:** 김태훈 | **작성일:** 2026년 6월 5일\\n\\n### ▶ 전주 추진사항\\n-\\n\\n### ▶ 차주 계획사",
+      "checkpoints": [
+        {
+          "id": "S7-C1",
+          "name": "report_agent 또는 write_report 호출",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "호출 확인: report_agent"
+        },
+        {
+          "id": "S7-C2",
+          "name": "보고서 파일 생성 (pdf)",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "파일 생성됨: outputs\\주간보고서_20260605.pdf"
+        },
+        {
+          "id": "S7-C3",
+          "name": "보고서 내용 품질",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "KPI 보고서 작성 시도 및 PDF 다운로드 링크 제공됨"
+        }
+      ],
+      "earned": 10,
+      "total": 10,
+      "full_score": 1,
+      "partial_score": 1.0,
+      "timestamp": "2026-06-05T18:43:19.168303"
+    },
+    {
+      "scenario_id": "S8",
+      "name": "영수증 정산서 작성",
+      "category": "report",
+      "query": "아래 영수증 내용으로 정산서 만들어줘.\n\n[RECEIPT]\nStarbucks Gangnam\nAmericano x2  9,000\nSandwich x1  6,500\nTotal: 15,500 KRW\n2026-06-01 14:30",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"report\", \"content\": \"## 💳 경비정산서\\n\\n| 날짜       | 상호명         | 분류 | 금액   |\\n|------------|----------------|------|--------|\\n| 2026-06-01 | 스타벅스 강남점 | 기타 | 15,500원 |\\n\\n**총액:** 15,500원\\n\\n- 작성자: 김태훈\\n- 부서: 개발부\\n- 직책: 팀원\\n\\n엑셀 파일은 `outputs/경비정산서_20260605.xlsx`에 저장되었습니다.\", \"report_type\": \"report\", \"files\": [{\"report_type\": \"expense_report\", \"total_amount\": 15500, \"items\": [{\"date\": \"2026-06-01\", \"merchant\": \"스타벅스 강남점\", \"amount\": 15500, \"category\": \"기타\", \"memo\": \"아메리카",
+      "checkpoints": [
+        {
+          "id": "S8-C1",
+          "name": "parse_receipt_from_text 또는 process_expense_report 호출",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "호출 확인: report_agent"
+        },
+        {
+          "id": "S8-C2",
+          "name": "정산서 파일 생성 (xlsx)",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "파일 생성됨: outputs/경비정산서_20260605.xlsx"
+        },
+        {
+          "id": "S8-C3",
+          "name": "금액 또는 항목 포함 응답",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "응답은 영수증 항목과 금액 정보를 포함하고 있으며, 정산서 작성 완료와 파일 다운로드 경로를 안내합니다."
+        }
+      ],
+      "earned": 10,
+      "total": 10,
+      "full_score": 1,
+      "partial_score": 1.0,
+      "timestamp": "2026-06-05T18:43:32.605133"
+    },
+    {
+      "scenario_id": "S6",
+      "name": "Gmail 최근 메일 조회",
+      "category": "search",
+      "query": "최근 받은 메일 3개 요약해줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"fetch\", \"content\": \"[{\\\"id\\\": \\\"7534a0660d07f0a71c521f46db1c5c5e\\\", \\\"user_id\\\": 1, \\\"source\\\": \\\"gmail\\\", \\\"raw_content\\\": \\\"From: \\\\\\\"고도리 (Google Slides에서 공유)\\\\\\\" <drive-shares-dm-noreply@google.com>\\\\nSubject: ‘프로젝트 수행계획서_1팀(WhatToDo).pptx’ 프레젠테이션이 공유됨\\\", \\\"summary\\\": \\\"[메일] ‘프로젝트 수행계획서_1팀(WhatToDo).pptx’ 프레젠테이션이 공유됨 (from \\\\\\\"고도리 (Google Slides에서 공유)\\\\\\\" <drive-shares-dm-noreply@google.com>)\\\", \\\"urgency_level\\\": 3, \\\"urgency_breakdown\\",
+      "checkpoints": [
+        {
+          "id": "S6-C1",
+          "name": "Gmail 조회 툴 호출",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "호출 확인: fetch_agent"
+        },
+        {
+          "id": "S6-C2",
+          "name": "발신자 또는 제목 포함",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "응답에 요청한 메일 3개의 발신자와 제목 정보가 모두 포함되어 있음"
+        },
+        {
+          "id": "S6-C3",
+          "name": "임의 메일 생성 없음",
+          "points_total": 3,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "응답이 실제 Gmail 데이터에 기반하는지 검증할 수 있는 방법이 없고, 임의의 메일 내용처럼 보입니다."
+        }
+      ],
+      "earned": 7,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.35,
+      "timestamp": "2026-06-05T18:43:48.875976"
+    },
+    {
+      "scenario_id": "S9",
+      "name": "Notion 문서 검색",
+      "category": "search",
+      "query": "노션에서 문서 목록 보여줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"search\", \"content\": \"Notion 문서 목록을 가져올 수 없습니다. 인증을 확인해주세요.\"}\n\n현재 Notion 문서 목록을 불러올 수 없습니다. 인증 상태를 확인해 주세요.",
+      "checkpoints": [
+        {
+          "id": "S9-C1",
+          "name": "Notion 검색 툴 호출",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "호출 확인: search_agent"
+        },
+        {
+          "id": "S9-C2",
+          "name": "Notion 응답 기반 출력",
+          "points_total": 3,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "응답이 Notion에서 조회한 결과를 기반으로 하지 않으며, 페이지 제목이나 문서 목록도 포함되어 있지 않습니다."
+        },
+        {
+          "id": "S9-C3",
+          "name": "Notion 데이터 기반 응답",
+          "points_total": 3,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "응답이 실제 Notion 문서 목록을 포함하지 않고 오류 메시지로만 구성되어 있음"
+        }
+      ],
+      "earned": 4,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.2,
+      "timestamp": "2026-06-05T18:43:55.474959"
+    },
+    {
+      "scenario_id": "S10",
+      "name": "업무 항목 상태 변경",
+      "category": "action",
+      "query": "저장된 업무 항목 중 첫 번째 항목을 완료 처리해줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"fetch\", \"content\": \"[{\\\"id\\\": \\\"jira_SCRUM-12\\\", \\\"user_id\\\": 1, \\\"source\\\": \\\"jira\\\", \\\"raw_content\\\": \\\"{\\\\\\\"key\\\\\\\": \\\\\\\"SCRUM-12\\\\\\\", \\\\\\\"summary\\\\\\\": \\\\\\\"시스템 개선 제안(테스트)\\\\\\\", \\\\\\\"status\\\\\\\": \\\\\\\"진행 중\\\\\\\"}\\\", \\\"summary\\\": \\\"시스템 개선 제안(테스트)\\\", \\\"urgency_level\\\": 0, \\\"urgency_breakdown\\\": {}, \\\"action_type\\\": \\\"review\\\", \\\"from_person\\\": null, \\\"due_at\\\": null, \\\"source_id\\\": \\\"SCRUM-12\\\", \\\"status\\\": \\\"done\\\", \\\"created_at\\\": \\\"2026-06-05T07:54:41.874488\\\", \\\"com",
+      "checkpoints": [
+        {
+          "id": "S10-C1",
+          "name": "항목 검색 시도",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "호출 확인: action_agent"
+        },
+        {
+          "id": "S10-C2",
+          "name": "완료 처리 실행 확인",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "The status of the first task 'jira_SCRUM-12' was successfully changed to 'done'."
+        },
+        {
+          "id": "S10-C3",
+          "name": "완료 처리 확인 메시지",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "매칭 키워드: ['완료', 'done', '처리']"
+        },
+        {
+          "id": "S10-C4",
+          "name": "임의 항목 처리 없음",
+          "points_total": 2,
+          "points_earned": 2,
+          "passed": true,
+          "reason": "응답이 실제 검색된 첫 번째 항목의 상태를 '진행 중'에서 'done'으로 변경함."
+        }
+      ],
+      "earned": 10,
+      "total": 10,
+      "full_score": 1,
+      "partial_score": 1.0,
+      "timestamp": "2026-06-05T18:45:07.900068"
+    },
+    {
+      "scenario_id": "S11",
+      "name": "복합 의도 (브리핑 + 보고서)",
+      "category": "multi_intent",
+      "query": "긴급 업무 브리핑하고 일간 보고서도 작성해줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"fetch\", \"content\": \"[{\\\"id\\\": \\\"jira_SCRUM-14\\\", \\\"user_id\\\": 1, \\\"source\\\": \\\"jira\\\", \\\"raw_content\\\": \\\"{\\\\\\\"key\\\\\\\": \\\\\\\"SCRUM-14\\\\\\\", \\\\\\\"summary\\\\\\\": \\\\\\\"검증\\\\\\\", \\\\\\\"status\\\\\\\": \\\\\\\"해야 할 일\\\\\\\"}\\\", \\\"summary\\\": \\\"검증\\\", \\\"urgency_level\\\": 0, \\\"urgency_breakdown\\\": {}, \\\"action_type\\\": \\\"review\\\", \\\"from_person\\\": \\\"고도리\\\", \\\"due_at\\\": null, \\\"source_id\\\": \\\"SCRUM-14\\\", \\\"status\\\": \\\"pending\\\", \\\"created_at\\\": \\\"2026-06-05T07:54:41.874464\\\", \\\"completed_at\\\": nul",
+      "checkpoints": [
+        {
+          "id": "S11-C1",
+          "name": "브리핑 에이전트 호출",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "호출 확인: fetch_agent"
+        },
+        {
+          "id": "S11-C2",
+          "name": "보고서 에이전트 호출",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "호출 확인: report_agent"
+        },
+        {
+          "id": "S11-C3",
+          "name": "두 결과 모두 포함된 응답",
+          "points_total": 4,
+          "points_earned": 0,
+          "passed": false,
+          "reason": "응답이 브리핑 내용은 포함되었지만, 보고서 작성 결과나 안내가 포함되지 않았습니다."
+        }
+      ],
+      "earned": 6,
+      "total": 10,
+      "full_score": 0,
+      "partial_score": 0.3,
+      "timestamp": "2026-06-05T18:47:51.355764"
+    },
+    {
+      "scenario_id": "S12",
+      "name": "Slack 메시지 검색",
+      "category": "search",
+      "query": "슬랙에서 '배포' 관련 메시지 찾아줘",
+      "response_preview": "{\"status\": \"success\", \"agent\": \"search\", \"content\": \"### Jira 이슈\\n- **제목:** [긴급] 프로덕션 배포 승인 대기 — 마감 초과\\n- **상태:** 해야 할 일\\n- **생성 날짜:** 2026-06-05\\n- **설명:** 배포 승인이 대기 중이며 마감 시간을 초과했습니다.\\n\\n### Slack 메시지\\n- **채널:** #kosa-team\\n- **발신자:** 개발팀\\n- **내용:** 오늘 새벽 배포 건 아직 승인 안 난 것 같은데요, 빠른 확인 부탁드립니다 🙏\\n- **생성 날짜:** 2026-05-25\\n\\n이 두 항목은 배포와 관련된 현재 보류 중인 항목입니다.\"}\n\n슬랙에서 '배포'와 관련된 메시지를 찾았습니다:\n\n### Slack 메시지\n- **채널:** #kosa-team\n- **발신자:** 개발팀\n- **내용:** \"오늘 새벽 배포 건 아직 승인 안 난 것 같은데요, 빠른 확인 부탁드립니다 🙏\"\n- **생성 ",
+      "checkpoints": [
+        {
+          "id": "S12-C1",
+          "name": "Slack 검색 툴 호출",
+          "points_total": 4,
+          "points_earned": 4,
+          "passed": true,
+          "reason": "호출 확인: search_agent"
+        },
+        {
+          "id": "S12-C2",
+          "name": "검색 키워드 반영",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "매칭 키워드: ['배포', '슬랙', '메시지', '채널']"
+        },
+        {
+          "id": "S12-C3",
+          "name": "없는 메시지 생성 없음",
+          "points_total": 3,
+          "points_earned": 3,
+          "passed": true,
+          "reason": "응답이 실제 DB나 API에서 조회한 데이터로 보입니다."
+        }
+      ],
+      "earned": 10,
+      "total": 10,
+      "full_score": 1,
+      "partial_score": 1.0,
+      "timestamp": "2026-06-05T18:47:58.763162"
+    }
+  ]
+}
